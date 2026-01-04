@@ -95,6 +95,7 @@ docker pull menghuanan/dynamic-bot:latest
 
 # 启动容器
 docker run -d --name dynamic-bot \
+  --network bridge \
   -v ./config:/app/config \
   -v ./data:/app/data \
   -v ./logs:/app/logs \
@@ -225,6 +226,7 @@ mkdir -p config data logs
 docker run -d \
   --name dynamic-bot \
   --restart unless-stopped \
+  --network bridge \
   -v ./config:/app/config \
   -v ./data:/app/data \
   -v ./logs:/app/logs \
@@ -249,6 +251,7 @@ services:
       - ./config:/app/config
       - ./data:/app/data
       - ./logs:/app/logs
+    network_mode: "bridge"  # 使用 bridge 网络模式
     logging:
       driver: "json-file"
       options:
@@ -323,9 +326,15 @@ docker logs -f dynamic-bot
 
 - **基础镜像**: eclipse-temurin:17-jre-jammy
 - **JVM 参数**: `-Xms256m -Xmx512m -XX:+UseG1GC`
+- **网络模式**: bridge（默认）
 - **健康检查**: 每30秒检查一次进程状态
 - **日志限制**: 10MB × 3 文件（自动轮转）
 - **重启策略**: unless-stopped
+
+**网络说明：**
+- 默认使用 `bridge` 网络模式，适合大多数场景
+- 如果 NapCat 在宿主机运行，需要在 `config/bot.yml` 中配置 `host: "host.docker.internal"`
+- 如果 NapCat 也在 Docker 中运行，建议使用自定义网络连接两个容器（参考 docker-compose.yml 注释）
 
 ### 自动化脚本
 
