@@ -1,5 +1,9 @@
 # BiliBili 动态推送 Bot v1.0
 
+[![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
+[![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+
 由[bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin)改造而来。
 代码部分则由[claude](https://github.com/claude)倾力打造。
 这是基于 NapCat 的 B站动态推送机器人，支持动态订阅、直播通知、链接解析等功能。
@@ -39,6 +43,8 @@ dynamic-bot/
 ├── .gitignore             # Git 忽略文件
 ├── Dockerfile             # Docker 镜像构建文件
 ├── docker-compose.yml     # Docker Compose 配置
+├── docker-deploy.ps1      # Docker 部署脚本（Windows）
+├── docker-push.ps1        # Docker Hub 推送脚本（Windows）
 ├── README.md              # 项目说明
 └── LICENSE                # 许可证
 
@@ -75,15 +81,27 @@ data/
 
 ### 3. 运行 Bot
 
+#### 方式一：直接运行 JAR
+
 ```bash
 java -jar build/libs/dynamic-bot-1.0.jar
 ```
 
-或者使用 Docker：
+#### 方式二：使用 Docker Hub 镜像（推荐）
 
 ```bash
-docker-compose up -d
+# 拉取镜像
+docker pull menghuanan/dynamic-bot:latest
+
+# 启动容器
+docker run -d --name dynamic-bot \
+  -v ./config:/app/config \
+  -v ./data:/app/data \
+  -v ./logs:/app/logs \
+  menghuanan/dynamic-bot:latest
 ```
+
+详细的 Docker 部署说明请查看 [Docker 部署](#docker-部署) 章节。
 
 ## 主要功能
 
@@ -183,7 +201,104 @@ cacheClearEnable: true  # 启用定时缓存清理
 
 ## Docker 部署
 
-### 快速部署
+### 方式一：使用 Docker Hub 镜像（推荐）
+
+无需编译，直接从 Docker Hub 拉取预构建镜像快速部署。
+
+**Docker Hub 仓库：** https://hub.docker.com/r/menghuanan/dynamic-bot
+
+#### 1. 拉取镜像
+
+```bash
+docker pull menghuanan/dynamic-bot:latest
+```
+
+#### 2. 创建配置目录
+
+```bash
+mkdir -p config data logs
+```
+
+#### 3. 使用 docker run 启动
+
+```bash
+docker run -d \
+  --name dynamic-bot \
+  --restart unless-stopped \
+  -v ./config:/app/config \
+  -v ./data:/app/data \
+  -v ./logs:/app/logs \
+  menghuanan/dynamic-bot:latest
+```
+
+#### 4. 使用 docker-compose（推荐）
+
+创建 `docker-compose.yml` 文件：
+
+```yaml
+version: '3.8'
+
+services:
+  dynamic-bot:
+    image: menghuanan/dynamic-bot:latest
+    container_name: dynamic-bot
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+启动容器：
+
+```bash
+docker-compose up -d
+```
+
+#### 5. 配置 NapCat 连接
+
+首次运行后，编辑 `config/bot.yml`：
+
+```yaml
+napcat:
+  host: "host.docker.internal"  # Docker 访问宿主机的特殊域名
+  port: 3001
+  token: ""
+
+admin: 你的QQ号
+```
+
+重启容器：
+
+```bash
+docker-compose restart
+# 或
+docker restart dynamic-bot
+```
+
+#### 6. 查看日志
+
+```bash
+docker-compose logs -f
+# 或
+docker logs -f dynamic-bot
+```
+
+#### 可用标签
+
+- `latest` - 最新版本
+- `v1.0` - 稳定版本 v1.0
+
+### 方式二：从源码构建部署
+
+如果需要自定义修改，可以从源码构建镜像。
 
 1. **配置 NapCat 连接**
    - 修改 `config/bot.yml` 中的 host 为 `host.docker.internal`（如果 NapCat 在宿主机）
@@ -214,12 +329,24 @@ cacheClearEnable: true  # 启用定时缓存清理
 
 ### 自动化脚本
 
-Windows 用户可使用 `docker-deploy.ps1` 脚本：
+Windows 用户可使用自动化脚本简化操作：
+
+**docker-deploy.ps1** - 部署管理脚本
 ```powershell
-.\docker-deploy.ps1 build   # 构建镜像
-.\docker-deploy.ps1 start   # 启动容器
-.\docker-deploy.ps1 stop    # 停止容器
-.\docker-deploy.ps1 logs    # 查看日志
+.\docker-deploy.ps1 build    # 构建镜像
+.\docker-deploy.ps1 start    # 启动容器
+.\docker-deploy.ps1 stop     # 停止容器
+.\docker-deploy.ps1 restart  # 重启容器
+.\docker-deploy.ps1 logs     # 查看日志
+.\docker-deploy.ps1 status   # 查看状态
+.\docker-deploy.ps1 clean    # 清理容器和镜像
+.\docker-deploy.ps1 rebuild  # 完全重新构建
+```
+
+**docker-push.ps1** - Docker Hub 推送脚本
+```powershell
+.\docker-push.ps1 latest     # 推送 latest 标签
+.\docker-push.ps1 v1.1       # 推送指定版本标签
 ```
 
 ## 开发说明
@@ -254,6 +381,14 @@ Windows 用户可使用 `docker-deploy.ps1` 脚本：
    - 文档和示例配置
 
 ## 更新日志
+
+### v1.0.1 (2026-01-04)
+
+**Docker 支持**
+- ✅ 发布 Docker Hub 官方镜像：https://hub.docker.com/r/menghuanan/dynamic-bot
+- ✅ 提供 `latest` 和 `v1.0` 两个标签
+- ✅ 无需编译即可快速部署
+- ✅ 添加完整的 Docker 部署文档
 
 ### v1.0 (2026-01-04)
 
