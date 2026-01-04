@@ -75,9 +75,13 @@ data class ContactId(
     companion object {
         fun from(str: String): ContactId {
             return when {
-                str.startsWith("g") -> ContactId("group", str.substring(1).toLong())
-                str.startsWith("u") -> ContactId("private", str.substring(1).toLong())
-                else -> throw IllegalArgumentException("Invalid contact id: $str")
+                // 支持新格式：group:123456 或 private:123456
+                str.startsWith("group:") -> ContactId("group", str.substring(6).toLong())
+                str.startsWith("private:") -> ContactId("private", str.substring(8).toLong())
+                // 支持旧格式：g123456 或 u123456
+                str.startsWith("g") && str.length > 1 -> ContactId("group", str.substring(1).toLong())
+                str.startsWith("u") && str.length > 1 -> ContactId("private", str.substring(1).toLong())
+                else -> throw IllegalArgumentException("Invalid contact id: $str, expected format: 'group:123456' or 'g123456'")
             }
         }
 

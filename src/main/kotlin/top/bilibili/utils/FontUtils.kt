@@ -37,7 +37,9 @@ object FontUtils {
 
     fun loadTypefaceFromResource(resourcePath: String, alias: String? = null, index: Int = 0): Typeface? {
         return try {
-            val inputStream = FontUtils::class.java.getResourceAsStream(resourcePath)
+            // 使用 classLoader 加载资源，确保从 classpath 根目录开始查找
+            val path = if (resourcePath.startsWith("/")) resourcePath.substring(1) else resourcePath
+            val inputStream = FontUtils::class.java.classLoader.getResourceAsStream(path)
             if (inputStream != null) {
                 val bytes = inputStream.readBytes()
                 val data = Data.makeFromBytes(bytes)

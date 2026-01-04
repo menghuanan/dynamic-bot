@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "top.bilibili"
-version = "4.0.0-STANDALONE"
+version = "1.0"
 
 repositories {
     mavenLocal()
@@ -84,7 +84,7 @@ tasks.test {
 tasks.shadowJar {
     archiveBaseName.set("dynamic-bot")
     archiveClassifier.set("")
-    archiveVersion.set(project.version.toString())
+    archiveVersion.set("1.0")
 
     manifest {
         attributes(
@@ -122,6 +122,15 @@ distributions {
     }
 }
 
+// 设置 distribution 任务的重复文件处理策略
+tasks.withType<Tar> {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.withType<Zip> {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
 // 创建启动脚本任务
 tasks.register("createStartScripts") {
     doLast {
@@ -146,6 +155,16 @@ tasks.register("createStartScripts") {
         // 设置 Linux 脚本可执行权限
         file("scripts/start.sh").setExecutable(true)
     }
+}
+
+// 修复 startScripts 和 shadowJar 的依赖关系
+tasks.named("startScripts") {
+    dependsOn("shadowJar")
+}
+
+// 修复 startShadowScripts 和 jar 的依赖关系
+tasks.named("startShadowScripts") {
+    dependsOn("jar", "shadowJar")
 }
 
 tasks.named("distTar") {

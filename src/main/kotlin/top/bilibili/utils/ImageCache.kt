@@ -139,20 +139,33 @@ object ImageCache {
             var cleanedCount = 0
             var freedSpace = 0L
 
+            // 获取清理前的统计
+            val beforeStats = getCacheStats()
+            logger.info("开始清理图片缓存，当前: ${beforeStats.fileCount} 个文件，${beforeStats.totalSizeMB} MB")
+
             cacheDir.listFiles()?.forEach { file ->
                 val fileAge = now - file.lastModified() / 1000
                 if (fileAge > 604800) { // 7 天
-                    freedSpace += file.length()
-                    file.delete()
-                    cleanedCount++
+                    val fileSize = file.length()
+                    if (file.delete()) {
+                        freedSpace += fileSize
+                        cleanedCount++
+                        logger.debug("删除过期缓存: ${file.name} (${fileAge / 86400} 天前)")
+                    }
                 }
             }
 
+            // 获取清理后的统计
+            val afterStats = getCacheStats()
+
             if (cleanedCount > 0) {
-                logger.info("清理了 $cleanedCount 个过期缓存文件，释放 ${freedSpace / 1024 / 1024} MB 空间")
+                logger.info("清理了 $cleanedCount 个过期图片缓存，释放 ${freedSpace / 1024 / 1024} MB 空间")
+                logger.info("清理后: ${afterStats.fileCount} 个文件，${afterStats.totalSizeMB} MB")
+            } else {
+                logger.info("没有需要清理的过期图片缓存 (${beforeStats.fileCount} 个文件在保留期内)")
             }
         } catch (e: Exception) {
-            logger.error("清理缓存失败: ${e.message}", e)
+            logger.error("清理图片缓存失败: ${e.message}", e)
         }
     }
 

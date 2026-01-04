@@ -116,8 +116,13 @@ val emojiFont: Font by lazy {
     Font(emojiTypeface, quality.contentFontSize)
 }
 
-val fansCardFont: Font by lazy {
-    Font(loadTypeface(Data.makeFromBytes(loadResourceBytes("font/FansCard.ttf"))), quality.subTitleFontSize)
+val fansCardFont: Font? by lazy {
+    try {
+        Font(loadTypeface(Data.makeFromBytes(loadResourceBytes("/font/FansCard.ttf"))), quality.subTitleFontSize)
+    } catch (e: Exception) {
+        logger.warn("无法加载粉丝卡字体 FansCard.ttf: ${e.message}，将跳过卡片装饰")
+        null
+    }
 }
 
 val titleTextStyle by lazy {

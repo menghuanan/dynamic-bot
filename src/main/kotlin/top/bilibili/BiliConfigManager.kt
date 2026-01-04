@@ -24,7 +24,7 @@ object BiliConfigManager {
     private val dataDir = Paths.get("data").toFile()
 
     private val configFile = File(configDir, "BiliConfig.yml")
-    private val dataFile = File(dataDir, "BiliData.yml")
+    private val dataFile = File(configDir, "BiliData.yml")  // 数据文件也保存到 config 目录
 
     // YAML 序列化器（忽略未知属性以支持旧配置文件）
     private val yaml = Yaml(
@@ -75,17 +75,40 @@ object BiliConfigManager {
     /**
      * 加载数据文件
      * 如果文件不存在，创建默认数据
+     * 加载后会更新 BiliData 全局单例
      */
     private fun loadData(): BiliData {
         return try {
+            // 检查是否需要从旧位置迁移数据
+            val oldDataFile = File(dataDir, "BiliData.yml")
+            if (!dataFile.exists() && oldDataFile.exists()) {
+                logger.info("检测到旧数据文件，正在迁移到新位置...")
+                oldDataFile.copyTo(dataFile, overwrite = false)
+                logger.info("数据文件已从 ${oldDataFile.absolutePath} 迁移到 ${dataFile.absolutePath}")
+            }
+
             if (dataFile.exists()) {
+                logger.info("从 ${dataFile.absolutePath} 加载数据")
                 val content = dataFile.readText()
-                yaml.decodeFromString(BiliData.serializer(), content)
+
+                // 检查文件是否为空或只有 {}
+                if (content.isBlank() || content.trim() == "{}" || content.trim() == "{}") {
+                    logger.warn("数据文件为空，使用默认数据")
+                    return BiliData
+                }
+
+                // 使用包装类进行反序列化
+                val loadedWrapper = yaml.decodeFromString(BiliDataWrapper.serializer(), content)
+
+                // 应用到 BiliData 全局单例
+                BiliDataWrapper.applyTo(loadedWrapper, BiliData)
+
+                logger.info("数据加载完成：${BiliData.dynamic.size} 个订阅，${BiliData.group.size} 个分组")
+                BiliData
             } else {
                 logger.info("数据文件不存在，创建默认数据")
-                val defaultData = BiliData
-                saveData(defaultData)
-                defaultData
+                saveData(BiliData)
+                BiliData
             }
         } catch (e: Exception) {
             logger.error("加载数据文件失败，使用默认数据", e)
@@ -108,12 +131,32 @@ object BiliConfigManager {
 
     /**
      * 保存数据到文件
+     * 默认保存 BiliData 全局单例（而不是本地 data 副本）
      */
-    fun saveData(dataToSave: BiliData = data) {
+    fun saveData(dataToSave: BiliData = BiliData) {
         try {
-            val yamlContent = yaml.encodeToString(BiliData.serializer(), dataToSave)
+            logger.info("准备保存数据：")
+            logger.info("- dynamic 数量: ${BiliData.dynamic.size}")
+            logger.info("- group 数量: ${BiliData.group.size}")
+            logger.info("- dynamic 内容: ${BiliData.dynamic.keys.joinToString()}")
+
+            // 使用包装类进行序列化
+            val wrapper = BiliDataWrapper.from(dataToSave)
+            val yamlContent = yaml.encodeToString(BiliDataWrapper.serializer(), wrapper)
+
+            logger.info("序列化后的 YAML 内容（前 500 字符）:")
+            logger.info(yamlContent.take(500))
+
             dataFile.writeText(yamlContent)
-            logger.debug("数据已保存")
+            logger.info("数据已保存到 ${dataFile.absolutePath}")
+
+            // 验证保存
+            val savedContent = dataFile.readText()
+            if (savedContent.trim() == "{}" || savedContent.trim() == "{}") {
+                logger.error("警告：保存的文件为空！")
+            } else {
+                logger.info("文件验证：保存成功，大小 ${savedContent.length} 字节")
+            }
         } catch (e: Exception) {
             logger.error("保存数据文件失败", e)
         }
@@ -137,6 +180,7 @@ object BiliConfigManager {
 
     /**
      * 重新加载数据
+     * 会更新 BiliData 全局单例
      */
     fun reloadData() {
         data = loadData()

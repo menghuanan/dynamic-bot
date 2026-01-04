@@ -23,8 +23,15 @@ object LiveMessageTasker : BiliTasker() {
         val liveDetail = liveChannel.receive()
         withTimeout(180004) {
             val liveInfo = liveDetail.item
-            logger.debug("直播: ${liveInfo.uname}@${liveInfo.uid}@${liveInfo.title}")
-            messageChannel.send(liveInfo.buildMessage(liveDetail.contact))
+            logger.info("开始处理直播: ${liveInfo.uname} (${liveInfo.uid}) - ${liveInfo.title}")
+            try {
+                val message = liveInfo.buildMessage(liveDetail.contact)
+                logger.info("直播消息构建成功，准备发送到 messageChannel")
+                messageChannel.send(message)
+                logger.info("直播消息已发送到 messageChannel")
+            } catch (e: Exception) {
+                logger.error("处理直播失败: ${e.message}", e)
+            }
         }
     }
 
@@ -46,10 +53,16 @@ object LiveMessageTasker : BiliTasker() {
 
     suspend fun LiveInfo.makeLive(): String? {
         return if (BiliConfigManager.config.enableConfig.drawEnable) {
-            val color = BiliConfigManager.data.dynamic[uid]?.color ?: BiliConfigManager.config.imageConfig.defaultColor
+            logger.info("开始生成直播封面图片...")
+            val color = BiliData.dynamic[uid]?.color ?: BiliConfigManager.config.imageConfig.defaultColor
             val colors = color.split(";", "；").map { Color.makeRGB(it.trim()) }
-            makeDrawLive(colors)
-        } else null
+            val drawPath = makeDrawLive(colors)
+            logger.info("直播封面图片生成完成: $drawPath")
+            drawPath
+        } else {
+            logger.info("图片生成已禁用，跳过")
+            null
+        }
     }
 
 }

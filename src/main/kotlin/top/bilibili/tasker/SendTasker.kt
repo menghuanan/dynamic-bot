@@ -71,6 +71,7 @@ object SendTasker : BiliTasker("SendTasker") {
     private suspend fun processMessages() {
         for (message in BiliBiliBot.messageChannel) {
             try {
+                BiliBiliBot.logger.info("从 messageChannel 接收到消息: ${message.name} (${message.mid})")
                 sendToSubscribers(message)
             } catch (e: Exception) {
                 BiliBiliBot.logger.error("处理消息失败: ${e.message}", e)
@@ -85,13 +86,16 @@ object SendTasker : BiliTasker("SendTasker") {
         // 获取订阅数据
         val subData = BiliData.dynamic[message.mid]
         if (subData == null) {
-            BiliBiliBot.logger.debug("用户 ${message.mid} 没有订阅数据")
+            BiliBiliBot.logger.warn("用户 ${message.mid} 没有订阅数据，无法推送")
             return
         }
+
+        BiliBiliBot.logger.info("准备推送到 ${subData.contacts.size} 个联系人")
 
         // 如果消息已指定联系人，只发送给该联系人
         val specificContact = message.contact
         if (specificContact != null) {
+            BiliBiliBot.logger.info("消息指定了联系人: $specificContact")
             val contact = parseContactId(specificContact) ?: return
             val segments = buildMessageSegments(message, specificContact)
             messageQueue.send(contact to segments)
@@ -101,6 +105,7 @@ object SendTasker : BiliTasker("SendTasker") {
         // 发送给所有订阅该用户的联系人
         for (contactStr in subData.contacts) {
             try {
+                BiliBiliBot.logger.info("处理联系人: $contactStr")
                 val contact = parseContactId(contactStr) ?: continue
 
                 // 检查是否被禁用
@@ -111,9 +116,11 @@ object SendTasker : BiliTasker("SendTasker") {
 
                 // 构建消息段
                 val segments = buildMessageSegments(message, contactStr)
+                BiliBiliBot.logger.info("为联系人 $contactStr 构建了 ${segments.size} 个消息段")
 
                 // 加入发送队列
                 messageQueue.send(contact to segments)
+                BiliBiliBot.logger.info("消息已加入发送队列: ${contact.type}:${contact.id}")
 
                 // 消息间隔
                 delay(BiliConfigManager.config.pushConfig.messageInterval)
@@ -131,32 +138,47 @@ object SendTasker : BiliTasker("SendTasker") {
         message: BiliMessage,
         contactStr: String
     ): List<MessageSegment> {
+        BiliBiliBot.logger.info("开始构建消息段...")
         val segments = mutableListOf<MessageSegment>()
 
-        // 获取模板
-        val template = when (message) {
-            is DynamicMessage -> getTemplate(contactStr, message.mid, "dynamic")
-            is LiveMessage -> getTemplate(contactStr, message.mid, "live")
-            is LiveCloseMessage -> getTemplate(contactStr, message.mid, "liveClose")
-        }
+        try {
+            // 获取模板
+            BiliBiliBot.logger.info("获取推送模板...")
+            val template = when (message) {
+                is DynamicMessage -> getTemplate(contactStr, message.mid, "dynamic")
+                is LiveMessage -> getTemplate(contactStr, message.mid, "live")
+                is LiveCloseMessage -> getTemplate(contactStr, message.mid, "liveClose")
+            }
+            BiliBiliBot.logger.info("使用模板: $template")
 
-        // 解析模板，分割为多条消息（使用 \r 分隔）
-        val messageParts = template.split("\r")
+            // 解析模板，分割为多条消息（使用 \r 分隔）
+            val messageParts = template.split("\r")
+            BiliBiliBot.logger.info("模板分割为 ${messageParts.size} 部分")
 
-        for ((index, part) in messageParts.withIndex()) {
-            if (index > 0) {
-                // 在多条消息之间添加分隔符（使用空消息段）
-                segments.add(MessageSegment.text("\n"))
+            for ((index, part) in messageParts.withIndex()) {
+                if (index > 0) {
+                    // 在多条消息之间添加分隔符（使用空消息段）
+                    segments.add(MessageSegment.text("\n"))
+                }
+
+                // 替换模板变量
+                BiliBiliBot.logger.info("替换模板变量...")
+                val content = replacePlaceholders(part, message)
+                BiliBiliBot.logger.info("替换后内容: ${content.take(100)}...")
+
+                // 解析内容，提取图片和文本
+                BiliBiliBot.logger.info("解析内容，提取图片和文本...")
+                parseContent(content, message, segments)
+                BiliBiliBot.logger.info("当前消息段数量: ${segments.size}")
             }
 
-            // 替换模板变量
-            val content = replacePlaceholders(part, message)
-
-            // 解析内容，提取图片和文本
-            parseContent(content, message, segments)
+            BiliBiliBot.logger.info("消息段构建完成，共 ${segments.size} 个")
+            return segments
+        } catch (e: Exception) {
+            BiliBiliBot.logger.error("构建消息段失败: ${e.message}", e)
+            // 返回简单的文本消息作为降级
+            return listOf(MessageSegment.text("${message.name} 发布了新${if (message is DynamicMessage) "动态" else "直播"}"))
         }
-
-        return segments
     }
 
     /**

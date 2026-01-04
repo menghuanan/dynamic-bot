@@ -126,8 +126,15 @@ fun loadResource(file: String) =
     BiliBiliBot::class.java.getResource(file)?.path!!
 //BiliBiliBot::class.java.getResource(file)!!.openStream().use { it.readBytes() }
 
-fun loadResourceBytes(path: String) =
-    BiliBiliBot.getResourceAsStream(path)!!.readBytes()
+fun loadResourceBytes(path: String): ByteArray {
+    // 确保路径以 / 开头，从 classpath 根目录开始查找
+    val resourcePath = if (path.startsWith("/")) path else "/$path"
+    val stream = BiliBiliBot.javaClass.classLoader.getResourceAsStream(resourcePath.substring(1))
+    if (stream == null) {
+        throw IllegalArgumentException("无法找到资源文件: $path (查找路径: $resourcePath)")
+    }
+    return stream.use { it.readBytes() }
+}
 
 val cachePath: Path by lazy {
     dataFolderPath.resolve("cache")

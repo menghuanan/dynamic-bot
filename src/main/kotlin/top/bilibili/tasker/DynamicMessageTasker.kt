@@ -27,8 +27,15 @@ object DynamicMessageTasker : BiliTasker() {
         val dynamicDetail = dynamicChannel.receive()
         withTimeout(180002) {
             val dynamicItem = dynamicDetail.item
-            logger.debug("动态: ${dynamicItem.modules.moduleAuthor.name}@${dynamicItem.idStr}@${dynamicItem.typeStr}")
-            messageChannel.send(dynamicItem.buildMessage(dynamicDetail.contact))
+            logger.info("开始处理动态: ${dynamicItem.modules.moduleAuthor.name} (${dynamicItem.modules.moduleAuthor.mid}) - ${dynamicItem.typeStr}")
+            try {
+                val message = dynamicItem.buildMessage(dynamicDetail.contact)
+                logger.info("动态消息构建成功，准备发送到 messageChannel")
+                messageChannel.send(message)
+                logger.info("动态消息已发送到 messageChannel")
+            } catch (e: Exception) {
+                logger.error("处理动态失败: ${e.message}", e)
+            }
         }
     }
 

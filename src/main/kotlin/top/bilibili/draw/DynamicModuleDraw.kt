@@ -563,14 +563,17 @@ suspend fun Canvas.drawOrnament(decorate: ModuleAuthor.Decorate?, link: String?,
                         null,
                         true
                     )
-                    if (decorate.type == 3 && decorate.fan?.numStr != "") {
-                        val textLineFan = TextLine.make(decorate.fan?.numStr, fansCardFont)
-                        drawTextLine(
-                            textLineFan,
-                            tarFRect.right - textLineFan.width * 2,
-                            tarFRect.bottom - (cardHeight - fansCardFont.size) / 2,
-                            Paint().apply { color = Color.makeRGB(decorate.fan!!.color) }
-                        )
+                    // 绘制粉丝数量（需要粉丝卡字体）
+                    fansCardFont?.let { font ->
+                        if (decorate.type == 3 && decorate.fan?.numStr != "") {
+                            val textLineFan = TextLine.make(decorate.fan?.numStr, font)
+                            drawTextLine(
+                                textLineFan,
+                                tarFRect.right - textLineFan.width * 2,
+                                tarFRect.bottom - (cardHeight - font.size) / 2,
+                                Paint().apply { color = Color.makeRGB(decorate.fan!!.color) }
+                            )
+                        }
                     }
                 }
             }

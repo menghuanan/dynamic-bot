@@ -57,7 +57,9 @@ fun Canvas.drawImageRRect(image: Image, rRect: RRect, paint: Paint? = null) =
 
 fun loadSVG(path: String): SVGDOM? {
     return try {
-        val resourceStream = top.bilibili.core.BiliBiliBot.getResourceAsStream(path)
+        // 使用 classLoader 加载资源，确保从 classpath 根目录开始查找
+        val resourcePath = if (path.startsWith("/")) path.substring(1) else path
+        val resourceStream = top.bilibili.core.BiliBiliBot::class.java.classLoader.getResourceAsStream(resourcePath)
         if (resourceStream != null) {
             SVGDOM(Data.makeFromBytes(resourceStream.readBytes())).also {
                 resourceStream.close()

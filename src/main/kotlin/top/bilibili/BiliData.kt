@@ -2,7 +2,11 @@
 
 import kotlinx.serialization.Serializable
 
-@Serializable
+/**
+ * BiliData 全局单例
+ * 注意：不再直接序列化此 object，而是通过 BiliDataWrapper 进行序列化
+ * @see BiliDataWrapper
+ */
 object BiliData {
     // 数据版本
     var dataVersion: Int = 0
