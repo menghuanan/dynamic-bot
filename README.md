@@ -1,5 +1,7 @@
 # BiliBili 动态推送 Bot v1.0
 
+由[bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin)改造而来。
+代码部分则由[claude](https://github.com/claude)倾力打造。
 这是基于 NapCat 的 B站动态推送机器人，支持动态订阅、直播通知、链接解析等功能。
 
 ## 项目结构
