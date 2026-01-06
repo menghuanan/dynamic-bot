@@ -18,6 +18,44 @@ suspend fun matchingRegular(content: String): ResolvedLinkInfo? {
     } else null
 }
 
+suspend fun matchingAllRegular(content: String): List<ResolvedLinkInfo> {
+    val results = mutableListOf<ResolvedLinkInfo>()
+    val processedIds = mutableSetOf<String>()
+
+    // 定义优先级顺序：短链接优先，其他保持原顺序
+    val prioritizedTypes = listOf(LinkType.ShortLink) +
+        LinkType.values().filter { it != LinkType.ShortLink }
+
+    for (linkType in prioritizedTypes) {
+        for (regex in linkType.regex) {
+            var matchResult = regex.find(content)
+            while (matchResult != null) {
+                val id = matchResult.destructured.component1()
+                val uniqueId = "${linkType.name}:$id"
+
+                if (!processedIds.contains(uniqueId)) {
+                    processedIds.add(uniqueId)
+
+                    // 如果是短链接，解析为真实链接类型
+                    if (linkType == LinkType.ShortLink) {
+                        val realLink = biliClient.redirect("https://b23.tv/$id")
+                        if (realLink != null) {
+                            logger.info("短链接 https://b23.tv/$id 解析为: $realLink")
+                            matchingInternalRegular(realLink)?.let { results.add(it) }
+                        }
+                    } else {
+                        results.add(ResolvedLinkInfo(linkType, id))
+                    }
+                }
+
+                matchResult = matchResult.next()
+            }
+        }
+    }
+
+    return results
+}
+
 data class ResolvedLinkInfo(val type: LinkType, val id: String) : ResolveLink {
     override suspend fun drawGeneral(): String? = type.drawGeneral(id)
     override suspend fun getLink(): String = type.getLink(id)

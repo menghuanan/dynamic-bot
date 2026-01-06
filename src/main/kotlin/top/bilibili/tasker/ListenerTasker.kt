@@ -127,94 +127,99 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
 
         if (allLinks.isEmpty()) return
 
-        // 尝试匹配第一个有效的 B站链接
-        var linkInfo: top.bilibili.service.ResolvedLinkInfo? = null
-        var matchedLink: String? = null
+        // 匹配所有有效的 B站链接
+        val matchedLinks = mutableListOf<Pair<String, top.bilibili.service.ResolvedLinkInfo>>()
 
         for (link in allLinks) {
-            val info = matchingRegular(link)
-            if (info != null) {
-                linkInfo = info
-                matchedLink = link
-                break
+            val infos = top.bilibili.service.matchingAllRegular(link)
+            for (info in infos) {
+                matchedLinks.add(link to info)
             }
         }
 
-        if (linkInfo == null || matchedLink == null) return
+        if (matchedLinks.isEmpty()) return
 
-        // 使用解析后的 ID 作为缓存 key（群ID + 类型 + ID）
-        val resolvedId = "${linkInfo.type}:${linkInfo.id}"
-        val cacheKey = "$groupId:$resolvedId"
-        val now = System.currentTimeMillis()
+        // 逐个解析并发送每个链接
+        for ((matchedLink, linkInfo) in matchedLinks) {
+            // 使用解析后的 ID 作为缓存 key（群ID + 类型 + ID）
+            val resolvedId = "${linkInfo.type}:${linkInfo.id}"
+            val cacheKey = "$groupId:$resolvedId"
+            val now = System.currentTimeMillis()
 
-        // 检查是否在缓存中（60 秒内解析过）
-        val shouldSkip = cacheMutex.withLock {
-            val lastParsedTime = recentlyParsedLinks[cacheKey]
-            if (lastParsedTime != null && now - lastParsedTime < cacheDuration) {
-                true // 需要跳过
-            } else {
-                // 记录本次解析
-                recentlyParsedLinks[cacheKey] = now
-                false // 不跳过
+            // 检查是否在缓存中（60 秒内解析过）
+            val shouldSkip = cacheMutex.withLock {
+                val lastParsedTime = recentlyParsedLinks[cacheKey]
+                if (lastParsedTime != null && now - lastParsedTime < cacheDuration) {
+                    true // 需要跳过
+                } else {
+                    // 记录本次解析
+                    recentlyParsedLinks[cacheKey] = now
+                    false // 不跳过
+                }
             }
-        }
 
-        if (shouldSkip) {
-            logger.debug("忽略重复链接: $resolvedId (60秒内已解析)")
-            return
-        }
+            if (shouldSkip) {
+                logger.debug("忽略重复链接: $resolvedId (60秒内已解析)")
+                continue
+            }
 
-        logger.info("匹配到链接: $matchedLink -> ${linkInfo.type} (ID: ${linkInfo.id})")
+            logger.info("匹配到链接: $matchedLink -> ${linkInfo.type} (ID: ${linkInfo.id})")
 
-        try {
-            // 解析链接并生成图片
-            logger.info("开始解析链接 -> $matchedLink")
-            val imagePath = linkInfo.drawGeneral()
-            if (imagePath == null) {
-                logger.warn("链接解析失败，返回 null")
+            try {
+                // 解析链接并生成图片
+                logger.info("开始解析链接 -> $matchedLink")
+                val imagePath = linkInfo.drawGeneral()
+                if (imagePath == null) {
+                    logger.warn("链接解析失败，返回 null")
+                    BiliBiliBot.sendGroupMessage(groupId, listOf(
+                        MessageSegment.text("解析失败")
+                    ))
+                    continue
+                }
+
+                logger.info("链接解析成功，图片路径: $imagePath")
+
+                // 将生成的图片路径转换为 file:// 协议
+                val imageUrl = ImageCache.toFileUrl(imagePath)
+                logger.info("转换后的图片 URL: $imageUrl")
+
+                // 构建回复消息
+                val replySegments = mutableListOf<MessageSegment>()
+                replySegments.add(MessageSegment.image(imageUrl))
+
+                // 如果配置了 returnLink，在回复中包含链接
+                if (returnLink) {
+                    val link = linkInfo.getLink()
+                    // 将链接转换为标准格式（非短链接）
+                    val standardLink = convertToStandardLink(link, linkInfo)
+                    replySegments.add(MessageSegment.text("\n$standardLink"))
+                }
+
+                logger.info("准备发送链接解析结果到群 $groupId")
+
+                // 发送解析结果
+                val success = BiliBiliBot.sendGroupMessage(groupId, replySegments)
+
+                if (success) {
+                    logger.info("链接解析结果已发送到群 $groupId")
+                } else {
+                    logger.warn("链接解析结果发送失败")
+                    BiliBiliBot.sendGroupMessage(groupId, listOf(
+                        MessageSegment.text("图片上传失败")
+                    ))
+                }
+
+                // 如果还有更多链接要处理，添加短暂延迟避免发送过快
+                if (matchedLinks.indexOf(matchedLink to linkInfo) < matchedLinks.size - 1) {
+                    delay(500)
+                }
+
+            } catch (e: Exception) {
+                logger.error("解析链接时出错: ${e.message}", e)
                 BiliBiliBot.sendGroupMessage(groupId, listOf(
-                    MessageSegment.text("解析失败")
-                ))
-                return
-            }
-
-            logger.info("链接解析成功，图片路径: $imagePath")
-
-            // 将生成的图片路径转换为 file:// 协议
-            val imageUrl = ImageCache.toFileUrl(imagePath)
-            logger.info("转换后的图片 URL: $imageUrl")
-
-            // 构建回复消息
-            val replySegments = mutableListOf<MessageSegment>()
-            replySegments.add(MessageSegment.image(imageUrl))
-
-            // 如果配置了 returnLink，在回复中包含链接
-            if (returnLink) {
-                val link = linkInfo.getLink()
-                // 将链接转换为标准格式（非短链接）
-                val standardLink = convertToStandardLink(link, linkInfo)
-                replySegments.add(MessageSegment.text("\n$standardLink"))
-            }
-
-            logger.info("准备发送链接解析结果到群 $groupId")
-
-            // 发送解析结果
-            val success = BiliBiliBot.sendGroupMessage(groupId, replySegments)
-
-            if (success) {
-                logger.info("链接解析结果已发送到群 $groupId")
-            } else {
-                logger.warn("链接解析结果发送失败")
-                BiliBiliBot.sendGroupMessage(groupId, listOf(
-                    MessageSegment.text("图片上传失败")
+                    MessageSegment.text("解析失败: ${e.message}")
                 ))
             }
-
-        } catch (e: Exception) {
-            logger.error("解析链接时出错: ${e.message}", e)
-            BiliBiliBot.sendGroupMessage(groupId, listOf(
-                MessageSegment.text("解析失败: ${e.message}")
-            ))
         }
     }
 

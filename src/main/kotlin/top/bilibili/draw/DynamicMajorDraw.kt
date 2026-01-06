@@ -505,7 +505,11 @@ suspend fun drawPgcCard(
     val textTotalHeight = titleParagraph.height + broadcastParagraph.height + statusParagraph.height +
         statParagraph.height + (evaluateParagraph?.height ?: 0f) + quality.cardPadding * 4  // 行间距
     val contentHeight = maxOf(scaledCoverHeight, textTotalHeight)
-    val cardHeight = quality.badgeHeight + contentHeight + quality.cardPadding
+
+    // 添加上下边距以实现垂直居中
+    val verticalPadding = quality.cardPadding * 2
+    val cardContentHeight = contentHeight + verticalPadding * 2
+    val cardHeight = quality.badgeHeight + cardContentHeight
 
     return Surface.makeRasterN32Premul(
         cardRect.width.toInt(),
@@ -513,12 +517,12 @@ suspend fun drawPgcCard(
     ).apply {
         val canvas = this.canvas
 
-        // 绘制卡片背景
+        // 绘制卡片背景（添加垂直居中偏移）
         val videoCardRect = RRect.makeComplexXYWH(
             quality.cardPadding.toFloat(),
-            quality.badgeHeight + 1f,
+            quality.badgeHeight.toFloat() + verticalPadding,
             cardContentRect.width,
-            cardHeight - (quality.badgeHeight + quality.cardPadding),
+            contentHeight,
             cardBadgeArc
         )
         canvas.drawCard(videoCardRect)
@@ -546,12 +550,11 @@ suspend fun drawPgcCard(
             )
         }
 
-        // 绘制封面（垂直居中）
-        val availableHeight = cardHeight - quality.badgeHeight - quality.cardPadding
-        val coverTopOffset = (availableHeight - scaledCoverHeight) / 2
+        // 绘制封面（在卡片内垂直居中）
+        val coverTopOffset = (videoCardRect.height - scaledCoverHeight) / 2
         val coverRRect = RRect.makeComplexXYWH(
             videoCardRect.left,
-            quality.badgeHeight + coverTopOffset,
+            videoCardRect.top + coverTopOffset,
             desiredCoverWidth,
             scaledCoverHeight,
             cardBadgeArc
