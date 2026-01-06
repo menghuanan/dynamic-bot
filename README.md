@@ -1,4 +1,4 @@
-# BiliBili 动态推送 Bot v1.0
+# BiliBili 动态推送 Bot v1.1
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
@@ -62,8 +62,8 @@ dynamic-bot/
 ./gradlew build -x test
 ```
 
-编译完成后，可执行文件位于：
-- `build/libs/dynamic-bot-1.0.jar`
+编译完成后,可执行文件位于：
+- `build/libs/dynamic-bot-1.1.jar`
 
 ### 2. 配置文件
 
@@ -88,7 +88,7 @@ logs/                # 日志文件目录
 #### 方式一：直接运行 JAR
 
 ```bash
-java -jar build/libs/dynamic-bot-1.0.jar
+java -jar build/libs/dynamic-bot-1.1.jar
 ```
 
 #### 方式二：使用 Docker Hub 镜像（推荐）
@@ -304,6 +304,7 @@ docker logs -f dynamic-bot
 #### 可用标签
 
 - `latest` - 最新版本
+- `v1.1` - 稳定版本 v1.1
 - `v1.0` - 稳定版本 v1.0
 
 ### 方式二：从源码构建部署
@@ -398,6 +399,30 @@ Windows 用户可使用自动化脚本简化操作：
 
 ## 更新日志
 
+### v1.1 (2026-01-06)
+
+**重要修复**
+- ✅ 修复字体渲染问题：更换项目字体为思源黑体，解决部分字符显示异常（如"复"字显示偏瘦）
+- ✅ 修复防循环机制漏洞：完善链接解析黑名单机制，避免多个 bot 同时解析时发生循环
+- ✅ 修复哔哩哔哩 HD 版链接解析：支持 HD 版小程序发送的链接
+- ✅ 修复 JSON 和链接同时发送时绕过防循环机制的问题
+
+**番剧/电影解析优化**
+- ✅ 修复电影解析失败：正确处理 `title` 字段为字符串的情况（如"正片"）
+- ✅ 修复特殊番剧解析失败：支持 `title` 字段包含特殊格式（如"Extra(4.5)"）
+- ✅ 修复番剧简介显示问题：确保正确获取并显示详细信息
+- ✅ 优化番剧模板：重新设计信息布局，包括开播时间、更新状态、播放数据和简介
+- ✅ 修复电影顶部标签：将"番剧"标签正确替换为"电影"
+- ✅ 优化简介显示：确保简介内容填满信息栏
+
+**渲染优化**
+- ✅ 修复粉丝牌数字显示：添加专用字体文件 `FansCard.ttf` 支持粉丝牌数字渲染
+- ✅ 修复视频时长对齐问题：调整视频时长、观看次数和弹幕数的排版对齐
+
+**日志改进**
+- ✅ 添加完整的错误日志：为所有失败任务添加适当的警告或错误日志输出
+- ✅ 优化日志显示方式：在文档中添加查看 DEBUG 级日志的说明
+
 ### v1.0.1 (2026-01-04)
 
 **Docker 支持**
@@ -451,6 +476,48 @@ Windows 用户可使用自动化脚本简化操作：
    - 添加了订阅管理命令
    - 支持手动触发检查（/check）
    - 优化了推送逻辑
+
+## 故障排查
+
+### 启用 DEBUG 日志
+
+如果遇到问题需要提交 Bug 报告，可以启用 DEBUG 级别日志来获取更详细的信息：
+
+1. **修改日志配置文件**
+
+   编辑 `src/main/resources/logback.xml` 文件，将以下两行的 `INFO` 改为 `DEBUG`：
+
+   ```xml
+   <!-- 应用日志级别 -->
+   <logger name="top.bilibili" level="DEBUG"/>
+
+   <root level="DEBUG">
+   ```
+
+2. **重新编译并运行**
+
+   ```bash
+   ./gradlew build
+   java -jar build/libs/dynamic-bot-all.jar
+   ```
+
+3. **Docker 环境启用 DEBUG**
+
+   如果使用 Docker，需要重新构建镜像：
+
+   ```bash
+   # 修改 logback.xml 后重新构建
+   docker-compose build
+   docker-compose up -d
+   ```
+
+4. **查看日志**
+
+   - 控制台会显示 DEBUG 级别的详细日志
+   - 日志文件位于 `logs/bilibili-bot.log`
+   - 错误日志位于 `logs/error.log`
+
+**注意**: DEBUG 日志会输出大量信息，仅在排查问题时启用，日常使用建议保持 INFO 级别。
 
 ## 许可证
 

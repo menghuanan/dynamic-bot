@@ -59,6 +59,7 @@ fun loginQrCode(url: String): Image {
                 }
             } catch (e: Exception) {
                 // 如果加载失败，绘制简单的文字
+                logger.warn("加载二维码中心图标失败: ${e.message}")
                 val textLine = TextLine.make("B", Font(Typeface.makeDefault(), 50f))
                 drawTextLine(textLine, 110f, 140f, Paint().apply {
                     color = Color.WHITE

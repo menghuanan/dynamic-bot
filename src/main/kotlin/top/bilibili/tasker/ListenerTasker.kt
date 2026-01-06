@@ -25,7 +25,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
 
     // 缓存最近解析的链接，避免无限循环（记录 群ID+链接 -> 时间戳）
     private val recentlyParsedLinks = mutableMapOf<String, Long>()
-    private val cacheDuration = 10_000L // 10 秒缓存时间
+    private val cacheDuration = 60_000L // 60 秒缓存时间
     private val cacheMutex = Mutex() // 缓存锁
 
     override fun init() {
@@ -105,36 +105,49 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
 
         if (!shouldProcess) return
 
-        // 提取文本内容（排除 @ 和图片）
+        // 提取所有可能的链接
+        val allLinks = mutableListOf<String>()
+
+        // 提取文本内容中的链接
         val textContent = event.message
             .filter { it.type == "text" }
             .joinToString("") { it.data["text"] ?: "" }
             .trim()
 
-        // 尝试从 QQ 小程序中提取链接
-        val miniAppUrl = extractMiniAppUrl(event.message)
-
-        // 优先使用小程序链接，否则使用文本内容
-        val linkText = if (miniAppUrl != null) {
-            logger.info("检测到 QQ 小程序分享，提取链接: $miniAppUrl")
-            miniAppUrl
-        } else {
-            textContent
+        if (textContent.isNotEmpty()) {
+            allLinks.add(textContent)
         }
 
-        if (linkText.isEmpty()) return
+        // 尝试从 QQ 小程序中提取链接
+        val miniAppUrl = extractMiniAppUrl(event.message)
+        if (miniAppUrl != null) {
+            logger.info("检测到 QQ 小程序分享，提取链接: $miniAppUrl")
+            allLinks.add(miniAppUrl)
+        }
 
-        // 匹配 B站链接
-        val linkInfo = matchingRegular(linkText) ?: return
+        if (allLinks.isEmpty()) return
 
-        // 规范化 URL（去除末尾斜杠）
-        val normalizedUrl = linkText.trimEnd('/')
+        // 尝试匹配第一个有效的 B站链接
+        var linkInfo: top.bilibili.service.ResolvedLinkInfo? = null
+        var matchedLink: String? = null
 
-        // 生成缓存 key（群ID + 规范化链接）
-        val cacheKey = "$groupId:$normalizedUrl"
+        for (link in allLinks) {
+            val info = matchingRegular(link)
+            if (info != null) {
+                linkInfo = info
+                matchedLink = link
+                break
+            }
+        }
+
+        if (linkInfo == null || matchedLink == null) return
+
+        // 使用解析后的 ID 作为缓存 key（群ID + 类型 + ID）
+        val resolvedId = "${linkInfo.type}:${linkInfo.id}"
+        val cacheKey = "$groupId:$resolvedId"
         val now = System.currentTimeMillis()
 
-        // 检查是否在缓存中（10 秒内解析过）
+        // 检查是否在缓存中（60 秒内解析过）
         val shouldSkip = cacheMutex.withLock {
             val lastParsedTime = recentlyParsedLinks[cacheKey]
             if (lastParsedTime != null && now - lastParsedTime < cacheDuration) {
@@ -147,15 +160,15 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         }
 
         if (shouldSkip) {
-            logger.debug("忽略重复链接: $normalizedUrl (10秒内已解析)")
+            logger.debug("忽略重复链接: $resolvedId (60秒内已解析)")
             return
         }
 
-        logger.info("匹配到链接: $linkText -> ${linkInfo.type}")
+        logger.info("匹配到链接: $matchedLink -> ${linkInfo.type} (ID: ${linkInfo.id})")
 
         try {
             // 解析链接并生成图片
-            logger.info("开始解析链接 -> $linkText")
+            logger.info("开始解析链接 -> $matchedLink")
             val imagePath = linkInfo.drawGeneral()
             if (imagePath == null) {
                 logger.warn("链接解析失败，返回 null")
@@ -215,6 +228,8 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
             val jsonSegment = messageSegments.find { it.type == "json" } ?: return null
             val jsonData = jsonSegment.data["data"] ?: return null
 
+            logger.debug("检测到 JSON 消息，尝试提取链接...")
+
             // 使用简单的正则表达式提取 qqdocurl 字段
             // JSON 格式: "qqdocurl" : "https://b23.tv/xxxxx"
             val qqdocurlRegex = """"qqdocurl"\s*:\s*"([^"]+)"""".toRegex()
@@ -224,24 +239,47 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
                 val url = match.groupValues[1]
                     .replace("\\/", "/") // 反转义斜杠
                     .replace("&#44;", ",") // 反转义逗号
-                logger.debug("从小程序中提取到链接: $url")
+                logger.info("从小程序中提取到 qqdocurl 链接: $url")
                 return url
             }
 
-            // 如果没有找到 qqdocurl，尝试查找其他 B站链接
+            // 尝试提取 jumpUrl 字段（HD版可能使用这个字段）
+            val jumpUrlRegex = """"jumpUrl"\s*:\s*"([^"]+)"""".toRegex()
+            val jumpMatch = jumpUrlRegex.find(jsonData)
+            if (jumpMatch != null) {
+                val url = jumpMatch.groupValues[1]
+                    .replace("\\/", "/")
+                    .replace("&#44;", ",")
+                logger.info("从小程序中提取到 jumpUrl 链接: $url")
+                return url
+            }
+
+            // 尝试提取 url 字段
+            val urlFieldRegex = """"url"\s*:\s*"([^"]+bilibili[^"]+)"""".toRegex()
+            val urlFieldMatch = urlFieldRegex.find(jsonData)
+            if (urlFieldMatch != null) {
+                val url = urlFieldMatch.groupValues[1]
+                    .replace("\\/", "/")
+                    .replace("&#44;", ",")
+                logger.info("从小程序中提取到 url 字段链接: $url")
+                return url
+            }
+
+            // 如果没有找到特定字段，尝试查找任何 B站链接
             val bilibiliUrlRegex = """(https?://[^\s"]+bilibili[^\s"]+)""".toRegex()
             val urlMatch = bilibiliUrlRegex.find(jsonData)
             if (urlMatch != null) {
                 val url = urlMatch.groupValues[1]
                     .replace("\\/", "/")
                     .replace("&#44;", ",")
-                logger.debug("从小程序中提取到 B站链接: $url")
+                logger.info("从小程序中提取到 B站链接: $url")
                 return url
             }
 
+            logger.warn("JSON 消息中未找到 B站链接，JSON 数据前 200 字符: ${jsonData.take(200)}")
             return null
         } catch (e: Exception) {
-            logger.debug("提取小程序链接失败: ${e.message}")
+            logger.warn("提取小程序链接失败: ${e.message}", e)
             return null
         }
     }

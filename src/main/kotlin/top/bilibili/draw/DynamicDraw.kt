@@ -91,7 +91,8 @@ fun loadSysDefaultFont(): Typeface {
             val f = matchFamily(it).matchStyle(FontStyle.NORMAL)!!
             logger.info("加载默认字体 $it 成功")
             return f
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            logger.warn("尝试加载默认字体 $it 失败: ${e.message}")
         }
     }
     throw Exception("无法加载默认字体, 请自行配置字体或准备字体文件")

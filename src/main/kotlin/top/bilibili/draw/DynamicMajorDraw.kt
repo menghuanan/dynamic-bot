@@ -289,20 +289,22 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(showStat: Boolean = false): 
                 )
             })
 
-            val durationText = TextLine.make(durationText, font)
-            val playInfo = if (showStat) {
+            val durationTextLine = TextLine.make(durationText, font)
+            val combinedText = if (showStat) {
                 val play = stat.play.toInt()
                 var playStr = play.toString()
                 if (play > 10000) {
                     playStr = "%.1f".format(play / 10000f) + "万"
                 }
-                TextLine.make("${playStr}观看 ${stat.danmaku}弹幕", font)
-            } else null
+                TextLine.make("时长 $durationText  ${playStr}观看 ${stat.danmaku}弹幕", font)
+            } else {
+                TextLine.make("时长 $durationText", font)
+            }
 
             val textX = coverMaskRRect.left + quality.cardPadding * 1.3f
-            val textY = coverRRect.bottom - durationText.height - quality.cardPadding
+            val textY = coverRRect.bottom - combinedText.height - quality.cardPadding
             drawLabelCard(
-                durationText,
+                combinedText,
                 textX,
                 textY,
                 Paint().apply {
@@ -313,21 +315,6 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(showStat: Boolean = false): 
                     alpha = 140
                 }
             )
-
-            if (playInfo != null) {
-                drawLabelCard(
-                    playInfo,
-                    textX + durationText.width + quality.badgePadding * 4,
-                    textY,
-                    Paint().apply {
-                        color = Color.WHITE
-                    },
-                    Paint().apply {
-                        color = Color.BLACK
-                        alpha = 0
-                    }
-                )
-            }
 
             titleParagraph.paint(
                 this,
@@ -381,7 +368,8 @@ suspend fun ModuleDynamic.Major.Pgc.drawSmall(): Image {
         play = stat.play,
         danmaku = stat.danmaku,
         evaluate = evaluate,
-        badge = badge.text
+        badge = badge.text,
+        rating = rating
     )
 }
 
@@ -396,7 +384,8 @@ suspend fun drawPgcCard(
     play: String,
     danmaku: String,
     evaluate: String?,
-    badge: String
+    badge: String,
+    rating: Float?
 ): Image {
     // 下载封面图
     val desiredCoverWidth = cardContentRect.width * 0.4f
@@ -410,42 +399,78 @@ suspend fun drawPgcCard(
     // 右侧文本区域宽度
     val textAreaWidth = cardContentRect.width - quality.cardPadding - desiredCoverWidth
 
-    // 第一行：标题
+    // 第一行：标题（加粗）
     val titleStyle = ParagraphStyle().apply {
         maxLinesCount = 2
         ellipsis = "..."
         alignment = Alignment.LEFT
-        textStyle = titleTextStyle
+        textStyle = bigTitleTextStyle
     }
     val titleParagraph = ParagraphBuilder(titleStyle, FontUtils.fonts)
         .addText(title)
         .build()
         .layout(textAreaWidth)
 
-    // 第二行：标签 + 首播时间 + 完结状态 + 集数 + ep号
-    val metaInfoParts = mutableListOf<String>()
-    if (areas != null && areas.isNotBlank()) metaInfoParts.add(areas)
-    if (pubTime != null && pubTime.isNotBlank()) metaInfoParts.add(pubTime)
-    if (isFinish != null) metaInfoParts.add(if (isFinish == 1) "已完结" else "连载中")
-    if (total != null && total > 0) metaInfoParts.add("全${total}集")
-    metaInfoParts.add("ep$epid")
-    val metaInfo = metaInfoParts.joinToString("  ")
-
-    val metaStyle = ParagraphStyle().apply {
-        maxLinesCount = 2
+    // 第二行：开播时间
+    val broadcastTime = if (pubTime != null && pubTime.isNotBlank()) {
+        "开播时间：$pubTime"
+    } else {
+        "开播时间：未知"
+    }
+    val broadcastStyle = ParagraphStyle().apply {
+        maxLinesCount = 1
         ellipsis = "..."
         alignment = Alignment.LEFT
         textStyle = descTextStyle.apply {
             fontSize = quality.subTitleFontSize * 0.9f
         }
     }
-    val metaParagraph = ParagraphBuilder(metaStyle, FontUtils.fonts)
-        .addText(metaInfo)
+    val broadcastParagraph = ParagraphBuilder(broadcastStyle, FontUtils.fonts)
+        .addText(broadcastTime)
         .build()
         .layout(textAreaWidth)
 
-    // 第三行：播放数、弹幕
-    val statInfo = "播放: $play  弹幕: $danmaku"
+    // 第三行：状态 + 评分
+    val ratingStr = rating?.let { "  评分%.1f".format(it) } ?: ""
+    val statusText = buildString {
+        append("状态：")
+        if (isFinish != null && isFinish == 1) {
+            append("已完结")
+        } else {
+            append("连载中")
+        }
+        if (total != null && total > 0) {
+            append("  全${total}集")
+        }
+        append(ratingStr)
+    }
+    val statusStyle = ParagraphStyle().apply {
+        maxLinesCount = 1
+        ellipsis = "..."
+        alignment = Alignment.LEFT
+        textStyle = descTextStyle.apply {
+            fontSize = quality.subTitleFontSize * 0.9f
+        }
+    }
+    val statusParagraph = ParagraphBuilder(statusStyle, FontUtils.fonts)
+        .addText(statusText)
+        .build()
+        .layout(textAreaWidth)
+
+    // 第四行：播放数、弹幕数（格式化为万）
+    val playNum = play.toIntOrNull() ?: 0
+    val playStr = if (playNum > 10000) {
+        "%.1f万".format(playNum / 10000f)
+    } else {
+        playNum.toString()
+    }
+    val danmakuNum = danmaku.toIntOrNull() ?: 0
+    val danmakuStr = if (danmakuNum > 10000) {
+        "%.1f万".format(danmakuNum / 10000f)
+    } else {
+        danmakuNum.toString()
+    }
+    val statInfo = "${playStr} 播放 · ${danmakuStr} 弹幕"
     val statStyle = ParagraphStyle().apply {
         maxLinesCount = 1
         ellipsis = "..."
@@ -459,10 +484,10 @@ suspend fun drawPgcCard(
         .build()
         .layout(textAreaWidth)
 
-    // 第四行：介绍
+    // 第五行：介绍
     val evaluateText = evaluate?.takeIf { it.isNotBlank() } ?: ""
     val evaluateStyle = ParagraphStyle().apply {
-        maxLinesCount = 3
+        maxLinesCount = 8
         ellipsis = "..."
         alignment = Alignment.LEFT
         textStyle = descTextStyle.apply {
@@ -477,8 +502,8 @@ suspend fun drawPgcCard(
     } else null
 
     // 计算总高度：封面高度和文本高度的最大值
-    val textTotalHeight = titleParagraph.height + metaParagraph.height + statParagraph.height +
-        (evaluateParagraph?.height ?: 0f) + quality.cardPadding * 3  // 行间距
+    val textTotalHeight = titleParagraph.height + broadcastParagraph.height + statusParagraph.height +
+        statParagraph.height + (evaluateParagraph?.height ?: 0f) + quality.cardPadding * 4  // 行间距
     val contentHeight = maxOf(scaledCoverHeight, textTotalHeight)
     val cardHeight = quality.badgeHeight + contentHeight + quality.cardPadding
 
@@ -535,19 +560,50 @@ suspend fun drawPgcCard(
         val textX = coverRRect.right + quality.cardPadding
         var textY = videoCardRect.top + quality.cardPadding / 2
 
-        // 第一行：标题（与封面顶部齐平）
+        // 第一行：标题（加粗，与封面顶部齐平）
         titleParagraph.paint(canvas, textX, textY)
         textY += titleParagraph.height + quality.cardPadding / 2
 
-        // 第二行：元信息
-        metaParagraph.paint(canvas, textX, textY)
-        textY += metaParagraph.height + quality.cardPadding / 2
+        // 第二行：开播时间
+        broadcastParagraph.paint(canvas, textX, textY)
+        textY += broadcastParagraph.height + quality.cardPadding / 2
 
-        // 第三行：统计信息
-        statParagraph.paint(canvas, textX, textY)
-        textY += statParagraph.height + quality.cardPadding / 2
+        // 第三行：状态
+        statusParagraph.paint(canvas, textX, textY)
+        textY += statusParagraph.height + quality.cardPadding / 2
 
-        // 第四行：介绍
+        // 第四行：统计信息（带渐变背景边框）
+        val statRRect = RRect.makeXYWH(
+            textX,
+            textY,
+            statParagraph.longestLine + quality.badgePadding * 2,
+            statParagraph.height + quality.badgePadding,
+            quality.badgeArc / 2
+        )
+        // 绘制渐变背景（蓝色到浅蓝色）
+        canvas.drawRRect(statRRect, Paint().apply {
+            shader = Shader.makeLinearGradient(
+                Point(statRRect.left, statRRect.top),
+                Point(statRRect.right, statRRect.top),
+                intArrayOf(
+                    Color.makeRGB(100, 150, 230),  // 蓝色
+                    Color.makeRGB(180, 210, 250)   // 浅蓝色
+                )
+            )
+            alpha = 50
+        })
+        // 绘制边框
+        canvas.drawRRect(statRRect, Paint().apply {
+            color = Color.TRANSPARENT
+            mode = PaintMode.STROKE
+            strokeWidth = 1f
+            color = theme.titleColor
+            alpha = 100
+        })
+        statParagraph.paint(canvas, textX + quality.badgePadding, textY + quality.badgePadding / 2)
+        textY += statRRect.height + quality.cardPadding / 2
+
+        // 第五行：介绍
         evaluateParagraph?.paint(canvas, textX, textY)
 
     }.makeImageSnapshot()

@@ -37,7 +37,15 @@ suspend fun BiliClient.getPcgInfo(id: String): BiliDetail? {
 
     return when (type) {
         "ss" -> getSeasonInfo(id)
-        "md" -> getMediaInfo(id)
+        "md" -> {
+            // 先获取 media 信息，然后用 season_id 获取完整的 season 信息（包含简介）
+            val mediaInfo = getMediaInfo(id)
+            if (mediaInfo != null) {
+                getSeasonInfo(mediaInfo.media.seasonId)
+            } else {
+                null
+            }
+        }
         "ep" -> getEpisodeInfo(id)
         else -> null
     }

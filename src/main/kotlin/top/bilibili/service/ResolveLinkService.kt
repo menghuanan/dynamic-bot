@@ -138,7 +138,20 @@ enum class LinkType(val regex: List<Regex>) {
                 val info = biliClient.getPcgInfo(id) ?: return null
                 val author = info.toPgcAuthor() ?: return null
                 val data = info.toPgc()?.drawSmall()
-                drawGeneral(id, "番剧", Instant.now().epochSecond.formatTime, author, data)
+                val typeName = when (info) {
+                    is PgcSeason -> when (info.type) {
+                        1 -> "番剧"
+                        2 -> "电影"
+                        3 -> "纪录片"
+                        4 -> "国创"
+                        5 -> "电视剧"
+                        7 -> "综艺"
+                        else -> "番剧"
+                    }
+                    is PgcMedia -> info.media.typeName
+                    else -> "番剧"
+                }
+                drawGeneral(id, typeName, Instant.now().epochSecond.formatTime, author, data)
             }
             ShortLink -> {
                 val link = biliClient.redirect("https://b23.tv/$id")
@@ -163,12 +176,24 @@ enum class LinkType(val regex: List<Regex>) {
 }
 
 suspend fun drawGeneral(id: String, tag: String, time: String, author: ModuleAuthor, imgData: org.jetbrains.skia.Image?): String {
-    val footer = buildFooter(author.name, author.mid, id, time, tag)
-
     val colors = BiliConfigManager.config.imageConfig.defaultColor.split(";", "；").map { Color.makeRGB(it.trim()) }
-    val imgList = mutableListOf(
-        author.drawGeneral(time, VIDEO_LINK(id), colors.first()),
-    )
+
+    // PGC 内容（番剧、电影等）不显示作者头像部分，且直接返回不加外框
+    val isPgcContent = tag in listOf("番剧", "电影", "纪录片", "国创", "电视剧", "综艺")
+
+    if (isPgcContent) {
+        // PGC 内容直接返回，居中显示
+        val img = makeCardBg(imgData!!.height, colors) {
+            val x = (quality.imageWidth - imgData.width) / 2f
+            it.drawImage(imgData, x, 0f)
+        }
+        return cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
+    }
+
+    // 非 PGC 内容保持原有逻辑
+    val footer = buildFooter(author.name, author.mid, id, time, tag)
+    val imgList = mutableListOf<org.jetbrains.skia.Image>()
+    imgList.add(author.drawGeneral(time, VIDEO_LINK(id), colors.first()))
     imgData?.let { imgList.add(it) }
 
     val cimg = imgList.assembleCard(id, footer, tag = "搜索")
@@ -277,6 +302,15 @@ fun BiliDetail.toPgcAuthor(): ModuleAuthor? =
 fun BiliDetail.toPgc(): ModuleDynamic.Major.Pgc? =
     when (this) {
         is PgcSeason -> {
+            val typeName = when (type) {
+                1 -> "番剧"
+                2 -> "电影"
+                3 -> "纪录片"
+                4 -> "国创"
+                5 -> "电视剧"
+                7 -> "综艺"
+                else -> "番剧"
+            }
             ModuleDynamic.Major.Pgc(
                 type,
                 0,
@@ -289,12 +323,13 @@ fun BiliDetail.toPgc(): ModuleDynamic.Major.Pgc? =
                     stat?.danmakus.toString(),
                     stat?.views.toString()
                 ),
-                ModuleDynamic.Major.Badge("", "", "番剧"),
+                ModuleDynamic.Major.Badge("", "", typeName),
                 evaluate,
                 areas?.joinToString(" / ") { it.name ?: "" },
                 publish?.pubTimeShow,
                 publish?.isFinish,
-                total
+                total,
+                rating?.score
             )
         }
         is PgcMedia -> {

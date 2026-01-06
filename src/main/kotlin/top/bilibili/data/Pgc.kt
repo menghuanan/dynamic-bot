@@ -118,8 +118,8 @@ data class PgcSeason(
     //val positive: Positive? = null,
     @SerialName("publish")
     val publish: Publish? = null,
-    //@SerialName("rating")
-    //val rating: Rating? = null,
+    @SerialName("rating")
+    val rating: Rating? = null,
     //@SerialName("record")
     //val record: String? = null,
     //@SerialName("rights")
@@ -262,7 +262,7 @@ data class PgcSeason(
         @SerialName("is_new")
         val isNew: Int? = null,
         @SerialName("title")
-        val title: Int? = null,
+        val title: String? = null,
     )
     @Serializable
     data class Payment(

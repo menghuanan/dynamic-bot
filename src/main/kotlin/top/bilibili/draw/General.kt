@@ -65,9 +65,11 @@ fun loadSVG(path: String): SVGDOM? {
                 resourceStream.close()
             }
         } else {
+            logger.warn("SVG 资源未找到: $path")
             null
         }
     } catch (e: Exception) {
+        logger.warn("加载 SVG 失败 ($path): ${e.message}")
         null
     }
 }

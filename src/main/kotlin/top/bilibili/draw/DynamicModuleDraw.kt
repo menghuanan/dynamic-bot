@@ -445,7 +445,9 @@ suspend fun Canvas.drawTextArea(text: String, rect: Rect, textX: Float, textY: F
                         }
                         val et = e.joinToString("-")
                         emojiImg = getOrDownloadImage(twemoji(et), CacheType.EMOJI)
-                    } catch (_: Exception) { }
+                    } catch (e: Exception) {
+                        logger.warn("加载 Emoji 图片失败 ($emoji): ${e.message}")
+                    }
 
                     if (x + emojiSize > rect.right) {
                         x = rect.left

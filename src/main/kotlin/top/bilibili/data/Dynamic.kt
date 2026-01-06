@@ -1291,6 +1291,7 @@ data class ModuleDynamic(
             val isFinish: Int? = null,  // 完结状态（1=完结，0=连载）
             @SerialName("total")
             val total: Int? = null,  // 总集数
+            val rating: Float? = null,  // 评分
         )
 
         /**
