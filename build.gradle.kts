@@ -84,7 +84,7 @@ tasks.test {
 tasks.shadowJar {
     archiveBaseName.set("dynamic-bot")
     archiveClassifier.set("")
-    archiveVersion.set("1.2")
+    archiveVersion.set("1.3")
 
     manifest {
         attributes(
