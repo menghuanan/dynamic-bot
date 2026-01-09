@@ -166,7 +166,18 @@ enum class LinkType(val regex: List<Regex>) {
                 val room = biliClient.getLiveDetail(id) ?: return null
                 val author = biliClient.userInfo(room.uid)?.toDrawAuthorData() ?: return null
                 val data = room.toDrawData().drawGeneral()
-                drawGeneral(id, "直播", Instant.now().epochSecond.formatRelativeTime, author, data)
+                val area = if (room.parentAreaName != null && room.areaName != null) {
+                    "${room.parentAreaName} · ${room.areaName}"
+                } else {
+                    room.areaName ?: ""
+                }
+                val liveStatusText = when (room.liveStatus) {
+                    0 -> "未开播"
+                    1 -> "直播中"
+                    2 -> "轮播中"
+                    else -> "直播"
+                }
+                drawGeneral(id, liveStatusText, Instant.now().epochSecond.formatRelativeTime, author, data, area)
             }
             User -> {
                 val author = biliClient.userInfo(id.toLong())?.toDrawAuthorData() ?: return null
@@ -213,7 +224,7 @@ enum class LinkType(val regex: List<Regex>) {
     }
 }
 
-suspend fun drawGeneral(id: String, tag: String, time: String, author: ModuleAuthor, imgData: org.jetbrains.skia.Image?): String {
+suspend fun drawGeneral(id: String, tag: String, time: String, author: ModuleAuthor, imgData: org.jetbrains.skia.Image?, area: String? = null): String {
     val colors = BiliConfigManager.config.imageConfig.defaultColor.split(";", "；").map { Color.makeRGB(it.trim()) }
 
     // PGC 内容（番剧、电影等）不显示作者头像部分，且直接返回不加外框
@@ -229,7 +240,21 @@ suspend fun drawGeneral(id: String, tag: String, time: String, author: ModuleAut
     }
 
     // 非 PGC 内容保持原有逻辑
-    val footer = buildFooter(author.name, author.mid, id, time, tag)
+    // 如果是直播且有 area 信息，使用 liveFooter 模板
+    val footer = if (area != null && tag in listOf("直播", "直播中", "轮播中", "未开播")) {
+        val footerTemplate = BiliConfigManager.config.templateConfig.footer.liveFooter
+        if (footerTemplate.isNotBlank()) {
+            footerTemplate
+                .replace("{name}", author.name)
+                .replace("{uid}", author.mid.toString())
+                .replace("{id}", id)
+                .replace("{time}", time)
+                .replace("{type}", tag)
+                .replace("{area}", area)
+        } else null
+    } else {
+        buildFooter(author.name, author.mid, id, time, tag)
+    }
     val imgList = mutableListOf<org.jetbrains.skia.Image>()
     imgList.add(author.drawGeneral(time, VIDEO_LINK(id), colors.first()))
     imgData?.let { imgList.add(it) }

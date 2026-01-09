@@ -38,6 +38,7 @@ suspend fun LiveInfo.drawLive(): Image {
             .replace("{id}", roomId.toString())
             .replace("{time}", liveTime.formatRelativeTime)
             .replace("{type}", "直播")
+            .replace("{area}", area)
         ParagraphBuilder(footerParagraphStyle, FontUtils.fonts).addText(footer).build().layout(cardRect.width)
     } else null
 
