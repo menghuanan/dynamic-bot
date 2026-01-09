@@ -77,4 +77,45 @@ object DynamicCheckTasker : BiliCheckTasker("Dynamic") {
         }
     }
 
+    /**
+     * 手动检查，忽略时间和历史限制，用于 /check 命令
+     * @return 检测到的动态数量
+     */
+    suspend fun executeManualCheck(): Int = withTimeout(180001) {
+        logger.info("$taskerName 手动触发检查（忽略时间限制）...")
+        val dynamicList = client.getNewDynamic()
+        if (dynamicList != null) {
+            val followingUsers = dynamic.filter { it.value.contacts.isNotEmpty() }.map { it.key }
+
+            // 忽略时间和历史限制，只过滤类型和订阅用户
+            val dynamics = dynamicList.items
+                .filter {
+                    !banType.contains(it.type)
+                }.filter {
+                    if (listenAllDynamicMode) true
+                    else if (it.type == DynamicType.DYNAMIC_TYPE_PGC || it.type == DynamicType.DYNAMIC_TYPE_PGC_UNION)
+                        bangumi.contains(it.modules.moduleAuthor.mid)
+                    else followingUsers.contains(it.modules.moduleAuthor.mid)
+                }.sortedByDescending {
+                    it.time  // 按时间降序，最新的在前
+                }.take(1)  // 只取最新的1条
+
+            if (dynamics.isNotEmpty()) {
+                logger.info("手动检查检测到 ${dynamics.size} 条动态")
+                dynamics.forEach {
+                    logger.info("动态: ${it.modules.moduleAuthor.name} - ${it.modules.moduleDynamic.desc?.text?.take(50) ?: "无文本"}")
+                }
+                // 发送到处理流程
+                dynamicChannel.sendAll(dynamics.map { DynamicDetail(it) })
+                dynamics.size
+            } else {
+                logger.info("手动检查未检测到动态")
+                0
+            }
+        } else {
+            logger.warn("手动检查: 获取动态列表失败")
+            0
+        }
+    }
+
 }

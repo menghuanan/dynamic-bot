@@ -67,7 +67,7 @@ object DynamicMessageTasker : BiliTasker() {
             modules.moduleAuthor.mid,
             modules.moduleAuthor.name,
             type,
-            formatTime,
+            formatRelativeTime,
             time.toInt(),
             textContent(),
             dynamicImages(),

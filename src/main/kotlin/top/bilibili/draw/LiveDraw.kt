@@ -36,7 +36,7 @@ suspend fun LiveInfo.drawLive(): Image {
             .replace("{name}", uname)
             .replace("{uid}", uid.toString())
             .replace("{id}", roomId.toString())
-            .replace("{time}", liveTime.formatTime)
+            .replace("{time}", liveTime.formatRelativeTime)
             .replace("{type}", "直播")
         ParagraphBuilder(footerParagraphStyle, FontUtils.fonts).addText(footer).build().layout(cardRect.width)
     } else null
@@ -124,7 +124,7 @@ suspend fun LiveInfo.drawAvatar(): Image {
                 }
             }
             val timeParagraph =
-                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText("$uname  ${liveTime.formatTime}").build()
+                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText("$uname  ${liveTime.formatRelativeTime}").build()
                     .layout(w)
 
             val x = quality.faceSize + quality.cardPadding * 3f

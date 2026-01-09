@@ -42,6 +42,7 @@ data class BiliConfig(
 
 @Serializable
 data class EnableConfig(
+    val debugMode: Boolean = false,
     val drawEnable: Boolean = true,
     val notifyEnable: Boolean = true,
     val liveCloseNotifyEnable: Boolean = true,

@@ -106,9 +106,10 @@ suspend fun loadFonts() {
         // 如果 data/font 目录没有字体文件，尝试从 resources/font 目录加载
         if (!fontLoaded) {
             BiliBiliBot.logger.info("data/font 目录为空，尝试从 resources/font 目录加载字体...")
+            // 只加载实际存在于 resources/font 目录的字体文件
             val resourceFonts = listOf(
-                "/font/LXGWWenKai-Bold.ttf" to "LXGWWenKai-Bold",
-                "/font/LXGWWenKai-Regular.ttf" to "LXGWWenKai-Regular"
+                "/font/SourceHanSansSC-Regular.otf" to "Source Han Sans SC",
+                "/font/FansCard.ttf" to "FansCard"
             )
 
             for ((path, alias) in resourceFonts) {

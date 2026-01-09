@@ -72,8 +72,41 @@ val DynamicItem.formatTime: String
 val Long.formatTime: String
     get() = formatTime()
 
-fun Long.formatTime(template: String = "yyyy年MM月dd日 HH:mm:ss"): String = DateTimeFormatter.ofPattern(template)
+fun Long.formatTime(template: String = "yyyy年MM月dd日 HH:mm"): String = DateTimeFormatter.ofPattern(template)
     .format(LocalDateTime.ofEpochSecond(this, 0, OffsetDateTime.now().offset))
+
+/**
+ * 相对时间显示（开始时间专用）
+ * 5分钟内：刚刚
+ * 5-10分钟：5分钟前
+ * 10-30分钟：10分钟前
+ * 30-60分钟：30分钟前
+ * 1-24小时：X小时前
+ * 1-3天：X天前
+ * 超过3天：显示具体时间
+ */
+val Long.formatRelativeTime: String
+    get() {
+        val now = Instant.now().epochSecond
+        val diff = now - this
+
+        return when {
+            diff < 0 -> formatTime() // 未来时间，显示具体时间
+            diff < 300 -> "刚刚" // 5分钟内
+            diff < 600 -> "5分钟前" // 5-10分钟
+            diff < 1800 -> "10分钟前" // 10-30分钟
+            diff < 3600 -> "30分钟前" // 30-60分钟
+            diff < 7200 -> "1小时前" // 1-2小时
+            diff < 86400 -> "${diff / 3600}小时前" // 2-24小时
+            diff < 172800 -> "一天前" // 1-2天
+            diff < 259200 -> "两天前" // 2-3天
+            diff < 259201 -> "三天前" // 刚好3天
+            else -> formatTime() // 超过3天显示具体时间
+        }
+    }
+
+val DynamicItem.formatRelativeTime: String
+    get() = time.formatRelativeTime
 
 fun Long.formatDuration(isText: Boolean = true): String {
     val duration = Duration.ofSeconds(this)

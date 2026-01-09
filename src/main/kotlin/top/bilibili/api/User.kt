@@ -50,6 +50,15 @@ suspend fun BiliClient.follow(uid: Long): BiliResult {
     }
 }
 
+suspend fun BiliClient.unfollow(uid: Long): BiliResult {
+    return post(FOLLOW) {
+        bodyParameter("fid", uid)
+        bodyParameter("act", 2)
+        bodyParameter("re_src", 11)
+        bodyParameter("csrf", BiliBiliBot.cookie.biliJct)
+    }
+}
+
 suspend fun BiliClient.groupAddUser(uid: Long, tagid: Int): BiliResult {
     return post(ADD_USER) {
         bodyParameter("fids", uid)

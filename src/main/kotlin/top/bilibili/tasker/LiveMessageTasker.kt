@@ -10,7 +10,7 @@ import top.bilibili.data.LiveInfo
 import top.bilibili.data.LiveMessage
 import top.bilibili.draw.makeDrawLive
 import top.bilibili.draw.makeRGB
-import top.bilibili.utils.formatTime
+import top.bilibili.utils.formatRelativeTime
 import top.bilibili.utils.logger
 
 object LiveMessageTasker : BiliTasker() {
@@ -40,7 +40,7 @@ object LiveMessageTasker : BiliTasker() {
             roomId,
             uid,
             this.uname,
-            liveTime.formatTime,
+            liveTime.formatRelativeTime,
             liveTime.toInt(),
             title,
             cover,

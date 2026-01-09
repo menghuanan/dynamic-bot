@@ -144,12 +144,12 @@ enum class LinkType(val regex: List<Regex>) {
         return when (this) {
             VideoLink -> {
                 biliClient.getVideoDetail(id)?.run {
-                    drawGeneral(id, "视频", pubdate.formatTime, toDrawAuthorData(), toDrawData().drawGeneral(true))
+                    drawGeneral(id, "视频", pubdate.formatRelativeTime, toDrawAuthorData(), toDrawData().drawGeneral(true))
                 }
             }
             Article -> {
                 biliClient.getArticleDetail("cv$id")?.run {
-                    drawGeneral(id, "专栏", time.formatTime, author, toDrawData().drawGeneral())
+                    drawGeneral(id, "专栏", time.formatRelativeTime, author, toDrawData().drawGeneral())
                 }
             }
             Dynamic -> {
@@ -166,11 +166,11 @@ enum class LinkType(val regex: List<Regex>) {
                 val room = biliClient.getLiveDetail(id) ?: return null
                 val author = biliClient.userInfo(room.uid)?.toDrawAuthorData() ?: return null
                 val data = room.toDrawData().drawGeneral()
-                drawGeneral(id, "直播", Instant.now().epochSecond.formatTime, author, data)
+                drawGeneral(id, "直播", Instant.now().epochSecond.formatRelativeTime, author, data)
             }
             User -> {
                 val author = biliClient.userInfo(id.toLong())?.toDrawAuthorData() ?: return null
-                drawGeneral(id, "用户", Instant.now().epochSecond.formatTime, author, null)
+                drawGeneral(id, "用户", Instant.now().epochSecond.formatRelativeTime, author, null)
             }
             Pgc -> {
                 val info = biliClient.getPcgInfo(id) ?: return null
@@ -189,7 +189,7 @@ enum class LinkType(val regex: List<Regex>) {
                     is PgcMedia -> info.media.typeName
                     else -> "番剧"
                 }
-                drawGeneral(id, typeName, Instant.now().epochSecond.formatTime, author, data)
+                drawGeneral(id, typeName, Instant.now().epochSecond.formatRelativeTime, author, data)
             }
             ShortLink -> {
                 val link = biliClient.redirect("https://b23.tv/$id")

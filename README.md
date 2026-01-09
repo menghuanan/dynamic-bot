@@ -1,4 +1,4 @@
-# BiliBili 动态推送 Bot v1.2
+# BiliBili 动态推送 Bot v1.3
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
@@ -303,7 +303,8 @@ docker logs -f dynamic-bot
 
 #### 可用标签
 
-- `latest` - 最新版本（v1.2）
+- `latest` - 最新版本（v1.3）
+- `v1.3` - 稳定版本 v1.3
 - `v1.2` - 稳定版本 v1.2
 - `v1.1` - 稳定版本 v1.1
 - `v1.0` - 稳定版本 v1.0
@@ -364,7 +365,7 @@ Windows 用户可使用自动化脚本简化操作：
 **docker-push.ps1** - Docker Hub 推送脚本
 ```powershell
 .\docker-push.ps1 latest     # 推送 latest 标签
-.\docker-push.ps1 v1.2       # 推送指定版本标签
+.\docker-push.ps1 v1.3       # 推送指定版本标签
 ```
 
 ## 开发说明
@@ -399,6 +400,32 @@ Windows 用户可使用自动化脚本简化操作：
    - 文档和示例配置
 
 ## 更新日志
+
+### v1.3 (2026-01-09)
+
+**用户体验优化**
+- ✅ 时间显示优化：实现相对时间显示功能
+  - 5分钟内显示"刚刚"
+  - 5-10分钟显示"5分钟前"
+  - 10-30分钟显示"10分钟前"
+  - 30-60分钟显示"30分钟前"
+  - 1-24小时显示"X小时前"
+  - 1-3天显示"X天前"
+  - 超过3天显示具体时间（yyyy年MM月dd日 HH:mm）
+  - 区分开始时间（使用相对时间）和结束时间（使用绝对时间）
+- ✅ 去除所有时间显示中的秒数，使时间显示更简洁
+
+**功能修复**
+- ✅ 修复 `/check` 命令：从发送5条动态改为只发送1条最新动态
+- ✅ 修复字体加载逻辑：
+  - 移除对不存在字体的加载尝试（LXGWWenKai）
+  - 优先使用内嵌字体（Source Han Sans SC）
+  - 优化默认字体列表，添加 Microsoft YaHei 等常见系统字体
+  - 将字体加载失败日志从 WARN 降级为 DEBUG，减少非关键警告信息
+
+**代码优化**
+- 📝 清理误导性的日志输出，提高日志可读性
+- 📝 完善字体加载流程文档和注释
 
 ### v1.2 (2026-01-08)
 

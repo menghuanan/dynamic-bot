@@ -9,6 +9,7 @@ import top.bilibili.core.BiliBiliBot
 import top.bilibili.BiliConfigManager
 import top.bilibili.SubData
 import top.bilibili.api.follow
+import top.bilibili.api.unfollow
 import top.bilibili.api.groupAddUser
 import top.bilibili.api.isFollow
 import top.bilibili.api.userInfo
@@ -51,6 +52,25 @@ object DynamicService {
         return null
     }
 
+    private suspend fun unfollowUser(uid: Long) {
+        if (uid == BiliBiliBot.uid) return
+
+        // 检查是否还有其他订阅使用这个UP主
+        val hasOtherSubscribers = dynamic[uid]?.contacts?.isNotEmpty() == true
+
+        if (!hasOtherSubscribers && BiliConfigManager.config.accountConfig.autoFollow) {
+            val attr = client.isFollow(uid)?.attribute
+            if (attr != null && attr != 0 && attr != 128) {
+                val res = client.unfollow(uid)
+                if (res.code == 0) {
+                    actionNotify("通知: 账号取消关注 $uid")
+                } else {
+                    logger.error("取消关注失败: ${res.message}")
+                }
+            }
+        }
+    }
+
     suspend fun setColor(uid: Long, color: String) = mutex.withLock {
         color.split(";", "；").forEach {
             if (it.first() != '#' || it.length != 7) return@withLock "格式错误，请输入16进制颜色，如: #d3edfa"
@@ -87,7 +107,11 @@ object DynamicService {
         if (!isFollow(uid, subject)) return@withLock "还未订阅此人哦"
         val user = dynamic[uid]!!
         if (user.contacts.remove(subject)) {
-            if (user.contacts.isEmpty()) dynamic.remove(uid)
+            if (user.contacts.isEmpty()) {
+                dynamic.remove(uid)
+                // 如果没有其他订阅者，且启用了自动关注，则取消关注
+                unfollowUser(uid)
+            }
             if (filter[subject]?.run {
                     remove(uid)
                     isEmpty()

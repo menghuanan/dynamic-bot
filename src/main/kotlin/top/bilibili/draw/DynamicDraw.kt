@@ -84,7 +84,14 @@ val mainTypeface: Typeface by lazy {
 }
 
 fun loadSysDefaultFont(): Typeface {
-    val defaultList = listOf("HarmonyOS Sans SC", "LXGW WenKai", "Source Han Sans", "SimHei", "sans-serif")
+    // 优先使用内嵌字体，然后尝试常见的系统字体
+    val defaultList = listOf(
+        "Source Han Sans SC",  // 内嵌字体：SourceHanSansSC-Regular.otf
+        "Source Han Sans",
+        "Microsoft YaHei",     // Windows 系统字体
+        "SimHei",              // Windows 系统字体
+        "sans-serif"           // 通用字体
+    )
     defaultList.forEach {
         try {
 
@@ -92,7 +99,7 @@ fun loadSysDefaultFont(): Typeface {
             logger.info("加载默认字体 $it 成功")
             return f
         } catch (e: Exception) {
-            logger.warn("尝试加载默认字体 $it 失败: ${e.message}")
+            logger.debug("尝试加载默认字体 $it 失败: ${e.message}")
         }
     }
     throw Exception("无法加载默认字体, 请自行配置字体或准备字体文件")
@@ -209,7 +216,7 @@ suspend fun DynamicItem.makeDrawDynamic(colors: List<Int>): String {
 suspend fun DynamicItem.drawDynamic(themeColor: Int, isForward: Boolean = false): Image {
     val orig = orig?.drawDynamic(themeColor, type == DYNAMIC_TYPE_FORWARD)
 
-    var imgList = modules.makeGeneral(formatTime, link, type, themeColor, isForward, isUnlocked())
+    var imgList = modules.makeGeneral(formatRelativeTime, link, type, themeColor, isForward, isUnlocked())
 
     // 调整附加卡片顺序
     if (orig != null) {
@@ -230,7 +237,7 @@ suspend fun DynamicItem.drawDynamic(themeColor: Int, isForward: Boolean = false)
     }
 
     val footer = if (!isForward) {
-        buildFooter(modules.moduleAuthor.name, modules.moduleAuthor.mid, did, formatTime, type.text)
+        buildFooter(modules.moduleAuthor.name, modules.moduleAuthor.mid, did, formatRelativeTime, type.text)
     } else null
 
     return imgList.assembleCard(did, footer, plusHeight, isForward)

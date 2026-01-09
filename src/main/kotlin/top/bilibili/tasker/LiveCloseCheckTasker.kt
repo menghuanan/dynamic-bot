@@ -6,6 +6,7 @@ import top.bilibili.api.getLiveStatus
 import top.bilibili.data.LIVE_LINK
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.utils.formatDuration
+import top.bilibili.utils.formatRelativeTime
 import top.bilibili.utils.formatTime
 import java.time.Instant
 
@@ -33,7 +34,7 @@ object LiveCloseCheckTasker : BiliCheckTasker("LiveClose")  {
                     info.roomId,
                     info.uid,
                     info.uname,
-                    liveTime.formatTime,
+                    liveTime.formatRelativeTime,
                     0,
                     nowTime.formatTime,
                     (nowTime - liveTime).formatDuration(),
