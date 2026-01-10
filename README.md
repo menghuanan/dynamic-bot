@@ -8,31 +8,36 @@
 代码部分则由 [claude](https://github.com/claude) 倾力打造。  
 这是基于 NapCat 的 B站动态推送机器人，支持动态订阅、直播通知、链接解析等功能。
 
+## 预览效果
+
+<img src="docs/dynamic.png" width="400" alt="预览图片1">
+<img src="docs/bangumi.png" width="400" alt="预览图片2">
+<img src="docs/live.png" width="400" alt="预览图片3">
+
 ## 项目结构
 
 ```
 dynamic-bot/
-├── src/                    # 源代码目录
-│   ├── main/
-│   │   ├── kotlin/        # Kotlin 源代码
-│   │   │   └── top/
-│   │   │       └── bilibili/
-│   │   │           ├── api/           # B站 API 接口
-│   │   │           ├── client/        # HTTP 客户端
-│   │   │           ├── config/        # 配置管理
-│   │   │           ├── core/          # 核心模块
-│   │   │           ├── data/          # 数据模型
-│   │   │           ├── draw/          # 图片渲染
-│   │   │           ├── napcat/        # NapCat 客户端
-│   │   │           ├── service/       # 业务服务
-│   │   │           ├── tasker/        # 定时任务
-│   │   │           ├── utils/         # 工具类
-│   │   │           ├── BiliConfig.kt  # 配置文件
-│   │   │           ├── BiliData.kt    # 数据文件
-│   │   │           └── Main.kt        # 程序入口
-│   │   └── resources/     # 资源文件
-│   │       └── font/      # 字体文件（可选）
-│   └── test/              # （已删除旧的 Mirai 测试）
+├── src/main/kotlin/top/      # 源代码目录
+│   └── bilibili/
+│   ├── api/           # B站 API 接口
+│   ├── client/        # HTTP 客户端
+│   ├── config/        # 配置管理
+│   ├── core/          # 核心模块
+│   ├── data/          # 数据模型
+│   ├── draw/          # 图片渲染
+│   ├── napcat/        # NapCat 客户端
+│   ├── service/       # 业务服务
+│   ├── tasker/        # 定时任务
+│   ├── utils/         # 工具类
+│   ├── BiliConfig.kt  # 配置文件
+│   ├── BiliData.kt    # 数据文件
+│   └── Main.kt        # 程序入口
+├── src/main/resources/      # 资源文件
+│   └── font/         # 字体文件
+│   ├── icon/         # 图标文件
+│   ├── image/        # 图片文件
+│   └── logback.xml   # 日志文件
 ├── gradle/                # Gradle wrapper
 ├── build.gradle.kts       # Gradle 构建脚本
 ├── settings.gradle.kts    # Gradle 设置
@@ -63,7 +68,7 @@ dynamic-bot/
 ```
 
 编译完成后,可执行文件位于：
-- `build/libs/dynamic-bot-1.2.jar`
+- `build/libs/dynamic-bot-1.3.1.jar`
 
 ### 2. 配置文件
 
@@ -71,16 +76,20 @@ dynamic-bot/
 
 ```
 config/
-├── bot.yml          # Bot 基础配置（NapCat 连接信息）
-└── data.yml         # 订阅数据和推送配置
+├── bot.yml              # Bot 基础配置（NapCat 连接信息）
+├── BiliData.yml         # 订阅数据和推送配置
+└── BiliConfig.yml       # 配置文件
 
 data/
-├── font/            # 字体文件目录
-└── cookies.json     # B站 Cookie（可选）
+├── font/                # 字体文件目录
+├── cache/               # 缓存文件目录
+└── image_cache/         # 图片缓存目录
 
-temp/                # 临时文件目录（二维码、缓存等）
+temp/                    # 临时文件目录（二维码、缓存等）
 
-logs/                # 日志文件目录
+logs/                
+├── bilibili-bot.log     # 主日志文件
+└── error.log            # 错误日志文件
 ```
 
 ### 3. 运行 Bot
@@ -88,7 +97,7 @@ logs/                # 日志文件目录
 #### 方式一：直接运行 JAR
 
 ```bash
-java -jar build/libs/dynamic-bot-1.2.jar
+java -jar build/libs/dynamic-bot-1.3.1.jar
 ```
 
 #### 方式二：使用 Docker Hub 镜像（推荐）
@@ -124,40 +133,58 @@ docker run -d --name dynamic-bot \
 - 支持自定义推送模板
 - 支持直播开播/关播通知
 
-### 3. 管理命令
+### 3. 管理命令（均需要管理员权限）
 
 #### 基础命令
-- `/subscribe <UID>` - 订阅用户
-- `/unsubscribe <UID>` - 取消订阅
-- `/list` - 查看订阅列表
 - `/check` - 手动触发检查（测试用）
 - `/login` - B站扫码登录
+- `/bili help` - 显示此帮助 
 
 #### 高级命令（/bili）
-- `/bili help` - 显示完整帮助
-- `/bili add <UID> <群号>` - 将 UP主添加到指定群
-- `/bili list` - 查看当前群订阅（无参）
-- `/bili list <UID>` - 查看 UID 推送到哪些群
-- `/bili group create <分组名>` - 创建群组分组
+订阅管理:
+- `/bili add <UID> <群号>` - 添加订阅到指定群
+- `/bili remove <UID> <群号>` - 从指定群移除订阅
+- `/bili list` - 查看当前群的订阅
+- `/bili list <UID>` - 查看UID推送到哪些群
+
+分组管理:
+- `/bili group create <分组名>` - 创建分组
+- `/bili group delete <分组名>` - 删除分组
+- `/bili group add <分组名> <群号>` - 将群加入分组
+- `/bili group remove <分组名> <群号>` - 从分组移除群
+- `/bili group list [分组名]` - 查看分组信息
 - `/bili group subscribe <分组名> <UID>` - 订阅到分组
-- `/bili groups` - 查看所有分组信息
+- `/bili groups` - 查看所有分组
+
+过滤器管理（支持黑名单与白名单）:
+- `/bili filter add <UID> <type|regex> <模式> <内容>` - 添加过滤器
+  - type模式: `/bili filter add <UID> type <black|white> <动态|转发动态|视频|音乐|专栏|直播>`
+  - regex模式: `/bili filter add <UID> regex <black|white> <正则表达式>`
+- `/bili filter list <UID>` - 查看过滤器
+- `/bili filter del <UID> <索引>` - 删除过滤器(如 t0, r1)
+
+其他:
+- `/bili help` - 显示此帮助 
 
 ## 配置说明
 
 ### bot.yml 示例
 
 ```yaml
-# NapCat WebSocket 配置
 napcat:
-  host: "127.0.0.1"
-  port: 3001
-  accessToken: ""  # 如果设置了访问令牌
-
-# 管理员 QQ 号
-admin: 123456789
+  host: "127.0.0.1"     # NapCat WebSocket 主机地址
+  port: 3001            # NapCat WebSocket 端口
+  token: ""             # NapCat WebSocket 访问令牌 （如有）
+  heartbeat_interval: 30000  # 心跳间隔（毫秒）
+  reconnect_interval: 5000   # 重连间隔（毫秒）
+  message_format: "array"    # 消息格式：array/string
+  max_reconnect_attempts: -1 # 最大重连尝试次数（-1表示无限次）
+  connect_timeout: 10000     # 连接超时（毫秒）
+targets: []
+admins: []   # 管理员 QQ 号
 ```
 
-### data.yml 示例
+### BiliData.yml 示例
 
 ```yaml
 # 动态订阅数据
@@ -169,40 +196,90 @@ dynamic:
       - "group:987654321"  # 群聊
       - "private:123456789"  # 私聊
     banList: {}
+```
+### BiliConfig.yml 示例
 
-# 检查配置
-checkConfig:
-  interval: 15  # 动态检查间隔（秒）
-  liveInterval: 15  # 直播检查间隔（秒）
-  timeout: 10  # API 请求超时（秒）
-
-# 推送配置
+```yaml
+admin: 0                      # 管理员 QQ 号
+enableConfig:                 # 启用配置
+  drawEnable: true            # 是否启用绘制功能
+  notifyEnable: true          # 是否启用通知功能
+  liveCloseNotifyEnable: true # 是否启用直播关播通知
+  lowSpeedEnable: true        # 是否启用低速度检测
+  translateEnable: false      # 是否启用翻译功能
+  proxyEnable: false          # 是否启用代理功能
+  cacheClearEnable: true      # 是否清理缓存
+  showLoadingMessage: true    # 是否显示加载信息
+accountConfig:                # 账户配置
+  cookie: ""                  # cookie
+  autoFollow: true            # 是否自动关注
+  followGroup: "Bot关注"
+checkConfig:                  # 此部分的功能已失效
+  interval: 15  
+  liveInterval: 15  
+  lowSpeed: "0-0x2"  
+  checkReportInterval: 10  
+  timeout: 10  
 pushConfig:
-  toShortLink: false  # 是否使用短链接
-  pushInterval: 1000  # 推送间隔（毫秒）
-  messageInterval: 500  # 消息间隔（毫秒）
-
-# 缓存配置
+  messageInterval: 100  # 消息间隔（毫秒）
+  pushInterval: 500  # 推送间隔（毫秒）
+  toShortLink: false  # 是否转换为短链接
+imageConfig:
+  quality: "1000w"  # 图片质量（1000w/500w/200w）
+  theme: "v3"  # 图片主题（v3/v2/v1）
+  font: ""  # 自定义字体（如"宋体"）
+  defaultColor: "#d3edfa"  # 默认颜色（十六进制）
+  cardOrnament: "FanCard"  # 名片装饰（FanCard/None）
+templateConfig:
+  defaultDynamicPush: "OneMsg"
+  defaultLivePush: "OneMsg"
+  defaultLiveClose: "SimpleMsg"
+  dynamicPush:
+    "DrawOnly": "{draw}"
+    "TextOnly": "{name}@{type}\n{link}\n{content}\n{images}"
+    "OneMsg": "{draw}\n{name}@{type}\n{link}"
+    "TwoMsg": "{draw}\r{name}@{uid}@{type}\n{time}\n{link}"
+  livePush:
+    "DrawOnly": "{draw}"
+    "TextOnly": "{name}@直播\n{link}\n标题: {title}"
+    "OneMsg": "{draw}\n{name}@直播\n{link}"
+    "TwoMsg": "{draw}\r{name}@{uid}@直播\n{title}\n{time}\n{link}"
+  liveClose:
+    "SimpleMsg": "{name} 直播结束啦!\n直播时长: {duration}"
+    "ComplexMsg": "{name} 直播结束啦!\n标题: {title}\n直播时长: {duration}"
+  footer:
+    dynamicFooter: ""
+    liveFooter: ""
+    footerAlign: "LEFT"
 cacheConfig:
+  downloadOriginal: true  #是否下载原文件
   expires:
-    "DRAW": 7        # 绘图缓存保留7天
-    "IMAGES": 7      # 图片缓存保留7天
-    "EMOJI": 7       # 表情缓存保留7天
-
-# 链接解析配置
+    "DRAW": 7
+    "IMAGES": 7
+    "EMOJI": 7
+    "USER": 7
+    "OTHER": 7
+proxyConfig:
+  proxy: []
+translateConfig:
+  cutLine: "\n\n〓〓〓 翻译 〓〓〓\n"
+  baidu:
+    APP_ID: ""
+    SECURITY_KEY: ""
 linkResolveConfig:
-  triggerMode: "Always"  # 触发模式：Always/At/Never
-  returnLink: true  # 是否返回链接
-
-# 推送模板配置
-dynamicPush: "{draw}\n{name}@{type}\n{link}"
-livePush: "{draw}\n{name}@直播\n{link}"
-liveClose: "{name} 直播结束啦!\n直播时长: {duration}"
-
-# 功能开关
-drawEnable: true  # 启用图片生成
-liveCloseNotifyEnable: true  # 启用下播通知
-cacheClearEnable: true  # 启用定时缓存清理
+  triggerMode: "At"   #触发方式At(@bot时触发) Always(一直)
+  returnLink: false   #是否返回链接
+  regex:
+  - "(www\\.bilibili\\.com/video/((BV[0-9A-z]{10})|(av\\d{1,20})))|^(BV[0-9A-z]{10})|^(av\\\
+    d{1,20})"
+  - "(www\\.bilibili\\.com/read/cv\\d{1,10})|^(cv\\d{1,10})|(www\\.bilibili\\.com/read/mobile/\\\
+    d{1,10})"
+  - "((www|m)\\.bilibili\\.com/bangumi/(play|media)/(ss|ep|md)\\d+)|^((ss|ep|md)\\\
+    d+)"
+  - "([tm]\\.bilibili\\.com/(dynamic/)?\\d+)|(www\\.bilibili\\.com/opus/\\d+)"
+  - "live\\.bilibili\\.com/(h5/)?\\d+"
+  - "space\\.bilibili\\.com/\\d+"
+  - "(b23\\.tv|bili2233\\.cn)\\\\?/[0-9A-z]+"
 ```
 
 ## Docker 部署
@@ -278,9 +355,9 @@ docker-compose up -d
 
 ```yaml
 napcat:
-  host: "host.docker.internal"  # Docker 访问宿主机的特殊域名
-  port: 3001
-  token: ""
+  host: "NapCat WebSocket 主机地址"  
+  port: 3001    #默认3001
+  token: ""     #如果有则填入，没有不填
 
 admin: 你的QQ号
 ```
@@ -303,7 +380,8 @@ docker logs -f dynamic-bot
 
 #### 可用标签
 
-- `latest` - 最新版本（v1.3）
+- `latest` - 最新版本（v1.3.1）
+- `v1.3.1` - 稳定版本 v1.3.1
 - `v1.3` - 稳定版本 v1.3
 - `v1.2` - 稳定版本 v1.2
 - `v1.1` - 稳定版本 v1.1
@@ -541,35 +619,14 @@ Windows 用户可使用自动化脚本简化操作：
 
 如果遇到问题需要提交 Bug 报告，可以启用 DEBUG 级别日志来获取更详细的信息：
 
-1. **修改日志配置文件**
+1. **启动时加入--debug**
 
-   编辑 `src/main/resources/logback.xml` 文件，将以下两行的 `INFO` 改为 `DEBUG`：
+   在启动时加入--debug ：
 
-   ```xml
-   <!-- 应用日志级别 -->
-   <logger name="top.bilibili" level="DEBUG"/>
-
-   <root level="DEBUG">
+   ```powershell
+   java -jar dynamic-bot-1.3.1.jar --debug
    ```
-
-2. **重新编译并运行**
-
-   ```bash
-   ./gradlew build
-   java -jar build/libs/dynamic-bot-all.jar
-   ```
-
-3. **Docker 环境启用 DEBUG**
-
-   如果使用 Docker，需要重新构建镜像：
-
-   ```bash
-   # 修改 logback.xml 后重新构建
-   docker-compose build
-   docker-compose up -d
-   ```
-
-4. **查看日志**
+2. **查看日志**
 
    - 控制台会显示 DEBUG 级别的详细日志
    - 日志文件位于 `logs/bilibili-bot.log`
