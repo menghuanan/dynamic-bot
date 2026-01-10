@@ -11,6 +11,68 @@ import top.bilibili.utils.*
 import kotlin.math.ceil
 
 
+private fun formatPgcEvaluateText(
+    rawText: String,
+    textAreaWidth: Float,
+    fontSize: Float
+): String {
+    val normalizedText = rawText.replace("\r\n", "\n")
+    val sizedFont = font.makeWithSize(fontSize)
+
+    fun textWidth(s: String): Float = TextLine.make(s, sizedFont).width
+
+    fun wrapByWidth(text: String): List<String> {
+        val result = mutableListOf<String>()
+        var index = 0
+        while (index < text.length) {
+            if (text[index] == '\n') {
+                result.add("")
+                index++
+                continue
+            }
+
+            val nextNewline = text.indexOf('\n', index).let { if (it == -1) text.length else it }
+            val available = nextNewline - index
+            if (available <= 0) {
+                index = nextNewline + 1
+                continue
+            }
+
+            var low = 1
+            var high = available
+            var best = 1
+
+            while (low <= high) {
+                val mid = (low + high) ushr 1
+                val candidate = text.substring(index, index + mid)
+                if (textWidth(candidate) <= textAreaWidth) {
+                    best = mid
+                    low = mid + 1
+                } else {
+                    high = mid - 1
+                }
+            }
+
+            result.add(text.substring(index, index + best))
+            index += best
+
+            if (index == nextNewline && index < text.length && text[index] == '\n') {
+                index++
+            }
+        }
+        return result
+    }
+
+    val lines = wrapByWidth(normalizedText)
+
+    if (lines.size < 5) return lines.joinToString("\n")
+
+    val firstSix = lines.take(5).toMutableList()
+    val sixthLine = firstSix[4]
+    firstSix[4] = if (sixthLine.length >= 15) sixthLine.substring(0, 14) + "…" else sixthLine
+    return firstSix.joinToString("\n")
+}
+
 suspend fun ModuleDynamic.Major.makeGeneral(isForward: Boolean = false): Image {
     return when (type) {
         "MAJOR_TYPE_ARCHIVE" -> if (isForward) archive!!.drawSmall() else archive!!.drawGeneral()
@@ -486,17 +548,23 @@ suspend fun drawPgcCard(
 
     // 第五行：介绍
     val evaluateText = evaluate?.takeIf { it.isNotBlank() } ?: ""
-    val evaluateStyle = ParagraphStyle().apply {
-        maxLinesCount = 8
-        ellipsis = "..."
-        alignment = Alignment.LEFT
-        textStyle = descTextStyle.apply {
-            fontSize = quality.subTitleFontSize * 0.85f
-        }
+    val evaluateTextStyle = descTextStyle.apply {
+        fontSize = quality.subTitleFontSize * 0.85f
     }
-    val evaluateParagraph = if (evaluateText.isNotEmpty()) {
+    val evaluateTextForRender = if (evaluateText.isNotEmpty()) {
+        formatPgcEvaluateText(evaluateText, textAreaWidth, evaluateTextStyle.fontSize)
+    } else {
+        ""
+    }
+    val evaluateStyle = ParagraphStyle().apply {
+        maxLinesCount = 5
+        ellipsis = ""
+        alignment = Alignment.LEFT
+        textStyle = evaluateTextStyle
+    }
+    val evaluateParagraph = if (evaluateTextForRender.isNotEmpty()) {
         ParagraphBuilder(evaluateStyle, FontUtils.fonts)
-            .addText(evaluateText)
+            .addText(evaluateTextForRender)
             .build()
             .layout(textAreaWidth)
     } else null
