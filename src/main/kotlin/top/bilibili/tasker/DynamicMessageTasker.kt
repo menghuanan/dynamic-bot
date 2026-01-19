@@ -1,4 +1,4 @@
-﻿package top.bilibili.tasker
+package top.bilibili.tasker
 
 import kotlinx.coroutines.withTimeout
 import org.jetbrains.skia.Color
@@ -62,11 +62,16 @@ object DynamicMessageTasker : BiliTasker() {
             logger.warn("专栏消息转换失败", e)
         }
 
+        val pgcSeasonId = if (type == DYNAMIC_TYPE_PGC || type == DYNAMIC_TYPE_PGC_UNION) {
+            modules.moduleDynamic.major?.pgc?.seasonId?.toLong()
+        } else null
+
         return DynamicMessage(
             did,
             modules.moduleAuthor.mid,
             modules.moduleAuthor.name,
             type,
+            pgcSeasonId,
             formatRelativeTime,
             time.toInt(),
             textContent(),

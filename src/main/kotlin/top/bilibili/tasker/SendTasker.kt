@@ -87,14 +87,26 @@ object SendTasker : BiliTasker("SendTasker") {
      * 发送消息到所有订阅者
      */
     private suspend fun sendToSubscribers(message: BiliMessage) {
-        // 获取订阅数据
-        val subData = BiliData.dynamic[message.mid]
-        if (subData == null) {
+        val dynamicMessage = message as? DynamicMessage
+        val isPgcMessage = dynamicMessage != null &&
+            (dynamicMessage.type == DynamicType.DYNAMIC_TYPE_PGC || dynamicMessage.type == DynamicType.DYNAMIC_TYPE_PGC_UNION)
+        val useBangumi = isPgcMessage && dynamicMessage?.pgcSeasonId != null
+        val bangumiSub = if (useBangumi) BiliData.bangumi[dynamicMessage?.pgcSeasonId] else null
+        val dynamicSub = if (!useBangumi) BiliData.dynamic[message.mid] else null
+
+        if (useBangumi && bangumiSub == null) {
+            BiliBiliBot.logger.warn("番剧 ${dynamicMessage?.pgcSeasonId} 没有订阅数据，无法推送")
+            return
+        }
+        if (!useBangumi && dynamicSub == null) {
             BiliBiliBot.logger.warn("用户 ${message.mid} 没有订阅数据，无法推送")
             return
         }
 
-        BiliBiliBot.logger.info("准备推送到 ${subData.contacts.size} 个联系人")
+        val contacts = if (useBangumi) bangumiSub!!.contacts else dynamicSub!!.contacts
+        val banList = if (useBangumi) emptySet() else dynamicSub!!.banList.keys
+
+        BiliBiliBot.logger.info("准备推送到 ${contacts.size} 个联系人")
 
         // 如果消息已指定联系人，只发送给该联系人
         val specificContact = message.contact
@@ -111,13 +123,13 @@ object SendTasker : BiliTasker("SendTasker") {
         }
 
         // 发送给所有订阅该用户的联系人
-        for (contactStr in subData.contacts) {
+        for (contactStr in contacts) {
             try {
                 BiliBiliBot.logger.info("处理联系人: $contactStr")
                 val contact = parseContactId(contactStr) ?: continue
 
                 // 检查是否被禁用
-                if (subData.banList.containsKey(contactStr)) {
+                if (banList.contains(contactStr)) {
                     BiliBiliBot.logger.debug("联系人 $contactStr 已禁用推送")
                     continue
                 }
@@ -152,7 +164,15 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     private fun shouldSendDynamicToContact(message: DynamicMessage, contactStr: String): Boolean {
-        val dynamicFilter = getDynamicFilter(contactStr, message.mid) ?: return true
+        val filterKey = if (
+            (message.type == DynamicType.DYNAMIC_TYPE_PGC || message.type == DynamicType.DYNAMIC_TYPE_PGC_UNION) &&
+            message.pgcSeasonId != null
+        ) {
+            message.pgcSeasonId
+        } else {
+            message.mid
+        }
+        val dynamicFilter = getDynamicFilter(contactStr, filterKey) ?: return true
 
         if (!passesTypeFilter(message.type, dynamicFilter)) return false
         if (!passesRegularFilter(message.content, dynamicFilter)) return false

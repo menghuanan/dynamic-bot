@@ -19,6 +19,7 @@ data class DynamicMessage(
     override val mid: Long,
     override val name: String,
     val type: DynamicType,
+    val pgcSeasonId: Long? = null,
     override val time: String,
     override val timestamp: Int,
     val content: String,

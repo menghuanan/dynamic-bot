@@ -543,10 +543,10 @@ object BiliBiliBot : CoroutineScope {
             /bili 命令帮助:
 
             订阅管理:
-            /bili add <UID> <群号> - 添加订阅到指定群
-            /bili remove <UID> <群号> - 从指定群移除订阅
+            /bili add <UID|ss|md|ep> <群号> - 添加订阅到指定群
+            /bili remove <UID|ss|md|ep> <群号> - 从指定群移除订阅
             /bili list - 查看当前群的订阅
-            /bili list <UID> - 查看UID推送到哪些群
+            /bili list <UID|ss|md> - 查看订阅推送到哪些群
 
             分组管理:
             /bili group create <分组名> - 创建分组
@@ -554,7 +554,7 @@ object BiliBiliBot : CoroutineScope {
             /bili group add <分组名> <群号> - 将群加入分组
             /bili group remove <分组名> <群号> - 从分组移除群
             /bili group list [分组名] - 查看分组信息
-            /bili group subscribe <分组名> <UID> - 订阅到分组
+            /bili group subscribe <分组名> <UID|ss|md|ep> - 订阅到分组
             /bili group unsubscribe <分组名> <UID> - 从分组移除订阅
             /bili groups - 查看所有分组
 
@@ -576,25 +576,35 @@ object BiliBiliBot : CoroutineScope {
     /** 处理 /bili add */
     private suspend fun handleBiliAdd(contactId: Long, args: List<String>, isGroup: Boolean) {
         if (args.size < 3) {
-            val msg = "用法: /bili add <UID> <群号>\n示例: /bili add 123456 987654321"
+            val msg = "用法: /bili add <UID|ss|md|ep> <群号>\n示例: /bili add 123456 987654321"
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
             return
         }
 
-        val uid = args[1].toLongOrNull()
+        val id = args[1]
         val targetGroupId = args[2].toLongOrNull()
 
-        if (uid == null || targetGroupId == null) {
+        if (targetGroupId == null) {
             val msg = "UID 或群号格式错误"
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
             return
         }
 
-        // 使用 DynamicService 添加订阅（会自动处理关注逻辑）
         val targetContactStr = "group:$targetGroupId"
-        val result = top.bilibili.service.DynamicService.addSubscribe(uid, targetContactStr, isSelf = false)
+        val result = if (top.bilibili.service.pgcRegex.matches(id)) {
+            top.bilibili.service.PgcService.followPgc(id, targetContactStr)
+        } else {
+            val uid = id.toLongOrNull()
+            if (uid == null) {
+                val msg = "UID 或群号格式错误"
+                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                return
+            }
+            top.bilibili.service.DynamicService.addSubscribe(uid, targetContactStr, isSelf = false)
+        }
 
         top.bilibili.BiliConfigManager.saveData()
 
@@ -605,25 +615,35 @@ object BiliBiliBot : CoroutineScope {
     /** 处理 /bili remove */
     private suspend fun handleBiliRemove(contactId: Long, args: List<String>, isGroup: Boolean) {
         if (args.size < 3) {
-            val msg = "用法: /bili remove <UID> <群号>\n示例: /bili remove 123456 987654321"
+            val msg = "用法: /bili remove <UID|ss|md|ep> <群号>\n示例: /bili remove 123456 987654321"
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
             return
         }
 
-        val uid = args[1].toLongOrNull()
+        val id = args[1]
         val targetGroupId = args[2].toLongOrNull()
 
-        if (uid == null || targetGroupId == null) {
+        if (targetGroupId == null) {
             val msg = "UID 或群号格式错误"
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
             return
         }
 
-        // 使用 DynamicService 移除订阅（会自动处理取消关注逻辑）
         val targetContactStr = "group:$targetGroupId"
-        val result = top.bilibili.service.DynamicService.removeSubscribe(uid, targetContactStr, isSelf = false)
+        val result = if (top.bilibili.service.pgcRegex.matches(id)) {
+            top.bilibili.service.PgcService.delPgc(id, targetContactStr)
+        } else {
+            val uid = id.toLongOrNull()
+            if (uid == null) {
+                val msg = "UID 或群号格式错误"
+                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                return
+            }
+            top.bilibili.service.DynamicService.removeSubscribe(uid, targetContactStr, isSelf = false)
+        }
 
         top.bilibili.BiliConfigManager.saveData()
 
@@ -636,9 +656,13 @@ object BiliBiliBot : CoroutineScope {
         if (args.size == 1) {
             // 查看当前群的订阅
             val contactStr = "group:$contactId"
-            val subscriptions = top.bilibili.BiliData.dynamic
+            val userSubscriptions = top.bilibili.BiliData.dynamic
                 .filter { contactStr in it.value.contacts }
                 .map { "${it.value.name} (UID: ${it.key})" }
+            val bangumiSubscriptions = top.bilibili.BiliData.bangumi
+                .filter { contactStr in it.value.contacts }
+                .map { "${it.value.title} (ss${it.value.seasonId})" }
+            val subscriptions = userSubscriptions + bangumiSubscriptions
 
             val msg = if (subscriptions.isEmpty()) {
                 "当前群没有任何订阅"
@@ -649,10 +673,47 @@ object BiliBiliBot : CoroutineScope {
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
         } else {
+            val id = args[1]
+            if (top.bilibili.service.pgcRegex.matches(id)) {
+                val match = top.bilibili.service.pgcRegex.find(id)!!
+                val idType = match.groupValues[1]
+                val idValue = match.groupValues[2].toLong()
+
+                val bangumi = when (idType) {
+                    "ss" -> top.bilibili.BiliData.bangumi[idValue]
+                    "md" -> top.bilibili.BiliData.bangumi.values.firstOrNull { it.mediaId == idValue }
+                    "ep" -> null
+                    else -> null
+                }
+
+                val msg = when (idType) {
+                    "ep" -> "无法通过 ep 查询，请使用 ss 或 md"
+                    "ss", "md" -> {
+                        if (bangumi == null) {
+                            "没有订阅过番剧: ${idType}${idValue}"
+                        } else {
+                            val groups = bangumi.contacts
+                                .filter { it.startsWith("group:") }
+                                .map { it.removePrefix("group:") }
+                            if (groups.isEmpty()) {
+                                "${bangumi.title} (ss${bangumi.seasonId})\n没有推送到任何群"
+                            } else {
+                                "${bangumi.title} (ss${bangumi.seasonId})\n推送到以下群:\n${groups.joinToString("\n")}"
+                            }
+                        }
+                    }
+                    else -> "ID 格式错误"
+                }
+
+                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                return
+            }
+
             // 查看指定 UID 推送到哪些群
-            val uid = args[1].toLongOrNull()
+            val uid = id.toLongOrNull()
             if (uid == null) {
-                val msg = "UID 格式错误"
+                val msg = "UID 或番剧ID 格式错误"
                 if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
                 else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
                 return
@@ -901,21 +962,14 @@ object BiliBiliBot : CoroutineScope {
     /** 订阅到分组 */
     private suspend fun handleBiliGroupSubscribe(contactId: Long, args: List<String>, isGroup: Boolean) {
         if (args.size < 4) {
-            val msg = "用法: /bili group subscribe <分组名> <UID>"
+            val msg = "用法: /bili group subscribe <分组名> <UID|ss|md|ep>"
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
             return
         }
 
         val groupName = args[2]
-        val uid = args[3].toLongOrNull()
-
-        if (uid == null) {
-            val msg = "UID 格式错误"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
+        val id = args[3]
 
         val group = top.bilibili.BiliData.group[groupName]
         if (group == null) {
@@ -939,7 +993,18 @@ object BiliBiliBot : CoroutineScope {
 
         for (contact in group.contacts) {
             try {
-                val result = top.bilibili.service.DynamicService.addSubscribe(uid, contact, isSelf = false)
+                val result = if (top.bilibili.service.pgcRegex.matches(id)) {
+                    top.bilibili.service.PgcService.followPgc(id, contact)
+                } else {
+                    val uid = id.toLongOrNull()
+                    if (uid == null) {
+                        val msg = "UID 格式错误"
+                        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                        return
+                    }
+                    top.bilibili.service.DynamicService.addSubscribe(uid, contact, isSelf = false)
+                }
                 // 如果包含"成功"或者不包含错误提示，则认为添加成功
                 if (!result.contains("订阅过") && (result.contains("成功") || !result.contains("失败") && !result.contains("错误"))) {
                     addedCount++
@@ -960,7 +1025,7 @@ object BiliBiliBot : CoroutineScope {
         } else {
             buildString {
                 appendLine("订阅操作完成！")
-                appendLine("UID: $uid")
+                appendLine("UID: $id")
                 appendLine("分组: $groupName")
                 appendLine("成功添加: $addedCount 个联系人")
                 if (firstError != null) {
