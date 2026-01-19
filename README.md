@@ -1,4 +1,4 @@
-# BiliBili 动态推送 Bot v1.3
+# BiliBili 动态推送 Bot v1.4
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
@@ -68,7 +68,7 @@ dynamic-bot/
 ```
 
 编译完成后,可执行文件位于：
-- `build/libs/dynamic-bot-1.3.1.jar`
+- `build/libs/dynamic-bot-1.4.jar`
 
 ### 2. 配置文件
 
@@ -97,7 +97,7 @@ logs/
 #### 方式一：直接运行 JAR
 
 ```bash
-java -jar build/libs/dynamic-bot-1.3.1.jar
+java -jar build/libs/dynamic-bot-1.4.jar
 ```
 
 #### 方式二：使用 Docker Hub 镜像（推荐）
@@ -380,7 +380,9 @@ docker logs -f dynamic-bot
 
 #### 可用标签
 
-- `latest` - 最新版本（v1.3.1）
+- `latest` - 最新版本（v1.4）
+- `v1.4` - 稳定版本 v1.4
+- `v1.3.1` - 稳定版本 v1.3.2
 - `v1.3.1` - 稳定版本 v1.3.1
 - `v1.3` - 稳定版本 v1.3
 - `v1.2` - 稳定版本 v1.2
@@ -443,7 +445,7 @@ Windows 用户可使用自动化脚本简化操作：
 **docker-push.ps1** - Docker Hub 推送脚本
 ```powershell
 .\docker-push.ps1 latest     # 推送 latest 标签
-.\docker-push.ps1 v1.3       # 推送指定版本标签
+.\docker-push.ps1 v1.4       # 推送指定版本标签
 ```
 
 ## 开发说明
@@ -624,7 +626,7 @@ Windows 用户可使用自动化脚本简化操作：
    在启动时加入--debug ：
 
    ```powershell
-   java -jar dynamic-bot-1.3.1.jar --debug
+   java -jar dynamic-bot-1.4.jar --debug
    ```
 2. **查看日志**
 

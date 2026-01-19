@@ -25,7 +25,7 @@ fun main(args: Array<String>) {
         // 显示帮助信息
         if (showHelp) {
             println("""
-                BiliBili 动态推送 Bot v1.3.2
+                BiliBili 动态推送 Bot v1.4
 
                 用法: java -jar dynamic-bot.jar [选项]
 

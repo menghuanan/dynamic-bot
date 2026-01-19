@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "top.bilibili"
-version = "1.3.2"
+version = "1.4"
 
 repositories {
     mavenLocal()
@@ -84,7 +84,7 @@ tasks.test {
 tasks.shadowJar {
     archiveBaseName.set("dynamic-bot")
     archiveClassifier.set("")
-    archiveVersion.set("1.3.2")
+    archiveVersion.set(version.toString())
 
     manifest {
         attributes(
