@@ -1,5 +1,6 @@
-﻿package top.bilibili.utils.translate
+package top.bilibili.utils.translate
 
+import org.slf4j.LoggerFactory
 import java.io.*
 import java.security.MessageDigest
 import java.security.NoSuchAlgorithmException
@@ -16,6 +17,7 @@ object MD5 {
         '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd',
         'e', 'f'
     )
+    private val logger = LoggerFactory.getLogger(MD5::class.java)
 
     /**
      * 获得一个字符串的MD5值
@@ -32,7 +34,7 @@ object MD5 {
             try {
                 inputByteArray = input.toByteArray(charset("utf-8"))
             } catch (e: UnsupportedEncodingException) {
-                e.printStackTrace()
+                logger.warn("MD5 字符串编码失败: ${e.message}", e)
             }
             // inputByteArray是输入字符串转换得到的字节数组
             messageDigest.update(inputByteArray)
@@ -41,6 +43,7 @@ object MD5 {
             // 字符数组转换成字符串返回
             byteArrayToHex(resultByteArray)
         } catch (e: NoSuchAlgorithmException) {
+            logger.warn("MD5 算法不可用: ${e.message}", e)
             null
         }
     }
@@ -54,7 +57,7 @@ object MD5 {
     fun md5(file: File): String? {
         try {
             if (!file.isFile) {
-                System.err.println("文件" + file.absolutePath + "不存在或者不是文件")
+                logger.warn("文件${file.absolutePath}不存在或者不是文件")
                 return null
             }
             val `in` = FileInputStream(file)
@@ -62,9 +65,9 @@ object MD5 {
             `in`.close()
             return result
         } catch (e: FileNotFoundException) {
-            e.printStackTrace()
+            logger.warn("MD5 文件未找到: ${e.message}", e)
         } catch (e: IOException) {
-            e.printStackTrace()
+            logger.warn("MD5 文件读取失败: ${e.message}", e)
         }
         return null
     }
@@ -80,11 +83,11 @@ object MD5 {
             `in`.close()
             return byteArrayToHex(messagedigest.digest())
         } catch (e: NoSuchAlgorithmException) {
-            e.printStackTrace()
+            logger.warn("MD5 算法不可用: ${e.message}", e)
         } catch (e: FileNotFoundException) {
-            e.printStackTrace()
+            logger.warn("MD5 输入流文件未找到: ${e.message}", e)
         } catch (e: IOException) {
-            e.printStackTrace()
+            logger.warn("MD5 输入流读取失败: ${e.message}", e)
         }
         return null
     }

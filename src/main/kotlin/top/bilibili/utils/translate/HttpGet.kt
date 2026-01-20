@@ -1,5 +1,6 @@
-﻿package top.bilibili.utils.translate
+package top.bilibili.utils.translate
 
+import org.slf4j.LoggerFactory
 import java.io.*
 import java.net.HttpURLConnection
 import java.net.MalformedURLException
@@ -20,6 +21,8 @@ import javax.net.ssl.X509TrustManager
 internal object HttpGet {
     internal const val SOCKET_TIMEOUT = 10000 // 10S
     internal const val GET = "GET"
+    private val logger = LoggerFactory.getLogger(HttpGet::class.java)
+
     operator fun get(host: String, params: Map<String?, String?>?): String? {
         try {
             // 设置SSLContext
@@ -37,7 +40,7 @@ internal object HttpGet {
             conn.requestMethod = GET
             val statusCode = conn.responseCode
             if (statusCode != HttpURLConnection.HTTP_OK) {
-                println("Http错误码：$statusCode")
+                logger.warn("Http错误码：$statusCode")
             }
 
             // 读取服务器的数据
@@ -54,13 +57,13 @@ internal object HttpGet {
             conn.disconnect() // 断开连接
             return text
         } catch (e: MalformedURLException) {
-            e.printStackTrace()
+            logger.warn("Http 请求地址无效: ${e.message}", e)
         } catch (e: IOException) {
-            e.printStackTrace()
+            logger.warn("Http 请求失败: ${e.message}", e)
         } catch (e: KeyManagementException) {
-            e.printStackTrace()
+            logger.warn("Http SSL 初始化失败: ${e.message}", e)
         } catch (e: NoSuchAlgorithmException) {
-            e.printStackTrace()
+            logger.warn("Http 加密算法不可用: ${e.message}", e)
         }
         return null
     }
@@ -96,7 +99,7 @@ internal object HttpGet {
             try {
                 closeable.close()
             } catch (e: IOException) {
-                e.printStackTrace()
+                logger.warn("Http 关闭资源失败: ${e.message}", e)
             }
         }
     }
@@ -114,7 +117,7 @@ internal object HttpGet {
         try {
             return URLEncoder.encode(input, "utf-8")
         } catch (e: UnsupportedEncodingException) {
-            e.printStackTrace()
+            logger.warn("Http URL 编码失败: ${e.message}", e)
         }
         return input
     }

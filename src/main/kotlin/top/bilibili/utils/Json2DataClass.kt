@@ -1,4 +1,4 @@
-﻿package top.bilibili.utils
+package top.bilibili.utils
 
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -7,11 +7,13 @@ import io.ktor.client.request.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
+import org.slf4j.LoggerFactory
 import java.nio.file.Path
 
 
 val allNullMode = true
 val noteValue = false
+private val jsonLogger = LoggerFactory.getLogger("Json2DataClass")
 
 suspend fun json2DataClassFile(url: String, baseClassName: String, path: Path) {
     val data = json2DataClass(url, baseClassName)
@@ -72,8 +74,7 @@ private fun JsonObject.decodeJsonObject(objName: String): String {
                     }
                 }
             } catch (e: Exception) {
-                println(e)
-                println("Error Key: ${it.key}")
+                jsonLogger.warn("Json2DataClass 解析失败: ${it.key} - ${e.message}", e)
             }
         }
         append(")")
