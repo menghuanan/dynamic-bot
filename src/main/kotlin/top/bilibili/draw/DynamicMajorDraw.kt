@@ -129,9 +129,10 @@ suspend fun ModuleDynamic.Major.Opus.drawGeneral(): Image {
         alignment = Alignment.LEFT
         textStyle = bigTitleTextStyle
     }
-    val contentParagraph = title?.let {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build().layout(cardContentRect.width)
-    }
+    val safeTitle = title.orEmpty()
+    val contentParagraph = if (safeTitle.isNotBlank()) {
+        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(safeTitle).build().layout(cardContentRect.width)
+    } else null
 
     val h =
         if (contentParagraph != null) contentParagraph.lineNumber * quality.contentFontSize.toInt() + quality.cardPadding else 0
