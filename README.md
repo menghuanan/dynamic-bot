@@ -158,7 +158,7 @@ docker run -d --name dynamic-bot \
 
 #### 高级命令（/bili）
 [查看 `/bili` 帮助图](docs/HELP.png)
-  <img src="docs/HELP.png" width="420" alt="高级命令预览">
+  <img src="docs/help.png" width="420" alt="高级命令预览">
 
     /bili 命令帮助:
 
