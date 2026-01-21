@@ -44,7 +44,7 @@ function Test-DockerInstalled {
 }
 
 function Test-JarExists {
-    $jarPath = "build/libs/dynamic-bot-1.3.jar"
+    $jarPath = "build/libs/dynamic-bot-1.4.jar"
     if (-not (Test-Path $jarPath)) {
         Write-Warning-Message "JAR 文件不存在: $jarPath"
         Write-Info "正在尝试构建项目..."
