@@ -1,4 +1,4 @@
-﻿package top.bilibili
+package top.bilibili
 
 import top.bilibili.BiliConfigManager
 import top.bilibili.core.BiliBiliBot
@@ -35,7 +35,7 @@ suspend fun checkCookie() {
                 BiliBiliBot.logger.error("cookies.json 中缺少必要的值 [SESSDATA] [bili_jct]")
             }
         } catch (e: Exception) {
-            BiliBiliBot.logger.error("解析 cookies.json 失败")
+            BiliBiliBot.logger.error("解析 cookies.json 失败", e)
         }
     }
     if (BiliBiliBot.cookie.isEmpty()) BiliBiliBot.cookie.parse(accountConfig.cookie)
@@ -44,7 +44,7 @@ suspend fun checkCookie() {
         BiliBiliBot.uid = biliClient.userInfo()?.mid!!
         BiliBiliBot.logger.info("BiliBili UID: ${BiliBiliBot.uid}")
     } catch (e: Exception) {
-        BiliBiliBot.logger.error(e.message)
+        BiliBiliBot.logger.error("获取用户信息失败: ${e.message}", e)
         BiliBiliBot.logger.error("如未登录，请bot管理员在聊天环境内发送 /login 或 登录 进行登录")
         return
     }
@@ -60,10 +60,10 @@ suspend fun initTagid() {
                     return
                 }
             }
-            val res = biliClient.createGroup(accountConfig.followGroup) ?: throw Exception()
+            val res = biliClient.createGroup(accountConfig.followGroup) ?: throw Exception("创建分组失败: 返回结果为空")
             BiliBiliBot.tagid = res.tagId
         } catch (e: Exception) {
-            BiliBiliBot.logger.error("初始化分组失败 ${e.message}")
+            BiliBiliBot.logger.error("初始化分组失败", e)
         }
 
     }
@@ -90,7 +90,7 @@ suspend fun loadFonts() {
                 }catch (_: Exception) { }
                 */
             }catch (e: Throwable) {
-                BiliBiliBot.logger.error("下载字体失败! $e")
+                BiliBiliBot.logger.error("下载字体失败!", e)
             }
         }
 

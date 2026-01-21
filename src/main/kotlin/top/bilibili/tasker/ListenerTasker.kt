@@ -168,7 +168,29 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
             try {
                 // 解析链接并生成图片
                 logger.info("开始解析链接 -> $matchedLink")
-                val imagePath = linkInfo.drawGeneral()
+                
+                var imagePath: String? = null
+                var retryCount = 0
+                val maxRetries = 1
+
+                while (true) {
+                    try {
+                        imagePath = linkInfo.drawGeneral()
+                        break
+                    } catch (e: Exception) {
+                        val msg = e.message ?: ""
+                        val isTargetError = msg.contains("CODE: 500") || msg.contains("MISS_OPUS_DETAIL_DATA")
+                        
+                        if (isTargetError && retryCount < maxRetries) {
+                            retryCount++
+                            logger.warn("解析链接失败，3秒后重试 ($retryCount/$maxRetries): $msg")
+                            delay(3000)
+                        } else {
+                            throw e
+                        }
+                    }
+                }
+
                 if (imagePath == null) {
                     logger.warn("链接解析失败，返回 null")
                     BiliBiliBot.sendGroupMessage(groupId, listOf(
