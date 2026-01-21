@@ -1,4 +1,4 @@
-﻿package top.bilibili.data
+package top.bilibili.data
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -19,6 +19,8 @@ data class BiliUser(
     val pendant: ModuleAuthor.Pendant? = null,
     @SerialName("wbi_img")
     val wbiImg: WbiImg? = null,
+    @SerialName("sign")
+    val sign: String? = null,
 
     //@SerialName("sex")
     //val sex: String,

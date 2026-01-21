@@ -139,7 +139,8 @@ enum class LinkType(val regex: List<Regex>) {
         return when (this) {
             VideoLink -> {
                 biliClient.getVideoDetail(id)?.run {
-                    drawGeneral(id, "视频", pubdate.formatRelativeTime, toDrawAuthorData(), toDrawData().drawGeneral(true))
+                    val author = biliClient.userInfo(owner.mid)?.toDrawAuthorData() ?: toDrawAuthorData()
+                    drawGeneral(id, "视频", pubdate.formatRelativeTime, author, toDrawData().drawGeneral(true))
                 }
             }
             Article -> {
@@ -172,11 +173,11 @@ enum class LinkType(val regex: List<Regex>) {
                     2 -> "轮播中"
                     else -> "直播"
                 }
-                drawGeneral(id, liveStatusText, Instant.now().epochSecond.formatRelativeTime, author, data, area)
+                drawGeneral(id, liveStatusText, author.sign ?: "", author, data, area)
             }
             User -> {
                 val author = biliClient.userInfo(id.toLong())?.toDrawAuthorData() ?: return null
-                drawGeneral(id, "用户", Instant.now().epochSecond.formatRelativeTime, author, null)
+                drawGeneral(id, "用户", author.sign ?: "", author, null)
             }
             Pgc -> {
                 val info = biliClient.getPcgInfo(id) ?: return null
@@ -281,7 +282,8 @@ fun BiliUser.toDrawAuthorData(): ModuleAuthor =
         face!!,
         officialVerify = official,
         vip = vip,
-        pendant = pendant
+        pendant = pendant,
+        sign = sign
     )
 
 

@@ -1,4 +1,4 @@
-﻿package top.bilibili.data
+package top.bilibili.data
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -195,6 +195,8 @@ data class ModuleAuthor(
     val iconBadge: IconBadge? = null,
     @SerialName("label")
     val label: String = "",
+    @SerialName("sign")
+    val sign: String? = null,
     @SerialName("jump_url")
     val jumpUrl: String? = null,
     @SerialName("official_verify")
