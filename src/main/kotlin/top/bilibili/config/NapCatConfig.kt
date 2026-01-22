@@ -96,5 +96,9 @@ data class BotConfig(
     val targets: MutableList<TargetConfig> = mutableListOf(),
 
     /** 分群管理员配置列表 */
-    val admins: MutableList<GroupAdminConfig> = mutableListOf()
+    val admins: MutableList<GroupAdminConfig> = mutableListOf(),
+
+    /** 首次运行标志 (0: 首次运行, 1: 非首次) */
+    @SerialName("first_run_flag")
+    var firstRunFlag: Int = 0
 )

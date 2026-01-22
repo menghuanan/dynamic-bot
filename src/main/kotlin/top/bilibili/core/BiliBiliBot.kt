@@ -159,6 +159,10 @@ object BiliBiliBot : CoroutineScope {
             launch {
                 delay(5000) // 等待初始化完成
                 startTasks()
+
+                // 首次运行检查
+                delay(1000)
+                checkFirstRun()
             }
 
             logger.info("Bot 启动成功！")
@@ -1587,6 +1591,44 @@ object BiliBiliBot : CoroutineScope {
             logger.info("所有任务已启动")
         } catch (e: Exception) {
             logger.error("启动任务失败: ${e.message}", e)
+        }
+    }
+
+    /** 首次运行检查 */
+    private suspend fun checkFirstRun() {
+        if (config.firstRunFlag == 0) {
+            logger.info("首次运行检查: 检测到 first_run_flag=0，准备发送欢迎消息...")
+
+            val adminId = BiliConfigManager.config.admin
+            if (adminId <= 0L) {
+                logger.warn("首次运行检查: 未配置超级管理员 ID，跳过欢迎消息")
+                return
+            }
+
+            val welcomeMsg = """
+                欢迎使用 
+                /bili help - 显示完整帮助 
+                /login或 登录 - 扫码登录 
+                /check - 手动触发检查 
+                /add <UID> - 快速订阅 
+                /del <UID> - 快速取消订阅 
+                /list - 查看订阅列表 
+            """.trimIndent()
+
+            try {
+                // 尝试发送消息
+                val success = sendPrivateMessage(adminId, listOf(MessageSegment.text(welcomeMsg)))
+                if (success) {
+                    logger.info("欢迎消息发送成功")
+                    config.firstRunFlag = 1
+                    ConfigManager.saveConfig()
+                    logger.info("已更新 first_run_flag 为 1 并保存配置")
+                } else {
+                    logger.warn("欢迎消息发送失败 (可能是连接未就绪)")
+                }
+            } catch (e: Exception) {
+                logger.error("发送欢迎消息时发生错误: ${e.message}", e)
+            }
         }
     }
 
