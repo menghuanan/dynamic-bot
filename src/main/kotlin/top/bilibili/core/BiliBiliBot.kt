@@ -52,6 +52,36 @@ object BiliBiliBot : CoroutineScope {
     lateinit var config: top.bilibili.config.BotConfig
         private set
 
+    /**
+     * 检查 NapCat 客户端是否已初始化
+     */
+    fun isNapCatInitialized(): Boolean = ::napCat.isInitialized
+
+    /**
+     * 检查配置是否已加载
+     */
+    fun isConfigInitialized(): Boolean = ::config.isInitialized
+
+    /**
+     * 安全获取 NapCat 客户端，未初始化时抛出有意义的异常
+     */
+    fun requireNapCat(): NapCatClient {
+        require(::napCat.isInitialized) {
+            "NapCat 客户端尚未初始化，请确保程序已正确启动"
+        }
+        return napCat
+    }
+
+    /**
+     * 安全获取配置，未初始化时抛出有意义的异常
+     */
+    fun requireConfig(): top.bilibili.config.BotConfig {
+        require(::config.isInitialized) {
+            "配置尚未加载，请确保配置文件存在且格式正确"
+        }
+        return config
+    }
+
     /** B站用户 UID */
     var uid: Long = 0L
 
@@ -253,13 +283,22 @@ object BiliBiliBot : CoroutineScope {
 
         // 包含 CQ 码，需要简化
         val result = StringBuilder()
-        val cqPattern = """\[CQ:([^,\]]+).*?\]""".toRegex()
+
+        // 修复：限制输入长度防止 ReDoS
+        val safeMessage = if (rawMessage.length > 10000) {
+            logger.warn("消息过长 (${rawMessage.length} 字符)，截断处理")
+            rawMessage.take(10000)
+        } else {
+            rawMessage
+        }
+
+        val cqPattern = """\[CQ:([^,\]]+)(?:,[^\]]+)?\]""".toRegex()
 
         var lastIndex = 0
-        cqPattern.findAll(rawMessage).forEach { match ->
+        cqPattern.findAll(safeMessage).forEach { match ->
             // 添加 CQ 码之前的文本
             if (match.range.first > lastIndex) {
-                result.append(rawMessage.substring(lastIndex, match.range.first))
+                result.append(safeMessage.substring(lastIndex, match.range.first))
             }
 
             // 简化 CQ 码
@@ -281,8 +320,8 @@ object BiliBiliBot : CoroutineScope {
         }
 
         // 添加最后的文本
-        if (lastIndex < rawMessage.length) {
-            result.append(rawMessage.substring(lastIndex))
+        if (lastIndex < safeMessage.length) {
+            result.append(safeMessage.substring(lastIndex))
         }
 
         // 限制总长度
