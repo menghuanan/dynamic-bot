@@ -144,8 +144,8 @@ object BiliConfigManager {
             val wrapper = BiliDataWrapper.from(dataToSave)
             val yamlContent = yaml.encodeToString(BiliDataWrapper.serializer(), wrapper)
 
-            logger.info("序列化后的 YAML 内容（前 500 字符）:")
-            logger.info(yamlContent.take(500))
+            // 修复安全漏洞：不再输出可能包含敏感信息的 YAML 内容
+            logger.debug("配置数据已序列化，大小: ${yamlContent.length} 字符")
 
             dataFile.writeText(yamlContent)
             logger.info("数据已保存到 ${dataFile.absolutePath}")
