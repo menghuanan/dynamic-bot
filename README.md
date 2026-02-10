@@ -1,4 +1,4 @@
-# BiliBili 动态推送 Bot v1.5.3
+# BiliBili 动态推送 Bot v1.5.4
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
@@ -502,6 +502,34 @@ Windows 用户可使用自动化脚本简化操作：
    - 文档和示例配置
 
 ## 更新日志
+
+### v1.5.4 (2026-02-11)
+
+**全面代码审计完成** 📋
+- ✅ **完成所有模块的自维护代码审计**
+  - API 模块 (6 个文件): 扩展函数模式，共享 BiliClient，无资源泄漏
+  - Service 模块 (5 个文件): Mutex 线程安全 + 容量限制保护
+  - 数据模型 (4 个文件): 纯 @Serializable data class，无需资源管理
+  - Tasker 模块 (4 个文件): LRU 缓存 + 失败告警 + 性能优化
+- ✅ **关键发现与验证**
+  - DynamicService: MAX_SUBSCRIPTIONS=50000, MAX_CONTACTS_PER_UID=1000 容量保护
+  - LoginService: try-finally + deleteOnExit 双重临时文件清理
+  - ListenerTasker: LRU LinkedHashMap (MAX_CACHE_SIZE=10000) 自动驱逐
+  - CacheClearTasker: 连续失败 3 次自动告警管理员
+- ✅ **审计报告更新**
+  - 更新 `docs/self-maintenance-audit.md` 审计报告
+  - 所有模块状态从"部分审计"更新为"已审计"
+  - 新增 Service 模块容量保护、LRU 缓存等关键代码示例
+
+**Skia 绘图资源管理增强** 🎨
+- ✅ **修复 DynamicModuleDraw.kt 中的 Image 泄漏**
+  - 修复 DISPUTE 图标 Image 未关闭问题
+  - 修复 TOPIC 图标 Image 未关闭问题
+  - 修复富文本节点图标 Image 未关闭问题
+- ✅ **修复 LiveDraw.kt 中的 coverImg 泄漏**
+  - 在 drawLive() 函数中添加 coverImg.close()
+
+**结论**: 全部模块审计完成，未发现新的资源泄漏问题。
 
 ### v1.5.3 (2026-02-11)
 

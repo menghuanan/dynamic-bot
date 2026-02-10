@@ -102,8 +102,9 @@ suspend fun LiveInfo.drawLive(): Image {
             footerParagraph?.paint(canvas, cardRect.left, rrect.bottom + quality.cardMargin / 2)
         }
     } finally {
-        // 关闭 avatar Image，释放原生内存
+        // 关闭 Image，释放原生内存
         avatar.close()
+        coverImg.close()
     }
 }
 

@@ -148,4 +148,6 @@ src/test/resources/output/**
 
 # Exclude docs markdown files, keep only images
 docs/*.md
+!docs/self-maintenance-audit.md
+!docs/skia-resource-management-audit.md
 docs/plans/

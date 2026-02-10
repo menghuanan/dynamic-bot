@@ -182,6 +182,7 @@ object ImageCache : Closeable {
 
     /**
      * 下载图片字节数据
+     * 修复：确保 HTTP 响应体被正确处理，避免连接池泄漏
      */
     private suspend fun downloadImage(url: String): ByteArray {
         // 修复：拒绝内网地址访问
@@ -195,11 +196,19 @@ object ImageCache : Closeable {
 
         while (retryCount <= maxRetries) {
             try {
-                val response = httpClient.get(url)
-                if (response.status == HttpStatusCode.OK) {
-                    return response.readRawBytes()
-                } else {
-                    logger.warn("下载图片失败，HTTP状态码: ${response.status} - $url")
+                // ✅ 修复：使用 let 确保响应体在作用域内被完全消费
+                val result = httpClient.get(url).let { response ->
+                    if (response.status == HttpStatusCode.OK) {
+                        response.readRawBytes()
+                    } else {
+                        logger.warn("下载图片失败，HTTP状态码: ${response.status} - $url")
+                        // ✅ 确保非 OK 响应也消费响应体
+                        try { response.readRawBytes() } catch (_: Exception) {}
+                        null
+                    }
+                }
+                if (result != null) {
+                    return result
                 }
             } catch (e: Exception) {
                 logger.warn("下载图片异常 (尝试 ${retryCount + 1}/${maxRetries + 1}): $url - ${e.message}")
@@ -212,7 +221,7 @@ object ImageCache : Closeable {
                 break
             }
         }
-        
+
         logger.error("图片下载彻底失败 (已重试 $retryCount 次): $url")
         return ByteArray(0)
     }

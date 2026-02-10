@@ -8,6 +8,7 @@ import top.bilibili.data.LiveCloseMessage
 import top.bilibili.utils.formatDuration
 import top.bilibili.utils.formatRelativeTime
 import top.bilibili.utils.formatTime
+import top.bilibili.utils.logger
 import java.time.Instant
 
 
@@ -21,10 +22,16 @@ object LiveCloseCheckTasker : BiliCheckTasker("LiveClose")  {
     private val liveUsers by BiliBiliBot::liveUsers
     private var nowTime = Instant.now().epochSecond
 
-    override suspend fun main() {
-        if (liveUsers.isNotEmpty()) {
-            nowTime = Instant.now().epochSecond
+    // ✅ 新增：超时时间 24 小时（正常直播不会超过这个时间）
+    private const val LIVE_USER_TIMEOUT = 86400L
 
+    override suspend fun main() {
+        nowTime = Instant.now().epochSecond
+
+        // ✅ 新增：清理超时的直播记录，防止 liveUsers 无限增长
+        cleanExpiredLiveUsers()
+
+        if (liveUsers.isNotEmpty()) {
             val liveStatusMap = client.getLiveStatus(liveUsers.map { it.key })
             val liveStatusList = liveStatusMap?.map { it.value }?.filter { it.liveStatus != 1 }
 
@@ -44,6 +51,21 @@ object LiveCloseCheckTasker : BiliCheckTasker("LiveClose")  {
                 ))
                 liveUsers.remove(info.uid)
             }
+        }
+    }
+
+    /**
+     * ✅ 新增：清理超时的直播记录
+     * 防止因 API 调用失败或用户长期直播导致 liveUsers 无限增长
+     */
+    private fun cleanExpiredLiveUsers() {
+        val expiredUsers = liveUsers.filter { (_, startTime) ->
+            nowTime - startTime > LIVE_USER_TIMEOUT
+        }.keys.toList()
+
+        if (expiredUsers.isNotEmpty()) {
+            logger.info("清理 ${expiredUsers.size} 个超时的直播记录（超过 ${LIVE_USER_TIMEOUT / 3600} 小时）")
+            expiredUsers.forEach { liveUsers.remove(it) }
         }
     }
 
