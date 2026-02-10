@@ -29,7 +29,11 @@ fun loginQrCode(url: String): Image {
 
     return createImage(250, 250) { canvas ->
         val img = Image.makeFromBitmap(MatrixToImageWriter.toBufferedImage(bitMatrix, config).toBitmap())
-        canvas.drawImage(img, 0f, 0f)
+        try {
+            canvas.drawImage(img, 0f, 0f)
+        } finally {
+            img.close()
+        }
 
         // 绘制中心圆形背景
         canvas.drawCircle(125f, 125f, 35f, Paint().apply {
@@ -45,9 +49,14 @@ fun loginQrCode(url: String): Image {
             val logoBytes = BiliBiliBot.getResourceBytes("/icon/BILIBILI_LOGO.svg")
             if (logoBytes != null) {
                 val svg = SVGDOM(Data.makeFromBytes(logoBytes))
-                canvas.drawImage(svg.makeImage(40f, 40f), 105f, 105f, Paint().apply {
-                    colorFilter = ColorFilter.makeBlend(Color.WHITE, BlendMode.SRC_ATOP)
-                })
+                val logoImg = svg.makeImage(40f, 40f)
+                try {
+                    canvas.drawImage(logoImg, 105f, 105f, Paint().apply {
+                        colorFilter = ColorFilter.makeBlend(Color.WHITE, BlendMode.SRC_ATOP)
+                    })
+                } finally {
+                    logoImg.close()
+                }
             } else {
                 // Logo 不存在，绘制文字 "B"
                 val textLine = TextLine.make("B", Font(Typeface.makeDefault(), 50f))

@@ -373,30 +373,34 @@ suspend fun DynamicItem.Modules.makeGeneral(
 
 fun drawBlockedDefault(): Image {
     val bgImg = Image.makeFromEncoded(loadResourceBytes("image/Blocked_BG_Day.png"))
-    val bgWidth = cardContentRect.width - 2 * quality.cardPadding
-    val bgHeight = bgImg.height / bgImg.width * bgWidth
+    return try {
+        val bgWidth = cardContentRect.width - 2 * quality.cardPadding
+        val bgHeight = bgImg.height / bgImg.width * bgWidth
 
-    val textStyle = ParagraphStyle().apply {
-        maxLinesCount = 2
-        ellipsis = "..."
-        alignment = Alignment.CENTER
-        textStyle = titleTextStyle.apply {
-            color = Color.WHITE
+        val textStyle = ParagraphStyle().apply {
+            maxLinesCount = 2
+            ellipsis = "..."
+            alignment = Alignment.CENTER
+            textStyle = titleTextStyle.apply {
+                color = Color.WHITE
+            }
         }
-    }
-    val text = ParagraphBuilder(textStyle, FontUtils.fonts)
-        .addText("此动态为专属动态\n请自行查看详情内容")
-        .build().layout(bgWidth)
+        val text = ParagraphBuilder(textStyle, FontUtils.fonts)
+            .addText("此动态为专属动态\n请自行查看详情内容")
+            .build().layout(bgWidth)
 
-    return createImage(
-        cardContentRect.width.toInt(), (bgHeight + 3 * quality.cardPadding).toInt()
-    ) { canvas ->
-        val x = quality.cardPadding.toFloat()
-        var y = quality.cardPadding.toFloat()
-        canvas.drawImageClip(bgImg, RRect.Companion.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
+        createImage(
+            cardContentRect.width.toInt(), (bgHeight + 3 * quality.cardPadding).toInt()
+        ) { canvas ->
+            val x = quality.cardPadding.toFloat()
+            var y = quality.cardPadding.toFloat()
+            canvas.drawImageClip(bgImg, RRect.Companion.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
 
-        y += (bgHeight - text.height) / 2
-        text.paint(canvas, x, y)
+            y += (bgHeight - text.height) / 2
+            text.paint(canvas, x, y)
+        }
+    } finally {
+        bgImg.close()
     }
 }
 
@@ -465,24 +469,34 @@ suspend fun Canvas.drawAvatar(
             Paint().apply { color = theme.faceOutlineColor })
     }
 
-    faceImg?.let { drawImageRRect(it, tarFaceRect) }
+    faceImg?.let {
+        try {
+            drawImageRRect(it, tarFaceRect)
+        } finally {
+            it.close()
+        }
+    }
 
     if (hasPendant) {
         getOrDownloadImage(pendant!!, CacheType.USER)?.let { pendantImg ->
-            val srcPendantRect = Rect(0f, 0f, pendantImg.width.toFloat(), pendantImg.height.toFloat())
-            val tarPendantRect = Rect.makeXYWH(
-                tarFaceRect.left + tarFaceRect.width / 2 - quality.pendantSize / 2,
-                tarFaceRect.top + tarFaceRect.height / 2 - quality.pendantSize / 2,
-                quality.pendantSize, quality.pendantSize
-            )
-            drawImageRect(
-                pendantImg,
-                srcPendantRect,
-                tarPendantRect,
-                FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
-                null,
-                true
-            )
+            try {
+                val srcPendantRect = Rect(0f, 0f, pendantImg.width.toFloat(), pendantImg.height.toFloat())
+                val tarPendantRect = Rect.makeXYWH(
+                    tarFaceRect.left + tarFaceRect.width / 2 - quality.pendantSize / 2,
+                    tarFaceRect.top + tarFaceRect.height / 2 - quality.pendantSize / 2,
+                    quality.pendantSize, quality.pendantSize
+                )
+                drawImageRect(
+                    pendantImg,
+                    srcPendantRect,
+                    tarPendantRect,
+                    FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
+                    null,
+                    true
+                )
+            } finally {
+                pendantImg.close()
+            }
         }
     }
 
@@ -496,11 +510,16 @@ suspend fun Canvas.drawAvatar(
         val svg = loadSVG("icon/$verifyIcon.svg")
         if (svg != null) {
             val size = if (hasPendant) verifyIconSize - quality.noPendantFaceInflate / 2 else verifyIconSize
-            drawImage(
-                svg.makeImage(size, size),
-                tarFaceRect.right - size,
-                tarFaceRect.bottom - size
-            )
+            val verifyImg = svg.makeImage(size, size)
+            try {
+                drawImage(
+                    verifyImg,
+                    tarFaceRect.right - size,
+                    tarFaceRect.bottom - size
+                )
+            } finally {
+                verifyImg.close()
+            }
         }
     }
 }

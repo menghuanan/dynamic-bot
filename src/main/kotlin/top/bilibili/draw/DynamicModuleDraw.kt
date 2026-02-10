@@ -142,61 +142,65 @@ suspend fun drawAdditionalCard(
 
     val coverImg = if (cover != null) getOrDownloadImage(cover, CacheType.OTHER) else null
 
-    return createImage(
-        cardRect.width.toInt(),
-        (height + quality.subTitleFontSize + quality.cardPadding * 2f).toInt()
-    ) { canvas ->
-        canvas.drawCard(additionalCardRect)
-        canvas.drawRectShadowAntiAlias(additionalCardRect.inflate(1f), theme.smallCardShadow)
+    return try {
+        createImage(
+            cardRect.width.toInt(),
+            (height + quality.subTitleFontSize + quality.cardPadding * 2f).toInt()
+        ) { canvas ->
+            canvas.drawCard(additionalCardRect)
+            canvas.drawRectShadowAntiAlias(additionalCardRect.inflate(1f), theme.smallCardShadow)
 
-        val labelTextLine = TextLine.make(label, font.makeWithSize(quality.subTitleFontSize))
-        canvas.drawTextLine(labelTextLine, additionalCardRect.left + 8, quality.subTitleFontSize, Paint().apply {
-            color = theme.subTitleColor
-        })
+            val labelTextLine = TextLine.make(label, font.makeWithSize(quality.subTitleFontSize))
+            canvas.drawTextLine(labelTextLine, additionalCardRect.left + 8, quality.subTitleFontSize, Paint().apply {
+                color = theme.subTitleColor
+            })
 
-        var x = quality.cardPadding.toFloat()
+            var x = quality.cardPadding.toFloat()
 
-        coverImg?.let { img ->
-            val imgRect = RRect.makeXYWH(
-                quality.cardPadding.toFloat(),
-                quality.subTitleFontSize + quality.cardPadding + 1f,
-                quality.additionalCardHeight.toFloat() * img.width / img.height,
-                quality.additionalCardHeight.toFloat(),
-                quality.cardArc
-            ).inflate(-1f) as RRect
-            canvas.drawImageRRect(img, imgRect)
-            x += imgRect.width
-        }
+            coverImg?.let { img ->
+                val imgRect = RRect.makeXYWH(
+                    quality.cardPadding.toFloat(),
+                    quality.subTitleFontSize + quality.cardPadding + 1f,
+                    quality.additionalCardHeight.toFloat() * img.width / img.height,
+                    quality.additionalCardHeight.toFloat(),
+                    quality.cardArc
+                ).inflate(-1f) as RRect
+                canvas.drawImageRRect(img, imgRect)
+                x += imgRect.width
+            }
 
-        x += quality.cardPadding
+            x += quality.cardPadding
 
-        val titleParagraph =
-            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build()
-                .layout(cardContentRect.width - x)
-        paragraphStyle.apply {
-            textStyle = descTextStyle.apply {
-                fontSize = quality.subTitleFontSize * 0.8f
+            val titleParagraph =
+                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build()
+                    .layout(cardContentRect.width - x)
+            paragraphStyle.apply {
+                textStyle = descTextStyle.apply {
+                    fontSize = quality.subTitleFontSize * 0.8f
+                }
+            }
+            val desc1Paragraph =
+                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc1).build()
+                    .layout(cardContentRect.width - x)
+            val desc2Paragraph = desc2?.let {
+                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(it).build().layout(cardContentRect.width - x)
+            }
+
+            val top = (additionalCardRect.height - (titleParagraph.height * if (desc2 == null) 2 else 3)) / 2
+
+            var y = additionalCardRect.top + top
+            titleParagraph.paint(canvas, x, y)
+
+            y += titleParagraph.height
+            desc1Paragraph.paint(canvas, x, y)
+
+            if (desc2Paragraph != null) {
+                y += titleParagraph.height
+                desc2Paragraph.paint(canvas, x, y)
             }
         }
-        val desc1Paragraph =
-            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc1).build()
-                .layout(cardContentRect.width - x)
-        val desc2Paragraph = desc2?.let {
-            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(it).build().layout(cardContentRect.width - x)
-        }
-
-        val top = (additionalCardRect.height - (titleParagraph.height * if (desc2 == null) 2 else 3)) / 2
-
-        var y = additionalCardRect.top + top
-        titleParagraph.paint(canvas, x, y)
-
-        y += titleParagraph.height
-        desc1Paragraph.paint(canvas, x, y)
-
-        if (desc2Paragraph != null) {
-            y += titleParagraph.height
-            desc2Paragraph.paint(canvas, x, y)
-        }
+    } finally {
+        coverImg?.close()
     }
 }
 
@@ -528,12 +532,18 @@ suspend fun ModuleAuthor.drawGeneral(time: String, link: String, themeColor: Int
         canvas.drawTextLine(textLineTime, x, y, Paint().apply { color = theme.subTitleColor })
 
         authorIconBadge?.let {
-            val img = getOrDownloadImage(it.renderImg, CacheType.IMAGES)!!
-            val iconHeight = quality.subTitleFontSize
-            val iconWidth = img.width / img.height * iconHeight
-            x += textLineTime.width + quality.subTitleFontSize * 0.5f
-            y -= textLineTime.height - iconHeight / 2
-            canvas.drawImageRRect(img, RRect.Companion.makeXYWH(x, y, iconWidth, iconHeight, 0f))
+            val img = getOrDownloadImage(it.renderImg, CacheType.IMAGES)
+            if (img != null) {
+                try {
+                    val iconHeight = quality.subTitleFontSize
+                    val iconWidth = img.width / img.height * iconHeight
+                    x += textLineTime.width + quality.subTitleFontSize * 0.5f
+                    y -= textLineTime.height - iconHeight / 2
+                    canvas.drawImageRRect(img, RRect.Companion.makeXYWH(x, y, iconWidth, iconHeight, 0f))
+                } finally {
+                    img.close()
+                }
+            }
         }
 
         canvas.drawOrnament(authorDecorate, link, themeColor)
@@ -546,42 +556,46 @@ suspend fun Canvas.drawOrnament(decorate: ModuleAuthor.Decorate?, link: String?,
         "FanCard" -> {
             if (decorate != null) {
                 getOrDownloadImage(decorate.cardUrl, CacheType.USER)?.let {fanImg ->
-                    val srcFRect = Rect(0f, 0f, fanImg.width.toFloat(), fanImg.height.toFloat())
+                    try {
+                        val srcFRect = Rect(0f, 0f, fanImg.width.toFloat(), fanImg.height.toFloat())
 
-                    val cardHeight = when (decorate.type) {
-                        1, 2 -> quality.ornamentHeight * 0.6f
-                        else -> quality.ornamentHeight
-                    }
-
-                    val cardWidth = fanImg.width * cardHeight / fanImg.height
-
-                    val y = ((quality.faceSize - cardHeight + quality.contentSpace) / 2)
-                    val tarFRect = Rect.makeXYWH(
-                        cardContentRect.right - cardWidth - abs(y),
-                        y + quality.cardPadding,
-                        cardWidth,
-                        cardHeight
-                    )
-
-                    drawImageRect(
-                        fanImg,
-                        srcFRect,
-                        tarFRect,
-                        FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
-                        null,
-                        true
-                    )
-                    // 绘制粉丝数量（需要粉丝卡字体）
-                    fansCardFont?.let { font ->
-                        if (decorate.type == 3 && decorate.fan?.numStr != "") {
-                            val textLineFan = TextLine.make(decorate.fan?.numStr, font)
-                            drawTextLine(
-                                textLineFan,
-                                tarFRect.right - textLineFan.width * 2,
-                                tarFRect.bottom - (cardHeight - font.size) / 2,
-                                Paint().apply { color = Color.makeRGB(decorate.fan!!.color) }
-                            )
+                        val cardHeight = when (decorate.type) {
+                            1, 2 -> quality.ornamentHeight * 0.6f
+                            else -> quality.ornamentHeight
                         }
+
+                        val cardWidth = fanImg.width * cardHeight / fanImg.height
+
+                        val y = ((quality.faceSize - cardHeight + quality.contentSpace) / 2)
+                        val tarFRect = Rect.makeXYWH(
+                            cardContentRect.right - cardWidth - abs(y),
+                            y + quality.cardPadding,
+                            cardWidth,
+                            cardHeight
+                        )
+
+                        drawImageRect(
+                            fanImg,
+                            srcFRect,
+                            tarFRect,
+                            FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
+                            null,
+                            true
+                        )
+                        // 绘制粉丝数量（需要粉丝卡字体）
+                        fansCardFont?.let { font ->
+                            if (decorate.type == 3 && decorate.fan?.numStr != "") {
+                                val textLineFan = TextLine.make(decorate.fan?.numStr, font)
+                                drawTextLine(
+                                    textLineFan,
+                                    tarFRect.right - textLineFan.width * 2,
+                                    tarFRect.bottom - (cardHeight - font.size) / 2,
+                                    Paint().apply { color = Color.makeRGB(decorate.fan!!.color) }
+                                )
+                            }
+                        }
+                    } finally {
+                        fanImg.close()
                     }
                 }
             }
@@ -589,22 +603,26 @@ suspend fun Canvas.drawOrnament(decorate: ModuleAuthor.Decorate?, link: String?,
 
         "QrCode" -> {
             val qrCodeImg = qrCode(link!!, quality.ornamentHeight.toInt(), qrCodeColor!!)
-            val y = ((quality.faceSize - qrCodeImg.height + quality.contentSpace) / 2)
-            val tarFRect = Rect.makeXYWH(
-                cardContentRect.right - qrCodeImg.width - abs(y),
-                y + quality.cardPadding,
-                qrCodeImg.width.toFloat(),
-                qrCodeImg.height.toFloat()
-            )
-            val srcFRect = Rect(0f, 0f, qrCodeImg.width.toFloat(), qrCodeImg.height.toFloat())
-            drawImageRect(
-                qrCodeImg,
-                srcFRect,
-                tarFRect,
-                FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
-                Paint(),
-                true
-            )
+            try {
+                val y = ((quality.faceSize - qrCodeImg.height + quality.contentSpace) / 2)
+                val tarFRect = Rect.makeXYWH(
+                    cardContentRect.right - qrCodeImg.width - abs(y),
+                    y + quality.cardPadding,
+                    qrCodeImg.width.toFloat(),
+                    qrCodeImg.height.toFloat()
+                )
+                val srcFRect = Rect(0f, 0f, qrCodeImg.width.toFloat(), qrCodeImg.height.toFloat())
+                drawImageRect(
+                    qrCodeImg,
+                    srcFRect,
+                    tarFRect,
+                    FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
+                    Paint(),
+                    true
+                )
+            } finally {
+                qrCodeImg.close()
+            }
         }
     }
 }

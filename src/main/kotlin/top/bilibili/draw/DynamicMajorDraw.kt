@@ -181,70 +181,74 @@ suspend fun ModuleDynamic.Major.Common.drawGeneral(): Image {
 
     val coverImg = getOrDownloadImage(cover, CacheType.OTHER)
 
-    return createImage(
-        cardRect.width.toInt(),
-        (height + quality.cardPadding).toInt()
-    ) { canvas ->
-        canvas.drawCard(commonCardRect)
-        canvas.drawRectShadowAntiAlias(commonCardRect.inflate(1f), theme.smallCardShadow)
+    return try {
+        createImage(
+            cardRect.width.toInt(),
+            (height + quality.cardPadding).toInt()
+        ) { canvas ->
+            canvas.drawCard(commonCardRect)
+            canvas.drawRectShadowAntiAlias(commonCardRect.inflate(1f), theme.smallCardShadow)
 
-        if (badge.text.isNotBlank()) {
-            val labelTextLine = TextLine.make(badge.text, font.makeWithSize(quality.subTitleFontSize))
+            if (badge.text.isNotBlank()) {
+                val labelTextLine = TextLine.make(badge.text, font.makeWithSize(quality.subTitleFontSize))
 
-            canvas.drawLabelCard(
-                labelTextLine,
-                commonCardRect.right - labelTextLine.width - quality.badgePadding * 4 - quality.cardPadding,
-                1 + (height - labelTextLine.height) / 2,
-                Paint().apply {
-                    color = Color.makeRGB(badge.color)
-                },
-                Paint().apply {
-                    color = Color.makeRGB(badge.bgColor)
+                canvas.drawLabelCard(
+                    labelTextLine,
+                    commonCardRect.right - labelTextLine.width - quality.badgePadding * 4 - quality.cardPadding,
+                    1 + (height - labelTextLine.height) / 2,
+                    Paint().apply {
+                        color = Color.makeRGB(badge.color)
+                    },
+                    Paint().apply {
+                        color = Color.makeRGB(badge.bgColor)
+                    }
+                )
+            }
+
+            var x = quality.cardPadding.toFloat()
+
+            coverImg?.let { img ->
+                val imgRect = RRect.makeXYWH(
+                    quality.cardPadding.toFloat(),
+                    1f,
+                    quality.additionalCardHeight.toFloat() * img.width / img.height,
+                    quality.additionalCardHeight.toFloat(),
+                    quality.cardArc
+                ).inflate(-1f) as RRect
+                canvas.drawImageRRect(img, imgRect)
+                x += imgRect.width + quality.cardPadding
+            }
+
+            val titleParagraph =
+                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build()
+                    .layout(cardContentRect.width - x)
+            paragraphStyle.apply {
+                textStyle = descTextStyle.apply {
+                    fontSize = quality.subTitleFontSize * 0.8f
                 }
-            )
-        }
+            }
+            val desc1Paragraph =
+                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc).build()
+                    .layout(cardContentRect.width - x)
+            val desc2Paragraph =
+                if (label.isNotBlank()) ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(label).build()
+                    .layout(cardContentRect.width - x) else null
 
-        var x = quality.cardPadding.toFloat()
+            val top = (commonCardRect.height - (titleParagraph.height * 3)) / 2
 
-        coverImg?.let { img ->
-            val imgRect = RRect.makeXYWH(
-                quality.cardPadding.toFloat(),
-                1f,
-                quality.additionalCardHeight.toFloat() * img.width / img.height,
-                quality.additionalCardHeight.toFloat(),
-                quality.cardArc
-            ).inflate(-1f) as RRect
-            canvas.drawImageRRect(img, imgRect)
-            x += imgRect.width + quality.cardPadding
-        }
+            var y = commonCardRect.top + top + if (label.isBlank()) titleParagraph.height / 4 else 0f
+            titleParagraph.paint(canvas, x, y)
 
-        val titleParagraph =
-            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build()
-                .layout(cardContentRect.width - x)
-        paragraphStyle.apply {
-            textStyle = descTextStyle.apply {
-                fontSize = quality.subTitleFontSize * 0.8f
+            y += titleParagraph.height + if (label.isBlank()) titleParagraph.height / 2 else 0f
+            desc1Paragraph.paint(canvas, x, y)
+
+            if (desc2Paragraph != null) {
+                y += titleParagraph.height
+                desc2Paragraph.paint(canvas, x, y)
             }
         }
-        val desc1Paragraph =
-            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc).build()
-                .layout(cardContentRect.width - x)
-        val desc2Paragraph =
-            if (label.isNotBlank()) ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(label).build()
-                .layout(cardContentRect.width - x) else null
-
-        val top = (commonCardRect.height - (titleParagraph.height * 3)) / 2
-
-        var y = commonCardRect.top + top + if (label.isBlank()) titleParagraph.height / 4 else 0f
-        titleParagraph.paint(canvas, x, y)
-
-        y += titleParagraph.height + if (label.isBlank()) titleParagraph.height / 2 else 0f
-        desc1Paragraph.paint(canvas, x, y)
-
-        if (desc2Paragraph != null) {
-            y += titleParagraph.height
-            desc2Paragraph.paint(canvas, x, y)
-        }
+    } finally {
+        coverImg?.close()
     }
 }
 
@@ -284,10 +288,11 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(showStat: Boolean = false): 
         cardBadgeArc
     )
 
-    return createImage(
-        cardRect.width.toInt(),
-        videoCardHeight.toInt() + quality.badgeHeight + quality.cardPadding
-    ) { canvas ->
+    return try {
+        createImage(
+            cardRect.width.toInt(),
+            videoCardHeight.toInt() + quality.badgeHeight + quality.cardPadding
+        ) { canvas ->
         // 绘制卡片背景
         canvas.drawCard(videoCardRect)
         // 卡片阴影
@@ -387,6 +392,9 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(showStat: Boolean = false): 
             quality.cardPadding * 1.5f,
             quality.badgeHeight + videoCoverHeight + quality.cardPadding / 2 + titleParagraph.height
         )
+    }
+    } finally {
+        coverImg.close()
     }
 }
 
@@ -574,10 +582,11 @@ suspend fun drawPgcCard(
     // 调整为标准间距，移除过大的垂直内边距
     val cardHeight = quality.badgeHeight + quality.badgePadding + contentHeight + quality.cardPadding
 
-    return createImage(
-        cardRect.width.toInt(),
-        cardHeight.toInt()
-    ) { canvas ->
+    return try {
+        createImage(
+            cardRect.width.toInt(),
+            cardHeight.toInt()
+        ) { canvas ->
         // 绘制卡片背景（使用标准起始位置）
         val videoCardRect = RRect.makeComplexXYWH(
             quality.cardPadding.toFloat(),
@@ -672,6 +681,9 @@ suspend fun drawPgcCard(
         // 第五行：介绍
         evaluateParagraph?.paint(canvas, textX, textY)
     }
+    } finally {
+        coverImg.close()
+    }
 }
 
 suspend fun drawLiveSmallCard(
@@ -712,10 +724,11 @@ suspend fun drawLiveSmallCard(
     val contentHeight = scaledCoverHeight + titleParagraph.height + descParagraph.height + quality.cardPadding
     val cardHeight = quality.badgeHeight + contentHeight + quality.cardPadding
 
-    return createImage(
-        cardRect.width.toInt(),
-        cardHeight.toInt()
-    ) { canvas ->
+    return try {
+        createImage(
+            cardRect.width.toInt(),
+            cardHeight.toInt()
+        ) { canvas ->
         val videoCardRect = RRect.makeComplexXYWH(
             quality.cardPadding.toFloat(),
             quality.badgeHeight + 1f,
@@ -782,6 +795,9 @@ suspend fun drawLiveSmallCard(
             )
         }
     }
+    } finally {
+        coverImg.close()
+    }
 }
 
 suspend fun drawSmallCard(
@@ -833,10 +849,11 @@ suspend fun drawSmallCard(
         scaledCoverHeight +
         quality.cardPadding
 
-    return createImage(
-        cardRect.width.toInt(),
-        cardHeight.toInt()
-    ) { canvas ->
+    return try {
+        createImage(
+            cardRect.width.toInt(),
+            cardHeight.toInt()
+        ) { canvas ->
         val videoCardRect = RRect.makeComplexXYWH(
             quality.cardPadding.toFloat(),
             quality.badgeHeight + 1f,
@@ -916,6 +933,9 @@ suspend fun drawSmallCard(
             )
         }
     }
+    } finally {
+        coverImg.close()
+    }
 }
 
 suspend fun ModuleDynamic.Major.Draw.drawGeneral(): Image {
@@ -989,29 +1009,33 @@ suspend fun ModuleDynamic.Major.Draw.drawGeneral(): Image {
         drawItems.forEachIndexed { index, drawItem ->
             val fallbackUrl = imgApi(drawItem.src, drawItemWidth.toInt(), drawItemHeight.toInt())
             val img = getOrDownloadImageDefault(drawItem.src, fallbackUrl, CacheType.IMAGES)
-            val dstRect = RRect.makeXYWH(x, y, drawItemWidth, drawItemHeight, quality.cardArc)
+            try {
+                val dstRect = RRect.makeXYWH(x, y, drawItemWidth, drawItemHeight, quality.cardArc)
 
-            canvas.drawRRect(dstRect, Paint().apply {
-                color = Color.WHITE
-                alpha = 160
-                mode = PaintMode.FILL
-                isAntiAlias = true
-            })
+                canvas.drawRRect(dstRect, Paint().apply {
+                    color = Color.WHITE
+                    alpha = 160
+                    mode = PaintMode.FILL
+                    isAntiAlias = true
+                })
 
-            canvas.drawImageClip(img, dstRect)
+                canvas.drawImageClip(img, dstRect)
 
-            canvas.drawRRect(dstRect, Paint().apply {
-                color = theme.drawOutlineColor
-                mode = PaintMode.STROKE
-                strokeWidth = quality.drawOutlineWidth
-                isAntiAlias = true
-            })
+                canvas.drawRRect(dstRect, Paint().apply {
+                    color = theme.drawOutlineColor
+                    mode = PaintMode.STROKE
+                    strokeWidth = quality.drawOutlineWidth
+                    isAntiAlias = true
+                })
 
-            x += drawItemWidth + quality.drawSpace
+                x += drawItemWidth + quality.drawSpace
 
-            if ((index + 1) % drawItemNum == 0) {
-                x = quality.cardPadding.toFloat()
-                y += drawItemHeight + quality.drawSpace
+                if ((index + 1) % drawItemNum == 0) {
+                    x = quality.cardPadding.toFloat()
+                    y += drawItemHeight + quality.drawSpace
+                }
+            } finally {
+                img.close()
             }
         }
     }
@@ -1032,25 +1056,30 @@ suspend fun ModuleDynamic.Major.Blocked.drawGeneral(): Image {
     val bgImage = getOrDownloadImage(bgImg.imgDay, CacheType.IMAGES)!!
     val lockIcon = getOrDownloadImage(icon.imgDay, CacheType.IMAGES)!!
 
-    val bgWidth = cardContentRect.width - quality.cardPadding * 2
-    val bgHeight = bgWidth / bgImage.width * bgImage.height
+    return try {
+        val bgWidth = cardContentRect.width - quality.cardPadding * 2
+        val bgHeight = bgWidth / bgImage.width * bgImage.height
 
-    val lockWidth = bgWidth / 7
-    val lockHeight = lockWidth / lockIcon.width * lockIcon.height
+        val lockWidth = bgWidth / 7
+        val lockHeight = lockWidth / lockIcon.width * lockIcon.height
 
-    return createImage(
-        cardContentRect.width.toInt(), (bgHeight + quality.cardPadding * 2).toInt()
-    ) { canvas ->
-        var x = quality.cardPadding.toFloat()
-        var y = 0f
-        canvas.drawImageClip(bgImage, RRect.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
-        x += (bgWidth - lockWidth) / 2
-        y += bgHeight / 3
-        canvas.drawImageClip(lockIcon, RRect.makeXYWH(x, y, lockWidth, lockHeight, quality.cardArc))
+        createImage(
+            cardContentRect.width.toInt(), (bgHeight + quality.cardPadding * 2).toInt()
+        ) { canvas ->
+            var x = quality.cardPadding.toFloat()
+            var y = 0f
+            canvas.drawImageClip(bgImage, RRect.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
+            x += (bgWidth - lockWidth) / 2
+            y += bgHeight / 3
+            canvas.drawImageClip(lockIcon, RRect.makeXYWH(x, y, lockWidth, lockHeight, quality.cardArc))
 
-        x = quality.cardPadding.toFloat()
-        y += lockHeight + quality.drawSpace
-        hintMessage.layout(bgWidth).paint(canvas, x, y)
+            x = quality.cardPadding.toFloat()
+            y += lockHeight + quality.drawSpace
+            hintMessage.layout(bgWidth).paint(canvas, x, y)
+        }
+    } finally {
+        bgImage.close()
+        lockIcon.close()
     }
 }
 
@@ -1106,7 +1135,11 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(): Image {
         if (articleCovers.size == 1) {
             val fallbackUrl = imgApi(articleCovers[0], articleCardRect.width.toInt(), articleCoverHeight.toInt())
             val coverImg = getOrDownloadImageDefault(articleCovers[0], fallbackUrl, CacheType.IMAGES)
-            canvas.drawImageRRect(coverImg, coverRRect)
+            try {
+                canvas.drawImageRRect(coverImg, coverRRect)
+            } finally {
+                coverImg.close()
+            }
         } else {
             var imgX = articleCardRect.left
             val imgW = articleCardRect.width / 3 - 4
@@ -1115,9 +1148,13 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(): Image {
             articleCovers.forEach {
                 val fallbackUrl = imgApi(it, imgW.toInt(), articleCoverHeight.toInt())
                 val img = getOrDownloadImageDefault(it, fallbackUrl, CacheType.IMAGES)
-                val tar = RRect.makeXYWH(imgX, articleCardRect.top, imgW, articleCoverHeight, 0f)
-                canvas.drawImageClip(img, tar, Paint())
-                imgX += articleCardRect.width / 3 + 2
+                try {
+                    val tar = RRect.makeXYWH(imgX, articleCardRect.top, imgW, articleCoverHeight, 0f)
+                    canvas.drawImageClip(img, tar, Paint())
+                    imgX += articleCardRect.width / 3 + 2
+                } finally {
+                    img.close()
+                }
             }
             canvas.restore()
         }
@@ -1224,14 +1261,18 @@ suspend fun ModuleDynamic.Major.Music.drawGeneral(): Image {
         // 封面
         val fallbackUrl = imgApi(musicCover, musicCardHeight.toInt(), musicCardHeight.toInt())
         val coverImg = getOrDownloadImageDefault(musicCover, fallbackUrl, CacheType.IMAGES)
-        val coverRRect = RRect.makeComplexXYWH(
-            musicCardRect.left,
-            musicCardRect.top,
-            musicCardHeight,
-            musicCardHeight,
-            cardBadgeArc
-        ).inflate(-1f) as RRect
-        canvas.drawImageRRect(coverImg, coverRRect)
+        try {
+            val coverRRect = RRect.makeComplexXYWH(
+                musicCardRect.left,
+                musicCardRect.top,
+                musicCardHeight,
+                musicCardHeight,
+                cardBadgeArc
+            ).inflate(-1f) as RRect
+            canvas.drawImageRRect(coverImg, coverRRect)
+        } finally {
+            coverImg.close()
+        }
 
         val space = (musicCardHeight - titleParagraph.height - descParagraph.height) / 3
         val y = musicCardRect.top + space

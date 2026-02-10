@@ -164,23 +164,27 @@ fun Canvas.drawLiveOrnament(link: String?, qrCodeColor: Int?, label: String?) {
     when (BiliConfigManager.config.imageConfig.cardOrnament) {
         "QrCode" -> {
             val qrCodeImg = qrCode(link!!, quality.ornamentHeight.toInt(), qrCodeColor!!)
-            val y = ((quality.faceSize - qrCodeImg.height + quality.contentSpace) / 2)
-            val tarFRect = Rect.makeXYWH(
-                cardRect.width - qrCodeImg.width - abs(y),
-                y + quality.cardPadding,
-                qrCodeImg.width.toFloat(),
-                qrCodeImg.height.toFloat()
-            )
+            try {
+                val y = ((quality.faceSize - qrCodeImg.height + quality.contentSpace) / 2)
+                val tarFRect = Rect.makeXYWH(
+                    cardRect.width - qrCodeImg.width - abs(y),
+                    y + quality.cardPadding,
+                    qrCodeImg.width.toFloat(),
+                    qrCodeImg.height.toFloat()
+                )
 
-            val srcFRect = Rect.makeXYWH(0f, 0f, qrCodeImg.width.toFloat(), qrCodeImg.height.toFloat())
-            drawImageRect(
-                qrCodeImg,
-                srcFRect,
-                tarFRect,
-                FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
-                Paint(),
-                true
-            )
+                val srcFRect = Rect.makeXYWH(0f, 0f, qrCodeImg.width.toFloat(), qrCodeImg.height.toFloat())
+                drawImageRect(
+                    qrCodeImg,
+                    srcFRect,
+                    tarFRect,
+                    FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
+                    Paint(),
+                    true
+                )
+            } finally {
+                qrCodeImg.close()
+            }
         }
         "None" -> {}
         else -> {
