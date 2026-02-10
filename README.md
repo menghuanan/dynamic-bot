@@ -1,4 +1,4 @@
-# BiliBili 动态推送 Bot v1.5.2
+# BiliBili 动态推送 Bot v1.5.3
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
@@ -502,6 +502,33 @@ Windows 用户可使用自动化脚本简化操作：
    - 文档和示例配置
 
 ## 更新日志
+
+### v1.5.3 (2026-02-11)
+
+**Skia Image 原生内存泄漏彻底修复** 🔧
+- ✅ **修复 Image 对象未关闭导致的内存泄漏**
+  - v1.5.2 仅修复了 Surface 的关闭，但遗漏了 Image 对象的关闭
+  - Image 对象同样持有 Skia 原生内存，必须显式调用 `close()` 释放
+  - 每次链接解析后内存增加 20-30MB 的问题现已彻底解决
+- ✅ **新增资源管理工具函数**
+  - 新增 `cacheImageAndClose()` 函数，缓存图片后自动关闭 Image
+  - 新增 `cacheImageAndCloseAll()` 函数，支持批量关闭中间 Image
+- ✅ **修复的文件和函数**
+  - `General.kt` - 新增 `cacheImageAndClose()` 和 `cacheImageAndCloseAll()`
+  - `DynamicDraw.kt` - 修复 `makeDrawDynamic()`、`drawDynamic()`、`assembleCard()`
+  - `ResolveLinkService.kt` - 修复 `drawGeneral()` 和 `LinkType.drawGeneral()`
+  - `LiveDraw.kt` - 修复 `makeDrawLive()`、`drawLive()`
+  - `DynamicMajorDraw.kt` - 修复 `Opus.drawGeneral()`
+  - `DynamicMessageTasker.kt` - 修复 `dynamicImages()`
+- ✅ **assembleCard() 函数增强**
+  - 新增 `closeInputImages` 参数，支持自动关闭输入的 Image 列表
+  - 关闭 badge Image，防止小图标泄漏
+
+**技术说明** 📝
+- Skia 的 `Image` 和 `Surface` 都继承自 `RefCnt`，持有原生内存
+- JVM GC 只能回收 Java 对象引用，无法回收 Skia 原生内存
+- 必须在使用完毕后显式调用 `close()` 方法释放原生资源
+- 使用 try-finally 模式确保资源在任何情况下都能正确释放
 
 ### v1.5.2 (2026-02-11)
 

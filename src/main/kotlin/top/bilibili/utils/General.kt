@@ -258,10 +258,49 @@ fun Path.findFile(file: String): Path? {
     return null
 }
 
+/**
+ * 缓存图片到文件（不关闭 Image，由调用方负责关闭）
+ * 注意：此函数不会关闭传入的 Image，调用方需要自行管理 Image 的生命周期
+ */
 fun cacheImage(image: Image, path: String, cacheType: CacheType): String {
     val file = cacheType.cacheFile(path)
     file.writeBytes(image.encodeToData()!!.bytes)
     return file.toFile().absolutePath
+}
+
+/**
+ * 缓存图片到文件并关闭 Image，释放 Skia 原生内存
+ * 这是推荐使用的方法，会自动释放 Image 占用的原生内存
+ * @param image 要缓存的图片，缓存后会被关闭
+ * @param path 缓存路径
+ * @param cacheType 缓存类型
+ * @return 缓存文件的绝对路径
+ */
+fun cacheImageAndClose(image: Image, path: String, cacheType: CacheType): String {
+    return try {
+        cacheImage(image, path, cacheType)
+    } finally {
+        image.close()
+    }
+}
+
+/**
+ * 缓存图片列表到文件并关闭所有 Image
+ * @param images 要关闭的中间 Image 列表
+ * @param finalImage 最终要缓存的图片
+ * @param path 缓存路径
+ * @param cacheType 缓存类型
+ * @return 缓存文件的绝对路径
+ */
+fun cacheImageAndCloseAll(images: List<Image>, finalImage: Image, path: String, cacheType: CacheType): String {
+    return try {
+        cacheImage(finalImage, path, cacheType)
+    } finally {
+        // 关闭所有中间 Image
+        images.forEach { runCatching { it.close() } }
+        // 关闭最终 Image
+        runCatching { finalImage.close() }
+    }
 }
 
 /**

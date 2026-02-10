@@ -20,6 +20,10 @@ import kotlin.math.abs
 import kotlin.math.ceil
 
 
+/**
+ * 生成动态模块的图片列表
+ * 注意：返回的 Image 列表由调用方负责关闭
+ */
 suspend fun ModuleDynamic.makeGeneral(isForward: Boolean = false): List<Image> {
     return mutableListOf<Image>().apply {
         topic?.drawGeneral()?.let { add(it) }

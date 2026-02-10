@@ -210,7 +210,13 @@ suspend fun DynamicItem.makeDrawDynamic(colors: List<Int>): String {
     val img = makeCardBg(dynamic.height, colors) {
         it.drawImage(dynamic, 0f, 0f)
     }
-    return cacheImage(img, "$mid/$idStr.png", CacheType.DRAW_DYNAMIC)
+    // 关闭中间 Image，释放原生内存
+    return try {
+        cacheImage(img, "$mid/$idStr.png", CacheType.DRAW_DYNAMIC)
+    } finally {
+        dynamic.close()
+        img.close()
+    }
 }
 
 suspend fun DynamicItem.drawDynamic(themeColor: Int, isForward: Boolean = false): Image {
@@ -240,7 +246,8 @@ suspend fun DynamicItem.drawDynamic(themeColor: Int, isForward: Boolean = false)
         buildFooter(modules.moduleAuthor.name, modules.moduleAuthor.mid, did, formatRelativeTime, type.text)
     } else null
 
-    return imgList.assembleCard(did, footer, plusHeight, isForward)
+    // assembleCard 会关闭 imgList 中的所有 Image
+    return imgList.assembleCard(did, footer, plusHeight, isForward, closeInputImages = true)
 
 }
 
@@ -256,7 +263,17 @@ fun buildFooter(name: String, uid: Long, id: String, time: String, type: String)
     } else null
 }
 
-fun List<Image>.assembleCard(id: String, footer: String? = null, plusHeight: Int = 0, isForward: Boolean = false, tag: String? = null): Image {
+/**
+ * 将多个 Image 组装成一张卡片
+ * @param id 动态 ID
+ * @param footer 页脚文本
+ * @param plusHeight 额外高度
+ * @param isForward 是否为转发动态
+ * @param tag 标签
+ * @param closeInputImages 是否在组装完成后关闭输入的 Image 列表，默认为 false
+ * @return 组装后的 Image
+ */
+fun List<Image>.assembleCard(id: String, footer: String? = null, plusHeight: Int = 0, isForward: Boolean = false, tag: String? = null, closeInputImages: Boolean = false): Image {
     val imageConfig = BiliConfigManager.config.imageConfig
     val height = sumOf {
         if (it.width > cardRect.width) {
@@ -273,55 +290,64 @@ fun List<Image>.assembleCard(id: String, footer: String? = null, plusHeight: Int
     val margin = if (isForward) quality.cardPadding * 2 else quality.cardMargin * 2
     val imgList = this
 
-    return createImage(
-        (cardRect.width + margin).toInt(),
-        height + quality.badgeHeight + margin + (footerParagraph?.height?.toInt() ?: 0)
-    ) { canvas ->
-        val rrect = RRect.makeComplexXYWH(
-            margin / 2f,
-            quality.badgeHeight + margin / 2f,
-            cardRect.width,
-            height.toFloat(),
-            cardBadgeArc
-        )
-
-        if (isForward) {
-            canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.smallCardShadow)
-        } else {
-            canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
-        }
-
-        if (imageConfig.badgeEnable.left) {
-            val svg = loadSVG("icon/${if (isForward) "FORWARD" else "BILIBILI_LOGO"}.svg")
-            val badgeImage = svg?.makeImage(quality.contentFontSize, quality.contentFontSize)
-            canvas.drawBadge(
-                tag ?: if (isForward) "转发动态" else "动态",
-                font,
-                theme.mainLeftBadge.fontColor,
-                theme.mainLeftBadge.bgColor,
-                rrect,
-                TOP_LEFT,
-                badgeImage
+    return try {
+        createImage(
+            (cardRect.width + margin).toInt(),
+            height + quality.badgeHeight + margin + (footerParagraph?.height?.toInt() ?: 0)
+        ) { canvas ->
+            val rrect = RRect.makeComplexXYWH(
+                margin / 2f,
+                quality.badgeHeight + margin / 2f,
+                cardRect.width,
+                height.toFloat(),
+                cardBadgeArc
             )
-        }
-        if (imageConfig.badgeEnable.right) {
-            canvas.drawBadge(id, font, theme.mainRightBadge.fontColor, theme.mainRightBadge.bgColor, rrect, TOP_RIGHT)
-        }
 
-        canvas.drawCard(rrect)
-
-        var top = quality.cardMargin + quality.badgeHeight.toFloat()
-        for (img in imgList) {
-            canvas.drawScaleWidthImage(img, cardRect.width, quality.cardMargin.toFloat(), top)
-
-            top += if (img.width > cardRect.width) {
-                (cardRect.width * img.height / img.width + quality.contentSpace).toInt()
+            if (isForward) {
+                canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.smallCardShadow)
             } else {
-                img.height + quality.contentSpace
+                canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
             }
-        }
 
-        footerParagraph?.paint(canvas, cardRect.left, rrect.bottom + quality.cardMargin / 2)
+            if (imageConfig.badgeEnable.left) {
+                val svg = loadSVG("icon/${if (isForward) "FORWARD" else "BILIBILI_LOGO"}.svg")
+                val badgeImage = svg?.makeImage(quality.contentFontSize, quality.contentFontSize)
+                canvas.drawBadge(
+                    tag ?: if (isForward) "转发动态" else "动态",
+                    font,
+                    theme.mainLeftBadge.fontColor,
+                    theme.mainLeftBadge.bgColor,
+                    rrect,
+                    TOP_LEFT,
+                    badgeImage
+                )
+                // 关闭 badge Image
+                badgeImage?.close()
+            }
+            if (imageConfig.badgeEnable.right) {
+                canvas.drawBadge(id, font, theme.mainRightBadge.fontColor, theme.mainRightBadge.bgColor, rrect, TOP_RIGHT)
+            }
+
+            canvas.drawCard(rrect)
+
+            var top = quality.cardMargin + quality.badgeHeight.toFloat()
+            for (img in imgList) {
+                canvas.drawScaleWidthImage(img, cardRect.width, quality.cardMargin.toFloat(), top)
+
+                top += if (img.width > cardRect.width) {
+                    (cardRect.width * img.height / img.width + quality.contentSpace).toInt()
+                } else {
+                    img.height + quality.contentSpace
+                }
+            }
+
+            footerParagraph?.paint(canvas, cardRect.left, rrect.bottom + quality.cardMargin / 2)
+        }
+    } finally {
+        // 如果需要关闭输入的 Image 列表
+        if (closeInputImages) {
+            imgList.forEach { runCatching { it.close() } }
+        }
     }
 }
 

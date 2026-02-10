@@ -17,7 +17,13 @@ suspend fun LiveInfo.makeDrawLive(colors: List<Int>): String {
     val img = makeCardBg(live.height, colors) {
         it.drawImage(live, 0f, 0f)
     }
-    return cacheImage(img, "$uid/${liveTime.formatTime("yyyyMMddHHmmss")}.png", CacheType.DRAW_LIVE)
+    // 关闭中间 Image，释放原生内存
+    return try {
+        cacheImage(img, "$uid/${liveTime.formatTime("yyyyMMddHHmmss")}.png", CacheType.DRAW_LIVE)
+    } finally {
+        live.close()
+        img.close()
+    }
 }
 
 suspend fun LiveInfo.drawLive(): Image {
@@ -43,53 +49,61 @@ suspend fun LiveInfo.drawLive(): Image {
     } else null
 
     val liveRoomId = roomId
-    return createImage(
-        (cardRect.width + margin).toInt(),
-        height + quality.badgeHeight + margin + (footerParagraph?.height?.toInt() ?: 0)
-    ) { canvas ->
-        val rrect = RRect.makeComplexXYWH(
-            margin / 2f,
-            quality.badgeHeight + margin / 2f,
-            cardRect.width,
-            height.toFloat(),
-            cardBadgeArc
-        )
-
-        canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
-
-        if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
-            val svg = SVGDOM(Data.makeFromBytes(loadResourceBytes("icon/LIVE.svg")))
-            canvas.drawBadge(
-                "直播",
-                font,
-                theme.mainLeftBadge.fontColor,
-                theme.mainLeftBadge.bgColor,
-                rrect,
-                Position.TOP_LEFT,
-                svg.makeImage(quality.contentFontSize, quality.contentFontSize)
+    return try {
+        createImage(
+            (cardRect.width + margin).toInt(),
+            height + quality.badgeHeight + margin + (footerParagraph?.height?.toInt() ?: 0)
+        ) { canvas ->
+            val rrect = RRect.makeComplexXYWH(
+                margin / 2f,
+                quality.badgeHeight + margin / 2f,
+                cardRect.width,
+                height.toFloat(),
+                cardBadgeArc
             )
+
+            canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
+
+            if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
+                val svg = SVGDOM(Data.makeFromBytes(loadResourceBytes("icon/LIVE.svg")))
+                val badgeImage = svg.makeImage(quality.contentFontSize, quality.contentFontSize)
+                canvas.drawBadge(
+                    "直播",
+                    font,
+                    theme.mainLeftBadge.fontColor,
+                    theme.mainLeftBadge.bgColor,
+                    rrect,
+                    Position.TOP_LEFT,
+                    badgeImage
+                )
+                // 关闭 badge Image
+                badgeImage.close()
+            }
+            if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
+                canvas.drawBadge(liveRoomId.toString(), font, Color.WHITE, Color.makeRGB(72, 199, 240), rrect, Position.TOP_RIGHT)
+            }
+
+            canvas.drawCard(rrect)
+
+            var top = quality.cardMargin + quality.badgeHeight.toFloat()
+
+            canvas.drawScaleWidthImage(avatar, cardRect.width, quality.cardMargin.toFloat(), top)
+            top += avatar.height + quality.contentSpace
+
+            val dst = RRect.makeXYWH(
+                quality.cardMargin.toFloat(),
+                top,
+                cardRect.width - quality.cardOutlineWidth / 2,
+                (cardRect.width * coverImg.height / coverImg.width)  - quality.cardOutlineWidth / 2,
+                quality.cardArc
+            )
+            canvas.drawImageRRect(coverImg, dst)
+
+            footerParagraph?.paint(canvas, cardRect.left, rrect.bottom + quality.cardMargin / 2)
         }
-        if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
-            canvas.drawBadge(liveRoomId.toString(), font, Color.WHITE, Color.makeRGB(72, 199, 240), rrect, Position.TOP_RIGHT)
-        }
-
-        canvas.drawCard(rrect)
-
-        var top = quality.cardMargin + quality.badgeHeight.toFloat()
-
-        canvas.drawScaleWidthImage(avatar, cardRect.width, quality.cardMargin.toFloat(), top)
-        top += avatar.height + quality.contentSpace
-
-        val dst = RRect.makeXYWH(
-            quality.cardMargin.toFloat(),
-            top,
-            cardRect.width - quality.cardOutlineWidth / 2,
-            (cardRect.width * coverImg.height / coverImg.width)  - quality.cardOutlineWidth / 2,
-            quality.cardArc
-        )
-        canvas.drawImageRRect(coverImg, dst)
-
-        footerParagraph?.paint(canvas, cardRect.left, rrect.bottom + quality.cardMargin / 2)
+    } finally {
+        // 关闭 avatar Image，释放原生内存
+        avatar.close()
     }
 }
 

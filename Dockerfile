@@ -28,7 +28,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制 JAR 文件
-COPY build/libs/dynamic-bot-1.5.2.jar /app/bot.jar
+COPY build/libs/dynamic-bot-1.5.3.jar /app/bot.jar
 
 # 创建必要的目录
 RUN mkdir -p /app/config /app/data /app/temp /app/logs

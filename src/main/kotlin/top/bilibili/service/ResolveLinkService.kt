@@ -155,7 +155,13 @@ enum class LinkType(val regex: List<Regex>) {
                     val img = makeCardBg(dynamic.height, listOf(color)) {
                         it.drawImage(dynamic, 0f, 0f)
                     }
-                    cacheImage(img, "$idStr.png", CacheType.DRAW_SEARCH)
+                    // 关闭中间 Image，释放原生内存
+                    try {
+                        cacheImage(img, "$idStr.png", CacheType.DRAW_SEARCH)
+                    } finally {
+                        dynamic.close()
+                        img.close()
+                    }
                 }
             }
             Live -> {
@@ -229,11 +235,17 @@ suspend fun drawGeneral(id: String, tag: String, time: String, author: ModuleAut
     if (isPgcContent) {
         val imgList = mutableListOf<org.jetbrains.skia.Image>()
         imgData?.let { imgList.add(it) }
-        val cimg = imgList.assembleCard(id, tag = "搜索")
+        val cimg = imgList.assembleCard(id, tag = "搜索", closeInputImages = true)
         val img = makeCardBg(cimg.height, colors) {
             it.drawImage(cimg, 0f, 0f)
         }
-        return cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
+        // 关闭中间 Image，释放原生内存
+        return try {
+            cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
+        } finally {
+            cimg.close()
+            img.close()
+        }
     }
 
     // 非 PGC 内容保持原有逻辑
@@ -256,12 +268,18 @@ suspend fun drawGeneral(id: String, tag: String, time: String, author: ModuleAut
     imgList.add(author.drawGeneral(time, VIDEO_LINK(id), colors.first()))
     imgData?.let { imgList.add(it) }
 
-    val cimg = imgList.assembleCard(id, footer, tag = "搜索")
+    val cimg = imgList.assembleCard(id, footer, tag = "搜索", closeInputImages = true)
 
     val img = makeCardBg(cimg.height, colors) {
         it.drawImage(cimg, 0f, 0f)
     }
-    return cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
+    // 关闭中间 Image，释放原生内存
+    return try {
+        cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
+    } finally {
+        cimg.close()
+        img.close()
+    }
 }
 
 //摆烂行为

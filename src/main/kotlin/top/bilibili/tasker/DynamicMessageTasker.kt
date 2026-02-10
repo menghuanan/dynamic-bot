@@ -110,7 +110,12 @@ object DynamicMessageTasker : BiliTasker() {
 
     suspend fun DynamicItem.dynamicImages(): List<String>? {
         if(isUnlocked()) {
-            val path = cacheImage(drawBlockedDefault(), "blocked_default.png", CacheType.IMAGES)
+            val blockedImg = drawBlockedDefault()
+            val path = try {
+                cacheImage(blockedImg, "blocked_default.png", CacheType.IMAGES)
+            } finally {
+                blockedImg.close()
+            }
             return listOf("cache/$path")
         }
         return when (type) {
@@ -119,7 +124,12 @@ object DynamicMessageTasker : BiliTasker() {
                 "MAJOR_TYPE_DRAW" -> modules.moduleDynamic.major?.draw?.items?.map { it.src }
                 "MAJOR_TYPE_BLOCKED" -> {
                     val path = modules.moduleDynamic.major.blocked?.let {
-                        cacheImage(it.drawGeneral(),"blocked_$idStr.png",CacheType.IMAGES)
+                        val blockedImg = it.drawGeneral()
+                        try {
+                            cacheImage(blockedImg, "blocked_$idStr.png", CacheType.IMAGES)
+                        } finally {
+                            blockedImg.close()
+                        }
                     }
                     listOf("cache/$path")
                 }

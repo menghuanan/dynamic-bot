@@ -133,22 +133,28 @@ suspend fun ModuleDynamic.Major.Opus.drawGeneral(): Image {
     val h =
         if (contentParagraph != null) contentParagraph.lineNumber * quality.contentFontSize.toInt() + quality.cardPadding else 0
 
-    return createImage(
-        cardRect.width.toInt(),
-        desc.height + (draw?.height ?: 0) + h
-    ) { canvas ->
-        contentParagraph?.let {
-            contentParagraph.paint(
-                canvas,
-                quality.cardPadding.toFloat(),
-                0f
-            )
-        }
+    return try {
+        createImage(
+            cardRect.width.toInt(),
+            desc.height + (draw?.height ?: 0) + h
+        ) { canvas ->
+            contentParagraph?.let {
+                contentParagraph.paint(
+                    canvas,
+                    quality.cardPadding.toFloat(),
+                    0f
+                )
+            }
 
-        canvas.drawImage(desc, 0f, h.toFloat())
-        draw?.let {
-            canvas.drawImage(draw, 0f, h.toFloat() + desc.height)
+            canvas.drawImage(desc, 0f, h.toFloat())
+            draw?.let {
+                canvas.drawImage(draw, 0f, h.toFloat() + desc.height)
+            }
         }
+    } finally {
+        // 关闭中间 Image，释放原生内存
+        desc.close()
+        draw?.close()
     }
 }
 
