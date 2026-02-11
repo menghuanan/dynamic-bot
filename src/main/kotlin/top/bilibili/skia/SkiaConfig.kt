@@ -54,11 +54,11 @@ object SkiaConfig {
 
     // 模式配置
 
-    /** 是否启用 Worker 子进程模式 */
+    /** 是否启用子进程模式 (worker process mode) */
     @Volatile
     var enableWorkerProcess: Boolean = true
 
-    /** 是否自动在主进程和子进程模式之间切换 */
+    /** 是否自动根据内存压力切换模式 */
     @Volatile
     var autoSwitchMode: Boolean = true
 
