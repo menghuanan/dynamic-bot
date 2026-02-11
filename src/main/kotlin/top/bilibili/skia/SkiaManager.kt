@@ -13,6 +13,17 @@ object SkiaManager {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val logger = LoggerFactory.getLogger(SkiaManager::class.java)
 
+    init {
+        // Validate configuration on initialization
+        try {
+            SkiaConfig.validate()
+            logger.info("SkiaManager initialized with valid configuration")
+        } catch (e: IllegalArgumentException) {
+            logger.error("Invalid SkiaConfig detected", e)
+            throw e
+        }
+    }
+
     // 运行模式
     enum class Mode { IN_PROCESS, WORKER_PROCESS }
     private var currentMode = AtomicReference(Mode.IN_PROCESS)
@@ -52,8 +63,10 @@ object SkiaManager {
         totalCleanupCount.incrementAndGet()
         logger.info("开始执行 Skia 清理...")
 
-        // 1. 等待活动任务完成
-        DrawingQueueManager.awaitAllCompleted()
+        // 1. 等待活动任务完成（带超时）
+        withTimeoutOrNull(30_000L) {
+            DrawingQueueManager.awaitAllCompleted()
+        } ?: logger.warn("等待活动任务完成超时，强制继续清理")
 
         // 2. 清理全局缓存
         clearGlobalCaches()
@@ -73,7 +86,12 @@ object SkiaManager {
      */
     private fun clearGlobalCaches() {
         // 清理图片缓存
-        runCatching { ImageCache.cleanCache() }
+        runCatching {
+            ImageCache.cleanCache()
+            logger.debug("ImageCache cleared successfully")
+        }.onFailure { e ->
+            logger.warn("Failed to clear ImageCache", e)
+        }
     }
 
     /**
