@@ -674,7 +674,12 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(session: DrawingSession): Imag
                     val svg = loadSVG("icon/${it.type}.svg")
                     if (svg != null) {
                         val iconSize = quality.contentFontSize
-                        canvas.drawImage(svg.makeImage(iconSize, iconSize), x, y - quality.contentFontSize * 0.9f)
+                        val iconImage = svg.makeImage(iconSize, iconSize)
+                        try {
+                            canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
+                        } finally {
+                            iconImage.close()
+                        }
                         x += iconSize
                     } else {
                         logger.warn("未找到类型为 ${it.type} 的图标")
@@ -896,27 +901,29 @@ suspend fun Canvas.drawTextArea(text: String, rect: Rect, textX: Float, textY: F
                         }
                         val et = e.joinToString("-")
                         emojiImg = getOrDownloadImage(twemoji(et), CacheType.EMOJI)
+
+                        if (x + emojiSize > rect.right) {
+                            x = rect.left
+                            y += emojiSize + quality.lineSpace
+                        }
+                        if (emojiImg != null) {
+                            val srcRect = Rect.makeXYWH(0f, 0f, emojiImg.width.toFloat(), emojiImg.height.toFloat())
+                            val tarRect = Rect.makeXYWH(x, y - emojiSize * 0.8f, emojiSize * 0.9f, emojiSize * 0.9f)
+                            drawImageRect(
+                                emojiImg,
+                                srcRect,
+                                tarRect,
+                                FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
+                                null,
+                                true
+                            )
+                        }
+                        x += emojiSize
                     } catch (e: Exception) {
                         logger.warn("加载 Emoji 图片失败 ($emoji): ${e.message}")
+                    } finally {
+                        emojiImg?.close()
                     }
-
-                    if (x + emojiSize > rect.right) {
-                        x = rect.left
-                        y += emojiSize + quality.lineSpace
-                    }
-                    if (emojiImg != null) {
-                        val srcRect = Rect.makeXYWH(0f, 0f, emojiImg.width.toFloat(), emojiImg.height.toFloat())
-                        val tarRect = Rect.makeXYWH(x, y - emojiSize * 0.8f, emojiSize * 0.9f, emojiSize * 0.9f)
-                        drawImageRect(
-                            emojiImg,
-                            srcRect,
-                            tarRect,
-                            FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
-                            null,
-                            true
-                        )
-                    }
-                    x += emojiSize
                 }
             }
         }
