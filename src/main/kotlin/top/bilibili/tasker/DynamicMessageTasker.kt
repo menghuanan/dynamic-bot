@@ -11,6 +11,7 @@ import top.bilibili.draw.drawBlockedDefault
 import top.bilibili.draw.drawGeneral
 import top.bilibili.draw.makeDrawDynamic
 import top.bilibili.draw.makeRGB
+import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.*
 
 object DynamicMessageTasker : BiliTasker() {
@@ -110,11 +111,10 @@ object DynamicMessageTasker : BiliTasker() {
 
     suspend fun DynamicItem.dynamicImages(): List<String>? {
         if(isUnlocked()) {
-            val blockedImg = drawBlockedDefault()
-            val path = try {
+            val path = SkiaManager.executeDrawing {
+                val blockedImg = drawBlockedDefault(this)
                 cacheImage(blockedImg, "blocked_default.png", CacheType.IMAGES)
-            } finally {
-                blockedImg.close()
+                // All resources automatically released when session closes
             }
             return listOf("cache/$path")
         }

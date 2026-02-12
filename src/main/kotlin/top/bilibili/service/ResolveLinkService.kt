@@ -5,6 +5,7 @@ import top.bilibili.BiliConfigManager
 import top.bilibili.api.*
 import top.bilibili.data.*
 import top.bilibili.draw.*
+import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.*
 import java.time.Instant
 
@@ -151,16 +152,14 @@ enum class LinkType(val regex: List<Regex>) {
             Dynamic -> {
                 val color = Color.makeRGB(BiliConfigManager.config.imageConfig.defaultColor)
                 biliClient.getDynamicDetail(id)?.run {
-                    val dynamic = drawDynamic(color)
-                    val img = makeCardBg(dynamic.height, listOf(color)) {
-                        it.drawImage(dynamic, 0f, 0f)
-                    }
-                    // 关闭中间 Image，释放原生内存
-                    try {
+                    SkiaManager.executeDrawing {
+                        val dynamic = this@run.drawDynamic(this, color)
+                        val img = makeCardBg(this, dynamic.height, listOf(color)) {
+                            it.drawImage(dynamic, 0f, 0f)
+                        }
+                        // 关闭中间 Image，释放原生内存
                         cacheImage(img, "$idStr.png", CacheType.DRAW_SEARCH)
-                    } finally {
-                        dynamic.close()
-                        img.close()
+                        // All resources automatically released when session closes
                     }
                 }
             }
@@ -233,18 +232,16 @@ suspend fun drawGeneral(id: String, tag: String, time: String, author: ModuleAut
     val isPgcContent = tag in listOf("番剧", "电影", "纪录片", "国创", "电视剧", "综艺")
 
     if (isPgcContent) {
-        val imgList = mutableListOf<org.jetbrains.skia.Image>()
-        imgData?.let { imgList.add(it) }
-        val cimg = imgList.assembleCard(id, tag = "搜索", closeInputImages = true)
-        val img = makeCardBg(cimg.height, colors) {
-            it.drawImage(cimg, 0f, 0f)
-        }
-        // 关闭中间 Image，释放原生内存
-        return try {
+        return SkiaManager.executeDrawing {
+            val imgList = mutableListOf<org.jetbrains.skia.Image>()
+            imgData?.let { imgList.add(it) }
+            val cimg = imgList.assembleCard(this, id, tag = "搜索", closeInputImages = true)
+            val img = makeCardBg(this, cimg.height, colors) {
+                it.drawImage(cimg, 0f, 0f)
+            }
+            // 关闭中间 Image，释放原生内存
             cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
-        } finally {
-            cimg.close()
-            img.close()
+            // All resources automatically released when session closes
         }
     }
 
@@ -264,21 +261,20 @@ suspend fun drawGeneral(id: String, tag: String, time: String, author: ModuleAut
     } else {
         buildFooter(author.name, author.mid, id, time, tag)
     }
-    val imgList = mutableListOf<org.jetbrains.skia.Image>()
-    imgList.add(author.drawGeneral(time, VIDEO_LINK(id), colors.first()))
-    imgData?.let { imgList.add(it) }
 
-    val cimg = imgList.assembleCard(id, footer, tag = "搜索", closeInputImages = true)
+    return SkiaManager.executeDrawing {
+        val imgList = mutableListOf<org.jetbrains.skia.Image>()
+        imgList.add(author.drawGeneral(this, time, VIDEO_LINK(id), colors.first()))
+        imgData?.let { imgList.add(it) }
 
-    val img = makeCardBg(cimg.height, colors) {
-        it.drawImage(cimg, 0f, 0f)
-    }
-    // 关闭中间 Image，释放原生内存
-    return try {
+        val cimg = imgList.assembleCard(this, id, footer, tag = "搜索", closeInputImages = true)
+
+        val img = makeCardBg(this, cimg.height, colors) {
+            it.drawImage(cimg, 0f, 0f)
+        }
+        // 关闭中间 Image，释放原生内存
         cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
-    } finally {
-        cimg.close()
-        img.close()
+        // All resources automatically released when session closes
     }
 }
 
