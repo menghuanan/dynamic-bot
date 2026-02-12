@@ -68,7 +68,7 @@ suspend fun LiveInfo.drawLive(session: DrawingSession): Image {
 
     if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
         val svg = SVGDOM(Data.makeFromBytes(loadResourceBytes("icon/LIVE.svg")))
-        val badgeImage = with(session) { svg.makeImage(quality.contentFontSize, quality.contentFontSize).track() }
+        val badgeImage = svg.makeImage(session, quality.contentFontSize, quality.contentFontSize)
         canvas.drawBadge(
             "直播",
             font,
