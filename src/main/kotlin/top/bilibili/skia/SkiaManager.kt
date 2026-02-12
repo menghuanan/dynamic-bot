@@ -130,15 +130,16 @@ object SkiaManager {
         logger.info("关闭 SkiaManager...")
         performCleanup()
 
-        // 关闭 FontManager
+        // 先取消协程作用域，确保没有新任务运行
+        scope.cancel()
+
+        // 然后关闭 FontManager
         try {
             FontManager.close()
             logger.info("FontManager 已关闭")
         } catch (e: Exception) {
             logger.error("关闭 FontManager 时出错: ${e.message}", e)
         }
-
-        scope.cancel()
     }
 }
 
