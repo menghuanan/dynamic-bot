@@ -442,12 +442,8 @@ suspend fun ModuleDispute.drawGeneral(session: DrawingSession): Image {
         val svg = loadSVG("icon/DISPUTE.svg")
         if (svg != null) {
             val iconSize = quality.contentFontSize
-            val iconImage = svg.makeImage(iconSize, iconSize)
-            try {
-                canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
-            } finally {
-                iconImage.close()
-            }
+            val iconImage = svg.makeImage(session, iconSize, iconSize)
+            canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
             x += iconSize + quality.lineSpace
         } else {
             logger.warn("未找到类型为 DISPUTE 的图标")
@@ -527,12 +523,8 @@ suspend fun ModuleDynamic.Topic.drawGeneral(session: DrawingSession): Image {
         val svg = loadSVG("icon/TOPIC.svg")
         if (svg != null) {
             val iconSize = quality.contentFontSize
-            val iconImage = svg.makeImage(iconSize, iconSize)
-            try {
-                canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
-            } finally {
-                iconImage.close()
-            }
+            val iconImage = svg.makeImage(session, iconSize, iconSize)
+            canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
             x += iconSize + quality.lineSpace
         } else {
             logger.warn("未找到类型为 TOPIC 的图标")
@@ -674,12 +666,8 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(session: DrawingSession): Imag
                     val svg = loadSVG("icon/${it.type}.svg")
                     if (svg != null) {
                         val iconSize = quality.contentFontSize
-                        val iconImage = svg.makeImage(iconSize, iconSize)
-                        try {
-                            canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
-                        } finally {
-                            iconImage.close()
-                        }
+                        val iconImage = svg.makeImage(session, iconSize, iconSize)
+                        canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
                         x += iconSize
                     } else {
                         logger.warn("未找到类型为 ${it.type} 的图标")

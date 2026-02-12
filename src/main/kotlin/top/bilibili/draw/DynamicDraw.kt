@@ -292,9 +292,7 @@ fun List<Image>.assembleCard(session: DrawingSession, id: String, footer: String
 
         if (imageConfig.badgeEnable.left) {
             val svg = loadSVG("icon/${if (isForward) "FORWARD" else "BILIBILI_LOGO"}.svg")
-            val badgeImage = with(session) {
-                svg?.makeImage(quality.contentFontSize, quality.contentFontSize)?.track()
-            }
+            val badgeImage = svg?.makeImage(session, quality.contentFontSize, quality.contentFontSize)
             canvas.drawBadge(
                 tag ?: if (isForward) "转发动态" else "动态",
                 font,
