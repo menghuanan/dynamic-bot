@@ -141,12 +141,18 @@ enum class LinkType(val regex: List<Regex>) {
             VideoLink -> {
                 biliClient.getVideoDetail(id)?.run {
                     val author = biliClient.userInfo(owner.mid)?.toDrawAuthorData() ?: toDrawAuthorData()
-                    drawGeneral(id, "视频", pubdate.formatRelativeTime, author, toDrawData().drawGeneral(true))
+                    val data = SkiaManager.executeDrawing {
+                        toDrawData().drawGeneral(this, true)
+                    }
+                    drawGeneral(id, "视频", pubdate.formatRelativeTime, author, data)
                 }
             }
             Article -> {
                 biliClient.getArticleDetail("cv$id")?.run {
-                    drawGeneral(id, "专栏", time.formatRelativeTime, author, toDrawData().drawGeneral())
+                    val data = SkiaManager.executeDrawing {
+                        toDrawData().drawGeneral(this)
+                    }
+                    drawGeneral(id, "专栏", time.formatRelativeTime, author, data)
                 }
             }
             Dynamic -> {
@@ -166,7 +172,9 @@ enum class LinkType(val regex: List<Regex>) {
             Live -> {
                 val room = biliClient.getLiveDetail(id) ?: return null
                 val author = biliClient.userInfo(room.uid)?.toDrawAuthorData() ?: return null
-                val data = room.toDrawData().drawGeneral()
+                val data = SkiaManager.executeDrawing {
+                    room.toDrawData().drawGeneral(this)
+                }
                 val area = if (room.parentAreaName != null && room.areaName != null) {
                     "${room.parentAreaName} · ${room.areaName}"
                 } else {
@@ -187,7 +195,9 @@ enum class LinkType(val regex: List<Regex>) {
             Pgc -> {
                 val info = biliClient.getPcgInfo(id) ?: return null
                 val author = info.toPgcAuthor() ?: return null
-                val data = info.toPgc()?.drawSmall()
+                val data = SkiaManager.executeDrawing {
+                    info.toPgc()?.drawSmall(this)
+                }
                 val typeName = when (info) {
                     is PgcSeason -> when (info.type) {
                         1 -> "番剧"

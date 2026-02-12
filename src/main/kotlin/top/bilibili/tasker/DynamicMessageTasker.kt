@@ -124,11 +124,9 @@ object DynamicMessageTasker : BiliTasker() {
                 "MAJOR_TYPE_DRAW" -> modules.moduleDynamic.major?.draw?.items?.map { it.src }
                 "MAJOR_TYPE_BLOCKED" -> {
                     val path = modules.moduleDynamic.major.blocked?.let {
-                        val blockedImg = it.drawGeneral()
-                        try {
+                        SkiaManager.executeDrawing {
+                            val blockedImg = it.drawGeneral(this)
                             cacheImage(blockedImg, "blocked_$idStr.png", CacheType.IMAGES)
-                        } finally {
-                            blockedImg.close()
                         }
                     }
                     listOf("cache/$path")

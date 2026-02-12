@@ -35,16 +35,6 @@ suspend fun ModuleDynamic.makeGeneral(session: DrawingSession, isForward: Boolea
     }
 }
 
-@Deprecated("Use version with DrawingSession for better resource management")
-suspend fun ModuleDynamic.makeGeneral(isForward: Boolean = false): List<Image> {
-    return mutableListOf<Image>().apply {
-        topic?.drawGeneral()?.let { add(it) }
-        desc?.drawGeneral()?.let { add(it) }
-        major?.makeGeneral(isForward)?.let { add(it) }
-        additional?.makeGeneral()?.let { add(it) }
-    }
-}
-
 suspend fun ModuleDynamic.Additional.makeGeneral(session: DrawingSession): Image? {
     return when (type) {
         "ADDITIONAL_TYPE_COMMON" -> {
