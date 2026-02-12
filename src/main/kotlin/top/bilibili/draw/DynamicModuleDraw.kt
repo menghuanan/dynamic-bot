@@ -1029,7 +1029,7 @@ suspend fun ModuleAuthor.drawGeneral(session: DrawingSession, time: String, link
         }
     }
 
-    canvas.drawOrnament(authorDecorate, link, themeColor)
+    canvas.drawOrnament(session, authorDecorate, link, themeColor)
 
     return with(session) { surface.makeImageSnapshot().track() }
 }
@@ -1088,6 +1088,89 @@ suspend fun ModuleAuthor.drawGeneral(time: String, link: String, themeColor: Int
     }
 }
 
+suspend fun Canvas.drawOrnament(
+    session: DrawingSession,
+    decorate: ModuleAuthor.Decorate?,
+    link: String?,
+    qrCodeColor: Int?
+) {
+
+    when (BiliConfigManager.config.imageConfig.cardOrnament) {
+        "FanCard" -> {
+            if (decorate != null) {
+                getOrDownloadImage(decorate.cardUrl, CacheType.USER)?.let {fanImg ->
+                    try {
+                        val srcFRect = Rect(0f, 0f, fanImg.width.toFloat(), fanImg.height.toFloat())
+
+                        val cardHeight = when (decorate.type) {
+                            1, 2 -> quality.ornamentHeight * 0.6f
+                            else -> quality.ornamentHeight
+                        }
+
+                        val cardWidth = fanImg.width * cardHeight / fanImg.height
+
+                        val y = ((quality.faceSize - cardHeight + quality.contentSpace) / 2)
+                        val tarFRect = Rect.makeXYWH(
+                            cardContentRect.right - cardWidth - abs(y),
+                            y + quality.cardPadding,
+                            cardWidth,
+                            cardHeight
+                        )
+
+                        drawImageRect(
+                            fanImg,
+                            srcFRect,
+                            tarFRect,
+                            FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
+                            null,
+                            true
+                        )
+                        // 绘制粉丝数量（需要粉丝卡字体）
+                        fansCardFont?.let { font ->
+                            if (decorate.type == 3 && decorate.fan?.numStr != "") {
+                                val textLineFan = TextLine.make(decorate.fan?.numStr, font)
+                                try {
+                                    drawTextLine(
+                                        textLineFan,
+                                        tarFRect.right - textLineFan.width * 2,
+                                        tarFRect.bottom - (cardHeight - font.size) / 2,
+                                        Paint().apply { color = Color.makeRGB(decorate.fan!!.color) }
+                                    )
+                                } finally {
+                                    textLineFan.close()
+                                }
+                            }
+                        }
+                    } finally {
+                        fanImg.close()
+                    }
+                }
+            }
+        }
+
+        "QrCode" -> {
+            val qrCodeImg = qrCode(session, link!!, quality.ornamentHeight.toInt(), qrCodeColor!!)
+            val y = ((quality.faceSize - qrCodeImg.height + quality.contentSpace) / 2)
+            val tarFRect = Rect.makeXYWH(
+                cardContentRect.right - qrCodeImg.width - abs(y),
+                y + quality.cardPadding,
+                qrCodeImg.width.toFloat(),
+                qrCodeImg.height.toFloat()
+            )
+            val srcFRect = Rect(0f, 0f, qrCodeImg.width.toFloat(), qrCodeImg.height.toFloat())
+            drawImageRect(
+                qrCodeImg,
+                srcFRect,
+                tarFRect,
+                FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
+                Paint(),
+                true
+            )
+        }
+    }
+}
+
+@Deprecated("Use version with DrawingSession for better resource management")
 suspend fun Canvas.drawOrnament(decorate: ModuleAuthor.Decorate?, link: String?, qrCodeColor: Int?) {
 
     when (BiliConfigManager.config.imageConfig.cardOrnament) {
