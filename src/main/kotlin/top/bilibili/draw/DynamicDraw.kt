@@ -13,8 +13,6 @@ import top.bilibili.data.DynamicType.DYNAMIC_TYPE_NONE
 import top.bilibili.draw.Position.*
 import top.bilibili.tasker.DynamicMessageTasker.isUnlocked
 import top.bilibili.utils.*
-import top.bilibili.utils.FontUtils.loadTypeface
-import top.bilibili.utils.FontUtils.matchFamily
 import top.bilibili.skia.DrawingSession
 import top.bilibili.skia.SkiaManager
 
@@ -63,77 +61,20 @@ val cardContentRect: Rect by lazy {
     cardRect.inflate(-1f * quality.cardPadding)
 }
 
-val mainTypeface: Typeface by lazy {
-    val imageConfig = BiliConfigManager.config.imageConfig
-    val mainFont = imageConfig.font.split(";").first().split(".").first()
-    try {
-        if (mainFont.isBlank()) {
-            logger.warn("配置文件未配置字体, 尝试加载 font 目录下的字体")
-            val f = FontUtils.defaultFont
-            if (f == null) {
-                throw Exception()
-            } else {
-                logger.info("成功加载 ${f.familyName} 字体")
-                return@lazy f
-            }
-        } else {
-            matchFamily(mainFont).matchStyle(FontStyle.NORMAL)!!
-        }
-    } catch (e: Exception) {
-        logger.warn("加载主字体 $mainFont 失败, 尝试加载默认字体")
-        loadSysDefaultFont()
-    }
-}
+val mainTypeface: Typeface
+    get() = FontManager.mainTypeface
 
-fun loadSysDefaultFont(): Typeface {
-    // 优先使用内嵌字体，然后尝试常见的系统字体
-    val defaultList = listOf(
-        "Source Han Sans SC",  // 内嵌字体：SourceHanSansSC-Regular.otf
-        "Source Han Sans",
-        "Microsoft YaHei",     // Windows 系统字体
-        "SimHei",              // Windows 系统字体
-        "sans-serif"           // 通用字体
-    )
-    defaultList.forEach {
-        try {
+val font: Font
+    get() = FontManager.font
 
-            val f = matchFamily(it).matchStyle(FontStyle.NORMAL)!!
-            logger.info("加载默认字体 $it 成功")
-            return f
-        } catch (e: Exception) {
-            logger.debug("尝试加载默认字体 $it 失败: ${e.message}")
-        }
-    }
-    throw Exception("无法加载默认字体, 请自行配置字体或准备字体文件")
-}
+val emojiTypeface: Typeface?
+    get() = FontManager.emojiTypeface
 
-val font: Font by lazy {
-    Font(mainTypeface, quality.contentFontSize)
-}
+val emojiFont: Font
+    get() = FontManager.emojiFont
 
-// TODO: [Skiko依赖] 需要实现自定义字体下载功能
-// 原代码使用 xyz.cssxsh.skia.FontUtils，需要替换为自定义实现
-val emojiTypeface: Typeface? by lazy {
-    try {
-        FontUtils.matchFamily("Noto Color Emoji")?.matchStyle(FontStyle.NORMAL)
-    } catch (e: Exception) {
-        logger.warn("无法加载 Emoji 字体: ${e.message}")
-        null
-    }
-}
-
-val emojiFont: Font by lazy {
-    Font(emojiTypeface, quality.contentFontSize)
-}
-
-val fansCardFont: Font? by lazy {
-    try {
-        Font(loadTypeface(Data.makeFromBytes(loadResourceBytes("/font/FansCard.ttf"))), quality.subTitleFontSize)
-    } catch (e: Exception) {
-        logger.warn("无法加载粉丝卡字体 FansCard.ttf: ${e.message}，将跳过卡片装饰")
-        null
-    }
-}
+val fansCardFont: Font?
+    get() = FontManager.fansCardFont
 
 val titleTextStyle by lazy {
     TextStyle().apply {
@@ -487,12 +428,12 @@ suspend fun DynamicItem.Modules.makeGeneral(
 ): List<Image> {
     return mutableListOf<Image>().apply {
         if (type != DYNAMIC_TYPE_NONE)
-            add(if (isForward) moduleAuthor.drawForward(time) else moduleAuthor.drawGeneral(time, link, themeColor))
+            add(if (isForward) moduleAuthor.drawForward(session, time) else moduleAuthor.drawGeneral(session, time, link, themeColor))
         if(isUnlocked){
             add(drawBlockedDefault(session))
         }else{
-            moduleDispute?.drawGeneral()?.let { add(it) }
-            addAll(moduleDynamic.makeGeneral(isForward))
+            moduleDispute?.drawGeneral(session)?.let { add(it) }
+            addAll(moduleDynamic.makeGeneral(session, isForward))
         }
     }
 }
