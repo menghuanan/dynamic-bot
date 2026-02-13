@@ -43,10 +43,12 @@ dynamic-bot/
 │   ├── draw/              # 图片渲染
 │   ├── napcat/            # NapCat 客户端
 │   ├── service/           # 业务服务
+│   ├── skia/              # Skia 资源管理
 │   ├── tasker/            # 定时任务
 │   ├── utils/             # 工具类
 │   ├── BiliConfig.kt      # 配置文件
 │   ├── BiliData.kt        # 数据文件
+│   ├── SkikoInitializer.kt # Skiko 初始化
 │   └── Main.kt            # 程序入口
 ├── src/main/resources/               # 资源文件
 │   └── font/              # 字体文件
@@ -63,6 +65,7 @@ dynamic-bot/
 ├── .gitignore             # Git 忽略文件
 ├── Dockerfile             # Docker 镜像构建文件
 ├── docker-compose.yml     # Docker Compose 配置
+├── docker-entrypoint.sh   # Docker 启动脚本
 ├── docker-deploy.ps1      # Docker 部署脚本（Windows）
 ├── docker-push.ps1        # Docker Hub 推送脚本（Windows）
 ├── README.md              # 项目说明
@@ -83,7 +86,7 @@ dynamic-bot/
 ```
 
 编译完成后,可执行文件位于：
-- `build/libs/dynamic-bot-1.4.jar`
+- `build/libs/dynamic-bot-1.6.jar`
 
 ### 2. 配置文件
 
@@ -114,7 +117,7 @@ logs/
 #### 方式一：直接运行 JAR
 
 ```bash
-java -jar build/libs/dynamic-bot-1.4.jar
+java -jar build/libs/dynamic-bot-1.6.jar
 ```
 
 #### 方式二：使用 Docker Hub 镜像（推荐）
@@ -437,11 +440,12 @@ docker logs -f dynamic-bot
 
 ### 容器配置
 
-- **基础镜像**: eclipse-temurin:17-jre-jammy
-- **JVM 参数**: `-Xms256m -Xmx512m -XX:+UseG1GC -XX:+UseContainerSupport`
+- **基础镜像**: eclipse-temurin:17-jdk
+- **内存分配器**: jemalloc（5秒自动归还内存）
+- **JVM 参数**: `-Xms64m -Xmx192m -XX:+UseG1GC`（基于 NMT 实测数据优化）
 - **网络模式**: bridge（默认）
-- **健康检查**: 每30秒检查一次进程状态
-- **日志限制**: 10MB × 3 文件（自动轮转）
+- **健康检查**: 每60秒检查一次进程状态
+- **日志限制**: 100MB × 5 文件（自动轮转）
 - **重启策略**: unless-stopped
 
 **网络说明：**
@@ -476,7 +480,7 @@ Windows 用户可使用自动化脚本简化操作：
 ### 技术栈
 - Kotlin 2.0.0
 - Ktor 3.0.3（HTTP 客户端）
-- Skiko 0.7.27（图片渲染）
+- Skiko 0.8.15（图片渲染）
 - kotlinx.serialization 1.6.3（JSON 处理）
 - kotlinx.coroutines 1.8.0（协程）
 - OneBot v11 协议（NapCat）
@@ -894,7 +898,7 @@ Windows 用户可使用自动化脚本简化操作：
    在启动时加入--debug ：
 
    ```powershell
-   java -jar dynamic-bot-1.4.jar --debug
+   java -jar dynamic-bot-1.6.jar --debug
    ```
 
 1. **Docker 部署启用 Debug**

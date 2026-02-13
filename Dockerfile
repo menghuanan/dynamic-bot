@@ -94,7 +94,7 @@ ENV JAVA_TOOL_OPTIONS="\
 # ============================================
 # 应用配置
 # ============================================
-ARG APP_VERSION=1.5.4
+ARG APP_VERSION=1.6
 ENV DISPLAY=:99
 ENV XVFB_SCREEN_SIZE=1920x1080x24
 ENV XVFB_DISPLAY=:99
