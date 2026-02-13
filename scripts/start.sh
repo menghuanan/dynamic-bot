@@ -7,4 +7,4 @@ JAVA_OPTS="$JAVA_OPTS -Duser.timezone=Asia/Shanghai"
 JAVA_OPTS="$JAVA_OPTS -Dskiko.renderApi=SOFTWARE"
 JAVA_OPTS="$JAVA_OPTS -Dskiko.hardwareAcceleration=false"
 
-java $JAVA_OPTS -jar lib/dynamic-bot-1.5.4.jar
+java $JAVA_OPTS -jar lib/dynamic-bot-1.6.jar
