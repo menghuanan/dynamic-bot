@@ -56,7 +56,7 @@ ENV MALLOC_CONF=background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000,n
 # 实测数据参考:
 #   - Heap used: ~30MB, 但 G1 需要预留空间
 #   - Metaspace: ~25MB
-#   - CodeCache: ~14MB
+#   - CodeCache: ~14MB (稳定后 ~25MB)
 #   - Thread: ~3MB (37线程)
 #   - Other (Skia): ~1MB 且会增长
 #
@@ -78,6 +78,8 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:+UseStringDeduplication \
     -XX:+ParallelRefProcEnabled \
     -XX:NativeMemoryTracking=summary \
+    -XX:CompileThreshold=1000 \
+    -XX:Tier4CompileThreshold=1000 \
     -Djdk.nio.maxCachedBufferSize=65536 \
     -Dio.netty.allocator.maxCachedBufferCapacity=65536 \
     -Dio.netty.allocator.cacheTrimIntervalMillis=5000 \
@@ -122,16 +124,16 @@ ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 # ============================================
 # 默认命令参数 - 堆内存配置
 #
-# 内存预算 (目标 300-400MB):
+# 内存预算 (目标 300-400MB, 限制 512MB):
 #   - Heap: 192MB (实际用 ~30MB，但 G1 需要工作空间)
 #   - Metaspace: 48MB
-#   - CodeCache: 48MB
+#   - CodeCache: 48MB (JIT 加速后启动时快速填充)
 #   - DirectBuffer: 64MB
 #   - CompressedClassSpace: 16MB
 #   - Thread stacks: ~40MB (40线程 x 1MB)
 #   - Other/Native: ~50MB (Skia + jemalloc 开销)
 #   - 总计: ~458MB 理论最大值
 #
-# 如果 OOM，可调整为 -Xmx256m
+# 初始堆设为 128MB 减少启动时 GC 压力
 # ============================================
-CMD ["-Xms64m", "-Xmx192m"]
+CMD ["-Xms128m", "-Xmx192m"]
