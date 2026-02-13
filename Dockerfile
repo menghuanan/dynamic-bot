@@ -51,16 +51,22 @@ ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 ENV MALLOC_CONF=background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000,narenas:1,tcache:false
 
 # ============================================
-# JVM 参数配置 - 基于实际 NMT 数据的严格内存控制
+# JVM 参数配置 - 固定内存策略
+#
+# 目标: 5-10分钟内内存稳定，无业务时无波动
 #
 # 实测数据参考:
 #   - Heap used: ~30MB, 但 G1 需要预留空间
-#   - Metaspace: ~25MB
-#   - CodeCache: ~14MB (稳定后 ~25MB)
-#   - Thread: ~3MB (37线程)
-#   - Other (Skia): ~1MB 且会增长
+#   - Metaspace: ~25MB (稳定后)
+#   - CodeCache: ~20MB (稳定后)
+#   - Thread: ~3MB (35-40线程)
+#   - Other (Skia): ~1MB
 #
-# 目标: 总内存占用 300-400MB
+# 固定配置策略:
+#   - 堆内存固定 192MB (Xms=Xmx)
+#   - CodeCache 预分配 24MB
+#   - Metaspace 初始 32MB
+#   - 启动时立即占用 ~280MB，但无后续增长
 # ============================================
 ENV JAVA_TOOL_OPTIONS="\
     -XX:+UseG1GC \
@@ -69,8 +75,10 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:InitiatingHeapOccupancyPercent=30 \
     -XX:G1ReservePercent=15 \
     -XX:MaxDirectMemorySize=64m \
+    -XX:MetaspaceSize=32m \
     -XX:MaxMetaspaceSize=48m \
     -XX:CompressedClassSpaceSize=16m \
+    -XX:InitialCodeCacheSize=24m \
     -XX:ReservedCodeCacheSize=48m \
     -XX:+HeapDumpOnOutOfMemoryError \
     -XX:HeapDumpPath=/app/logs/heapdump.hprof \
@@ -78,8 +86,8 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:+UseStringDeduplication \
     -XX:+ParallelRefProcEnabled \
     -XX:NativeMemoryTracking=summary \
-    -XX:CompileThreshold=1000 \
-    -XX:Tier4CompileThreshold=1000 \
+    -XX:CompileThreshold=500 \
+    -XX:Tier4CompileThreshold=500 \
     -Djdk.nio.maxCachedBufferSize=65536 \
     -Dio.netty.allocator.maxCachedBufferCapacity=65536 \
     -Dio.netty.allocator.cacheTrimIntervalMillis=5000 \
@@ -122,18 +130,17 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # ============================================
-# 默认命令参数 - 堆内存配置
+# 默认命令参数 - 固定堆内存
 #
-# 内存预算 (目标 300-400MB, 限制 512MB):
-#   - Heap: 192MB (实际用 ~30MB，但 G1 需要工作空间)
-#   - Metaspace: 48MB
-#   - CodeCache: 48MB (JIT 加速后启动时快速填充)
+# 内存预算 (目标 ~280MB 启动, 限制 512MB):
+#   - Heap: 192MB (固定, Xms=Xmx)
+#   - Metaspace: 32-48MB (初始32MB)
+#   - CodeCache: 24-48MB (初始24MB)
 #   - DirectBuffer: 64MB
 #   - CompressedClassSpace: 16MB
 #   - Thread stacks: ~40MB (40线程 x 1MB)
 #   - Other/Native: ~50MB (Skia + jemalloc 开销)
-#   - 总计: ~458MB 理论最大值
 #
-# 初始堆设为 128MB 减少启动时 GC 压力
+# 固定堆优势: 无 GC 导致的内存波动
 # ============================================
-CMD ["-Xms128m", "-Xmx192m"]
+CMD ["-Xms192m", "-Xmx192m"]
