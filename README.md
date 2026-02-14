@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 由 [bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin) 改造而来。  
-代码部分则由 [claude](https://github.com/claude) 主刀构建雏形 GPT-5.2-Codex 协助修复BUG。  
+代码部分则由 [claude](https://github.com/claude) 主刀构建大部分代码， GPT-5.2-Codex 协助修复BUG。  
 这是基于 NapCat 的 B站动态、直播推送机器人，支持动态订阅、直播通知、链接解析等功能。
 
 ## 文档目录
@@ -26,9 +26,13 @@
 ## 预览效果
 
 <img src="docs/dynamic.png" width="400" alt="预览图片1">
+
+<details>
+<summary>点击查看更多</summary>
 <img src="docs/live.png" width="400" alt="预览图片2">
 <img src="docs/Video.png" width="400" alt="预览图片3">
 <img src="docs/bangumi.png" width="400" alt="预览图片4">
+</details>
 
 ## 项目结构
 
@@ -165,6 +169,9 @@ docker run -d --name dynamic-bot \
 
   <img src="docs/help.png" width="420" alt="高级命令预览">
 
+<details>
+<summary>查看 /bili 命令帮助</summary>
+
     /bili 命令帮助:
 
     订阅管理:
@@ -192,8 +199,11 @@ docker run -d --name dynamic-bot \
 
     其他:
     /bili help - 显示此帮助
+</details>
 
 ## 配置说明
+<details>
+<summary>点击展开配置说明</summary>
 
 ### bot.yml 示例
 
@@ -308,6 +318,7 @@ linkResolveConfig:             # 链接解析配置
   returnLink: false            # 是否返回链接
 
 ```
+</details>
 
 ## Docker 部署
 
@@ -507,6 +518,8 @@ Windows 用户可使用自动化脚本简化操作：
    - 文档和示例配置
 
 ## 更新日志
+<details>
+<summary>点击展开更新日志</summary>
 
 ### v1.6 (2026-02-13)
 
@@ -887,6 +900,8 @@ Windows 用户可使用自动化脚本简化操作：
    - 支持手动触发检查（/check）
    - 优化了推送逻辑
 
+</details>
+
 ## 故障排查
 
 ### 启用 DEBUG 日志
@@ -923,7 +938,9 @@ Windows 用户可使用自动化脚本简化操作：
    - 日志文件位于 `logs/bilibili-bot.log`
    - 错误日志位于 `logs/error.log`
 
-**注意**: DEBUG 日志会输出大量信息，仅在排查问题时启用，日常使用建议保持 INFO 级别。
+<span style="color:red;">**注意**: DEBUG 日志会输出大量信息，仅在排查问题时启用，日常使用建议保持 INFO 级别。</span>
+
+
 
 ## 许可证
 
