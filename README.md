@@ -79,16 +79,26 @@ dynamic-bot/
 
 ## 快速开始
 
-### 1. 编译项目
+### 1. 获取可执行文件
+
+#### 选项 A：从 GitHub Actions 下载
+如果您不想在本地配置 Java 环境，可以直接从仓库获取最新的构建产物：
+1. 点击页面顶部的 **Actions** 选项卡。
+2. 在左侧列表中选择 **CI Build and Check**。
+3. 点击最近一次成功的构建记录（带有绿色对勾）。
+4. 在页面底部的 **Artifacts** 区域下载 `bilibili-dynamic-bot-artifacts` 压缩包，解压后即可获得 JAR 文件。
+
+#### 选项 B：本地自行编译
+确保您的开发环境中已安装 **JDK 17**。
 
 ```bash
 # Windows
-.\gradlew.bat build -x test
+.\gradlew.bat build
 
 # Linux/Mac
-./gradlew build -x test
+chmod +x gradlew
+./gradlew build
 ```
-
 编译完成后,可执行文件位于：
 - `build/libs/dynamic-bot-1.6.jar`
 
