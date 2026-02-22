@@ -79,54 +79,33 @@ dynamic-bot/
 
 ## 快速开始
 
-### 1. 获取可执行文件
+### 1. 获取可执行文件或 JAR 包
 
-#### 选项 A：从 GitHub Actions 下载
-如果您不想在本地配置 Java 环境，可以直接从仓库获取最新的构建产物：
-1. 点击页面顶部的 **Actions** 选项卡。
-2. 在左侧列表中选择 **CI Build and Check**。
-3. 点击最近一次成功的构建记录（带有绿色对勾）。
-4. 在页面底部的 **Artifacts** 区域下载 `bilibili-dynamic-bot-artifacts` 压缩包，解压后即可获得 JAR 文件。
+> ⚠️ **部署前请确认：**
+> 
+> 请务必使用最新稳定版本的源码或可执行文件，以避免遇到已知问题。
 
-#### 选项 B：本地自行编译
-确保您的开发环境中已安装 **JDK 17**。
+#### 方法 一：从 [Releases](https://github.com/menghuanan/dynamic-bot/releases) 下载
+如果你不想在本地配置 Java 环境，可以直接从仓库获取最新的可执行JAR：
+1. 在项目主页点击Releases标签。
+2. 在最新发行版的Assets区域下载最新的jar包。
 
+#### 方法 二：本地自行编译
+> **在本地编译之前需要先安装并配置好 JDK 17 及以上版本。**
+> **平台支持说明：** 当前版本仅支持 Windows x64 与 Linux x64，暂未适配 macOS。
 ```bash
 # Windows
-.\gradlew.bat build
-
-# Linux/Mac
+.\gradlew.bat build -x test
+```
+```bash
+# Linux
 chmod +x gradlew
-./gradlew build
+./gradlew build -x test
 ```
 编译完成后,可执行文件位于：
 - `build/libs/dynamic-bot-1.6.jar`
 
-### 2. 配置文件
-
-首次运行时，程序会自动创建配置文件目录结构：
-
-```
-config/
-├── bot.yml              # Bot 基础配置（NapCat 连接信息）
-├── BiliData.yml         # 订阅数据和推送配置
-└── BiliConfig.yml       # 配置文件
-
-data/
-├── font/                # 字体文件目录
-├── cache/               # 缓存文件目录
-└── image_cache/         # 图片缓存目录
-
-temp/                    # 临时文件目录（二维码、缓存等）
-
-logs/
-├── bilibili-bot.log     # 主日志文件
-├── error.log            # 错误日志文件
-└── daemon/              # 守护进程监控日志目录
-    └── Daemon_YYYY-MM-DD.log  # 每日监控日志
-```
-
-### 3. 运行 Bot
+### 2. 运行 Bot
 
 #### 方式一：直接运行 JAR
 
@@ -151,6 +130,43 @@ docker run -d --name dynamic-bot \
 ```
 
 详细的 Docker 部署说明请查看 [Docker 部署](#docker-部署) 章节。
+
+### 3. 配置文件
+
+#### 首次运行时，程序会自动创建配置文件目录结构：
+
+```
+config/
+├── bot.yml              # Bot 基础配置（NapCat 连接信息）
+├── BiliData.yml         # 订阅数据和推送配置
+└── BiliConfig.yml       # 配置文件
+
+data/
+├── font/                # 字体文件目录
+├── cache/               # 缓存文件目录
+└── image_cache/         # 图片缓存目录
+
+temp/                    # 临时文件目录（二维码、缓存等）
+
+logs/
+├── bilibili-bot.log     # 主日志文件
+├── error.log            # 错误日志文件
+└── daemon/              # 守护进程监控日志目录
+    └── Daemon_YYYY-MM-DD.log  # 每日监控日志
+```
+#### 注意：
+- 首次后需要在运行目录配置 `/config/bot.yml` 与 `/config/BiliConfig.yml` 文件后再重新启动bot。
+- `/config/bot.yml` 配置 NapCat 连接信息
+```yaml
+napcat:
+  host: "NapCat WebSocket 主机地址"  
+  port: 3001    #默认3001
+  token: ""     #如果有则填入，没有不填
+```
+- `/config/BiliConfig.yml` 配置管理员信息
+```yaml
+admin: "管理员QQ号"
+```
 
 ## 主要功能
 
@@ -228,7 +244,7 @@ napcat:
   max_reconnect_attempts: -1 # 最大重连尝试次数（-1表示无限次）
   connect_timeout: 10000     # 连接超时（毫秒）
 targets: []                  # 尚未启用
-admins: []                   # 尚未启用
+admins: []                   # 普通管理员
 ```
 
 ### BiliData.yml 示例
@@ -463,7 +479,7 @@ docker logs -f dynamic-bot
 
 - **基础镜像**: eclipse-temurin:17-jdk
 - **内存分配器**: jemalloc（5秒自动归还内存）
-- **JVM 参数**: `-Xms64m -Xmx192m -XX:+UseG1GC`（基于 NMT 实测数据优化）
+- **JVM 参数**: `-Xms64m -Xmx192m -XX:+UseG1GC`
 - **网络模式**: bridge（默认）
 - **健康检查**: 每60秒检查一次进程状态
 - **日志限制**: 100MB × 5 文件（自动轮转）
@@ -940,7 +956,7 @@ Windows 用户可使用自动化脚本简化操作：
    ```bash
    docker restart dynamic-bot
    # 或
-   docker-compose restart
+   docker-compose restart dynamic-bot
    ```
 2. **查看日志**
 

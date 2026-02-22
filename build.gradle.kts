@@ -9,7 +9,8 @@ plugins {
 }
 
 group = "top.bilibili"
-version = "1.6"
+val releaseVersion = (findProperty("releaseVersion") as String?) ?: "1.6"
+version = releaseVersion
 
 repositories {
     mavenLocal()
