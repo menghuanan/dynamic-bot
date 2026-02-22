@@ -1,0 +1,47 @@
+name: Build and Release on Tag
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Validate Gradle Wrapper
+      uses: gradle/actions/wrapper-validation@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: 'gradle'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+
+    - name: Enable Gradle Wrapper
+      run: chmod +x gradlew
+
+    - name: Set Release Version
+      shell: bash
+      run: echo "RELEASE_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+    - name: Build with Gradle
+      run: ./gradlew build -PreleaseVersion=${{ env.RELEASE_VERSION }}
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        name: ${{ github.ref_name }}
+        generate_release_notes: true
+        files: build/libs/*.jar
