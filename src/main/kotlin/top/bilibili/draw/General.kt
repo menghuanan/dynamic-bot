@@ -1,4 +1,4 @@
-﻿package top.bilibili.draw
+package top.bilibili.draw
 
 import org.jetbrains.skia.*
 import org.jetbrains.skia.paragraph.FontCollection
@@ -352,8 +352,7 @@ fun Canvas.drawImageClip(
         Rect.makeXYWH(offsetX, 0f, imgW, actualImage.height.toFloat())
     } else {
         val imgH = dstRect.height * actualImage.width / dstRect.width
-        val offsetY = (actualImage.height - imgH) / 2
-        Rect.makeXYWH(0f, offsetY, actualImage.width.toFloat(), imgH)
+        Rect.makeXYWH(0f, 0f, actualImage.width.toFloat(), imgH)
     }
 
     drawImageRRect(actualImage, srcRect, dstRect, paint)

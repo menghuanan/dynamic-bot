@@ -33,7 +33,19 @@ log_error() {
 # ============================================
 # 1. 启动 Xvfb (虚拟显示服务器)
 # ============================================
-Xvfb "${XVFB_DISPLAY}" -screen 0 "${XVFB_SCREEN_SIZE}" -ac +extension GLX +render -noreset 2>/dev/null &
+display_number="${XVFB_DISPLAY#:}"
+lock_file="/tmp/.X${display_number}-lock"
+socket_file="/tmp/.X11-unix/X${display_number}"
+
+if [ -e "$lock_file" ]; then
+    rm -f "$lock_file"
+fi
+
+if [ -S "$socket_file" ]; then
+    rm -f "$socket_file"
+fi
+
+Xvfb "${XVFB_DISPLAY}" -screen 0 "${XVFB_SCREEN_SIZE}" -ac +extension GLX +render -noreset &
 XVFB_PID=$!
 
 sleep 2
