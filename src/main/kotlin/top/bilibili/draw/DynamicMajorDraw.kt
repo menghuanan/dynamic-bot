@@ -1122,7 +1122,22 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
     val descParagraph = with(session) {
         ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc).build().layout(paragraphWidth).track()
     }
-    val articleCoverHeight = cardContentRect.width * if (covers.size == 1) 0.35f else 0.23166f
+    var articleCoverHeight = cardContentRect.width * if (covers.size == 1) 0.35f else 0.23166f
+    val articleCovers = covers
+    suspend fun loadCover(url: String): Image {
+        return getOrDownloadImage(url, CacheType.IMAGES)
+            ?: Image.makeFromEncoded(loadResourceBytes("image/IMAGE_MISS.png"))
+    }
+    var singleCoverImg: Image? = null
+    var coverScale = 1f
+    if (articleCovers.size == 1) {
+        val coverImg = loadCover(articleCovers[0])
+        singleCoverImg = coverImg
+        val imgWidth = coverImg.width.toFloat().takeIf { it > 0f } ?: 1f
+        val imgHeight = coverImg.height.toFloat().takeIf { it > 0f } ?: 1f
+        coverScale = cardContentRect.width / imgWidth
+        articleCoverHeight = imgHeight * coverScale
+    }
     val articleCardHeight = articleCoverHeight + titleParagraph.height + descParagraph.height + quality.cardPadding
 
     val articleCardRect = RRect.makeComplexXYWH(
@@ -1133,19 +1148,15 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
         cardBadgeArc
     )
 
-    val articleCovers = covers
     val surface = session.createSurface(
         cardRect.width.toInt(),
         articleCardHeight.toInt() + quality.badgeHeight + quality.cardPadding
     )
     val canvas = surface.canvas
 
-    // 绘制卡片背景
     canvas.drawCard(articleCardRect)
-    // 卡片阴影
     canvas.drawRectShadowAntiAlias(articleCardRect.inflate(1f), theme.smallCardShadow)
 
-    // 封面
     val coverRRect = RRect.makeComplexXYWH(
         articleCardRect.left,
         articleCardRect.top,
@@ -1153,15 +1164,26 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
         articleCoverHeight,
         cardBadgeArc
     ).inflate(-1f) as RRect
-    suspend fun loadCover(url: String): Image {
-        return getOrDownloadImage(url, CacheType.IMAGES)
-            ?: Image.makeFromEncoded(loadResourceBytes("image/IMAGE_MISS.png"))
-    }
     if (articleCovers.size == 1) {
-        val coverImg = loadCover(articleCovers[0])
+        val coverImg = singleCoverImg ?: loadCover(articleCovers[0])
+        val imgWidth = coverImg.width.toFloat().takeIf { it > 0f } ?: 1f
+        val imgHeight = coverImg.height.toFloat().takeIf { it > 0f } ?: 1f
+        val targetW = imgWidth * coverScale
+        val targetH = imgHeight * coverScale
+        val dx = coverRRect.left
+        val dy = coverRRect.top
+        val srcRect = Rect.makeWH(imgWidth, imgHeight)
+        val dstRect = Rect.makeXYWH(dx, dy, targetW, targetH)
         canvas.save()
         canvas.clipRRect(coverRRect, true)
-        canvas.drawImage(coverImg, coverRRect.left, coverRRect.top)
+        canvas.drawImageRect(
+            coverImg,
+            srcRect,
+            dstRect,
+            FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
+            null,
+            false
+        )
         canvas.restore()
         coverImg.close()
     } else {

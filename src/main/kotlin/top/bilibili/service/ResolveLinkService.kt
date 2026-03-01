@@ -1,5 +1,7 @@
 package top.bilibili.service
 
+import io.ktor.client.call.body
+import io.ktor.client.request.get
 import org.jetbrains.skia.Color
 import top.bilibili.BiliConfigManager
 import top.bilibili.api.*
@@ -37,6 +39,18 @@ suspend fun matchingAllRegular(content: String): List<ResolvedLinkInfo> {
                         if (realLink != null) {
                             logger.info("短链接 https://b23.tv/$id 解析为: $realLink")
                             matchingInternalRegular(realLink)?.let { results.add(it) }
+                        }
+                    } else if (linkType == LinkType.Dynamic && isOpusMatch(matchResult)) {
+                        val opusUrl = normalizeOpusUrl(matchResult.value)
+                        val cvId = resolveOpusCvId(opusUrl)
+                        if (cvId != null) {
+                            val articleKey = "${LinkType.Article.name}:$cvId"
+                            if (!processedIds.contains(articleKey)) {
+                                processedIds.add(articleKey)
+                                results.add(ResolvedLinkInfo(LinkType.Article, cvId))
+                            }
+                        } else {
+                            results.add(ResolvedLinkInfo(linkType, id))
                         }
                     } else {
                         results.add(ResolvedLinkInfo(linkType, id))
@@ -95,7 +109,30 @@ suspend fun matchingInternalRegular(content: String): ResolvedLinkInfo? {
         }
     }
 
+    if (type == LinkType.Dynamic && isOpusMatch(matchResult)) {
+        val opusUrl = normalizeOpusUrl(matchResult.value)
+        val cvId = resolveOpusCvId(opusUrl)
+        if (cvId != null) {
+            return ResolvedLinkInfo(LinkType.Article, cvId)
+        }
+    }
+
     return ResolvedLinkInfo(type, id)
+}
+
+private fun isOpusMatch(matchResult: MatchResult): Boolean {
+    return matchResult.value.contains("/opus/")
+}
+
+private fun normalizeOpusUrl(raw: String): String {
+    return if (raw.startsWith("http://") || raw.startsWith("https://")) raw else "https://$raw"
+}
+
+private suspend fun resolveOpusCvId(opusUrl: String): String? {
+    return runCatching {
+        val html = biliClient.useHttpClient { it.get(opusUrl).body<String>() }
+        Regex("cv(\\d{1,10})").find(html)?.groupValues?.get(1)
+    }.getOrNull()
 }
 
 enum class TriggerMode {
