@@ -1153,22 +1153,25 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
         articleCoverHeight,
         cardBadgeArc
     ).inflate(-1f) as RRect
+    suspend fun loadCover(url: String): Image {
+        return getOrDownloadImage(url, CacheType.IMAGES)
+            ?: Image.makeFromEncoded(loadResourceBytes("image/IMAGE_MISS.png"))
+    }
     if (articleCovers.size == 1) {
-        val fallbackUrl = imgApi(articleCovers[0], articleCardRect.width.toInt(), articleCoverHeight.toInt())
-        val coverImg = getOrDownloadImageDefault(articleCovers[0], fallbackUrl, CacheType.IMAGES)
-        canvas.drawImageRRect(coverImg, coverRRect)
+        val coverImg = loadCover(articleCovers[0])
+        canvas.save()
+        canvas.clipRRect(coverRRect, true)
+        canvas.drawImage(coverImg, coverRRect.left, coverRRect.top)
+        canvas.restore()
         coverImg.close()
     } else {
         var imgX = articleCardRect.left
-        val imgW = articleCardRect.width / 3 - 4
         canvas.save()
         canvas.clipRRect(coverRRect, true)
-        articleCovers.forEach {
-            val fallbackUrl = imgApi(it, imgW.toInt(), articleCoverHeight.toInt())
-            val img = getOrDownloadImageDefault(it, fallbackUrl, CacheType.IMAGES)
-            val tar = RRect.makeXYWH(imgX, articleCardRect.top, imgW, articleCoverHeight, 0f)
-            canvas.drawImageClip(session, img, tar, Paint())
-            imgX += articleCardRect.width / 3 + 2
+        for (cover in articleCovers) {
+            val img = loadCover(cover)
+            canvas.drawImage(img, imgX, articleCardRect.top)
+            imgX += img.width + 2
             img.close()
         }
         canvas.restore()

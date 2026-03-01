@@ -7,10 +7,10 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        APP_VERSION: 1.6
+        APP_VERSION: 1.6.1
 
     # 镜像标签
-    image: dynamic-bot:1.6
+    image: dynamic-bot:1.6.1
 
     # 容器名称
     container_name: dynamic-bot
