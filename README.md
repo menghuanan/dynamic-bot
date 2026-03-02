@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 由 [bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin) 改造而来。  
-代码部分则由 [claude](https://github.com/claude) 主刀构建大部分代码， GPT-5.2-Codex 协助修复BUG。  
+代码部分由 [claude](https://github.com/claude) 主刀构建大部分代码， GPT-5.2-Codex 协助修复部分BUG。  
 这是基于 NapCat 的 B站动态、直播推送机器人，支持动态订阅、直播通知、链接解析等功能。
 
 ## 文档目录
@@ -30,7 +30,9 @@
 <details>
 <summary>点击查看更多</summary>
 <img src="docs/live.png" width="400" alt="预览图片2">
+
 <img src="docs/Video.png" width="400" alt="预览图片3">
+
 <img src="docs/bangumi.png" width="400" alt="预览图片4">
 </details>
 
@@ -79,7 +81,7 @@ dynamic-bot/
 
 ## 快速开始
 
-### 1. 获取可执行文件或 JAR 包
+### 1. 获取可执行文件或 JAR 包文件
 
 > ⚠️ **部署前请确认：**
 > 
@@ -92,6 +94,7 @@ dynamic-bot/
 
 #### 方法 二：本地自行编译
 > **在本地编译之前需要先安装并配置好 JDK 17 及以上版本。**
+
 > **平台支持说明：** 当前版本仅支持 Windows x64 与 Linux x64，暂未适配 macOS。
 ```bash
 # Windows
