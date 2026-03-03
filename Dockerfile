@@ -104,7 +104,7 @@ ENV JAVA_TOOL_OPTIONS="\
 # ============================================
 # 应用配置
 # ============================================
-ARG APP_VERSION=1.6
+ARG APP_VERSION=auto
 ENV DISPLAY=:99
 ENV XVFB_SCREEN_SIZE=1920x1080x24
 ENV XVFB_DISPLAY=:99
@@ -112,8 +112,17 @@ ENV XVFB_DISPLAY=:99
 # 创建必要的目录
 RUN mkdir -p /app/config /app/data /app/temp /app/logs
 
-# 复制预编译的 JAR 文件
-COPY build/libs/dynamic-bot-${APP_VERSION}.jar /app/dynamic-bot.jar
+# 复制预编译的 JAR 文件（支持自动选择最新版本）
+COPY build/libs/dynamic-bot-*.jar /tmp/build-libs/
+RUN set -eux; \
+    if [ "$APP_VERSION" = "auto" ]; then \
+        selected_jar="$(ls -1 /tmp/build-libs/dynamic-bot-*.jar | sort -V | tail -n 1)"; \
+    else \
+        selected_jar="/tmp/build-libs/dynamic-bot-${APP_VERSION}.jar"; \
+    fi; \
+    test -f "$selected_jar"; \
+    cp "$selected_jar" /app/dynamic-bot.jar; \
+    rm -rf /tmp/build-libs
 
 # ============================================
 # 健康检查 - 检查 Java 进程是否存活

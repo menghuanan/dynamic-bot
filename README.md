@@ -165,6 +165,7 @@ napcat:
   host: "NapCat WebSocket 主机地址"  
   port: 3001    #默认3001
   token: ""     #如果有则填入，没有不填
+  send_mode: "file"  # 图片发送模式：file 或 base64
 ```
 - `/config/BiliConfig.yml` 配置管理员信息
 ```yaml
@@ -241,6 +242,7 @@ napcat:
   host: "127.0.0.1"          # NapCat WebSocket 主机地址
   port: 3001                 # NapCat WebSocket 端口
   token: ""                  # NapCat WebSocket 访问令牌 （如有）
+  send_mode: "file"          # 图片发送模式：file 或 base64
   heartbeat_interval: 30000  # 心跳间隔（毫秒）
   reconnect_interval: 5000   # 重连间隔（毫秒）
   message_format: "array"    # 消息格式：array
@@ -425,6 +427,7 @@ napcat:
   host: "NapCat WebSocket 主机地址"  
   port: 3001    #默认3001
   token: ""     #如果有则填入，没有不填
+  send_mode: "file"  # 图片发送模式：file 或 base64
 ```
 
 重启容器：

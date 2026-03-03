@@ -14,7 +14,11 @@ import kotlinx.serialization.json.Json
 import okhttp3.ConnectionPool
 import org.slf4j.LoggerFactory
 import top.bilibili.config.NapCatConfig
+import java.io.File
+import java.net.URI
+import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
+import java.util.Base64
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -60,6 +64,8 @@ class NapCatClient(
 
     private var session: DefaultClientWebSocketSession? = null
     private val sendChannel = Channel<String>(capacity = 200)  // ✅ P1修复: 从1000降低到200，降低内存占用
+    private val sendMode = config.sendMode.lowercase()
+    private val maxBase64ImageSizeBytes = 10L * 1024L * 1024L
 
     // ✅ P3修复: 发送队列满载告警标志，避免重复告警
     private var sendQueueFullWarningLogged = false
@@ -338,12 +344,13 @@ class NapCatClient(
                         is Long -> kotlinx.serialization.json.JsonPrimitive(value)
                         is List<*> -> {
                             val segments = value as List<MessageSegment>
+                            val segmentsToSend = prepareSegmentsForSend(segments) ?: return false
                             if (config.messageFormat == "string" || config.messageFormat == "cqcode") {
-                                kotlinx.serialization.json.JsonPrimitive(segments.toCqCode())
+                                kotlinx.serialization.json.JsonPrimitive(segmentsToSend.toCqCode())
                             } else {
                                 json.encodeToJsonElement(
                                     kotlinx.serialization.builtins.ListSerializer(MessageSegment.serializer()),
-                                    segments
+                                    segmentsToSend
                                 )
                             }
                         }
@@ -378,6 +385,83 @@ class NapCatClient(
         } catch (e: Exception) {
             logger.error("发送消息失败: ${e.message}", e)
             false
+        }
+    }
+
+    private suspend fun prepareSegmentsForSend(segments: List<MessageSegment>): List<MessageSegment>? {
+        if (sendMode != "base64") {
+            logger.debug("图片发送模式: file")
+            return segments
+        }
+
+        logger.debug("图片发送模式: base64，开始处理消息段")
+        val convertedSegments = mutableListOf<MessageSegment>()
+        var convertedCount = 0
+
+        for (segment in segments) {
+            if (segment.type != "image") {
+                convertedSegments.add(segment)
+                continue
+            }
+
+            val imageSource = segment.data["file"]
+            if (imageSource.isNullOrBlank()) {
+                logger.error("图片段缺少 file 字段，无法执行 base64 发送")
+                return null
+            }
+
+            if (imageSource.startsWith("base64://")) {
+                logger.warn("图片段已是 base64 格式，跳过重复转换")
+                convertedSegments.add(segment)
+                continue
+            }
+
+            val localFile = resolveLocalFile(imageSource)
+            if (localFile == null) {
+                logger.error("base64 转换失败，不支持的图片路径: $imageSource")
+                return null
+            }
+
+            if (!localFile.exists() || !localFile.isFile) {
+                logger.error("base64 转换失败，图片文件不存在: ${localFile.absolutePath}")
+                return null
+            }
+
+            val fileSize = localFile.length()
+            if (fileSize > maxBase64ImageSizeBytes) {
+                logger.error("文件大小超过限制: ${localFile.name}, ${fileSize / 1024 / 1024}MB > 10MB")
+                return null
+            }
+
+            val encoded = withContext(Dispatchers.IO) {
+                Base64.getEncoder().encodeToString(localFile.readBytes())
+            }
+
+            val newData = segment.data.toMutableMap()
+            newData["file"] = "base64://$encoded"
+            convertedSegments.add(segment.copy(data = newData))
+            convertedCount++
+            logger.info("转化base64成功: ${localFile.name}")
+        }
+
+        logger.debug("base64 图片转换完成，转换数量: $convertedCount")
+        return convertedSegments
+    }
+
+    private fun resolveLocalFile(imageSource: String): File? {
+        if (imageSource.startsWith("http://") || imageSource.startsWith("https://")) {
+            return null
+        }
+
+        if (!imageSource.startsWith("file://")) {
+            return File(imageSource)
+        }
+
+        return runCatching {
+            Paths.get(URI(imageSource)).toFile()
+        }.getOrElse {
+            val normalized = imageSource.removePrefix("file:///").removePrefix("file://")
+            File(normalized)
         }
     }
 

@@ -8,5 +8,5 @@ set JAVA_OPTS=%JAVA_OPTS% -Duser.timezone=Asia/Shanghai
 set JAVA_OPTS=%JAVA_OPTS% -Dskiko.renderApi=SOFTWARE
 set JAVA_OPTS=%JAVA_OPTS% -Dskiko.hardwareAcceleration=false
 
-java %JAVA_OPTS% -jar lib\dynamic-bot-1.6.1.jar
+java %JAVA_OPTS% -jar lib\dynamic-bot-1.6.2.jar
 pause

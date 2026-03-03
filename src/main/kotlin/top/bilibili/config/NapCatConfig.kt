@@ -33,6 +33,10 @@ data class NapCatConfig(
     @SerialName("message_format")
     val messageFormat: String = "array",
 
+    /** 图片发送模式（file/base64） */
+    @SerialName("send_mode")
+    val sendMode: String = "file",
+
     /** 最大重连次数（-1 为无限） */
     @SerialName("max_reconnect_attempts")
     val maxReconnectAttempts: Int = -1,
@@ -49,7 +53,10 @@ data class NapCatConfig(
 
     /** 检查配置是否有效 */
     fun validate(): Boolean {
-        return host.isNotBlank() && port in 1..65535
+        val normalizedSendMode = sendMode.lowercase()
+        return host.isNotBlank() &&
+            port in 1..65535 &&
+            normalizedSendMode in setOf("file", "base64")
     }
 }
 
