@@ -20,6 +20,7 @@
 - [与原项目的区别](#与原项目的区别)
 - [更新日志](#更新日志)
 - [故障排查](#故障排查)
+- [常见问题](#常见问题)
 - [许可证](#许可证)
 - [联系方式](#联系方式)
 
@@ -157,20 +158,43 @@ logs/
 └── daemon/              # 守护进程监控日志目录
     └── Daemon_YYYY-MM-DD.log  # 每日监控日志
 ```
-#### 注意：
+#### 注意！以下是必须修改的配置项：
 - 首次后需要在运行目录配置 `/config/bot.yml` 与 `/config/BiliConfig.yml` 文件后再重新启动bot。
 - `/config/bot.yml` 配置 NapCat 连接信息
 ```yaml
 napcat:
-  host: "NapCat WebSocket 主机地址"  
+  host: "NapCat WebSocket 服务器地址"  
   port: 3001    #默认3001
   token: ""     #如果有则填入，没有不填
   send_mode: "file"  # 图片发送模式：file 或 base64
 ```
+#### 如果不清楚两种图片发送模式的区别，建议直接使用 `base64`，兼容性更好，也能避免路径或权限问题。
+
 - `/config/BiliConfig.yml` 配置管理员信息
 ```yaml
 admin: "管理员QQ号"
 ```
+### 4. NapCat 配置
+
+新建 WebSocket 服务器，按以下参数填写：
+
+- **名称**：`自定义名称`  
+  （随便填写，仅用于区分）
+
+- **主机**：`127.0.0.1`  
+  （默认即可。如 NapCat 与 bot 不在同一台机器，请填写对应服务器 IP）
+
+- **端口**：`3001`  
+  （默认 3001，建议修改为非常用端口以提升安全性）
+
+- **消息格式**：`Array`  
+  （保持默认）
+
+- **令牌**：留空  
+  （默认留空；如填写，需在 bot.yml 中同步配置）
+
+- **心跳间隔**：`30000`  
+  （保持默认）
 
 ## 主要功能
 
@@ -242,6 +266,7 @@ napcat:
   host: "127.0.0.1"          # NapCat WebSocket 主机地址
   port: 3001                 # NapCat WebSocket 端口
   token: ""                  # NapCat WebSocket 访问令牌 （如有）
+  use_tls: false             # 是否使用 TLS 加密
   send_mode: "file"          # 图片发送模式：file 或 base64
   heartbeat_interval: 30000  # 心跳间隔（毫秒）
   reconnect_interval: 5000   # 重连间隔（毫秒）
@@ -249,7 +274,7 @@ napcat:
   max_reconnect_attempts: -1 # 最大重连尝试次数（-1表示无限次）
   connect_timeout: 10000     # 连接超时（毫秒）
 targets: []                  # 尚未启用
-admins: []                   # 普通管理员
+admins: []                   # 普通管理员组
 ```
 
 ### BiliData.yml 示例
@@ -448,7 +473,9 @@ docker logs -f dynamic-bot
 
 #### 可用标签
 
-- `latest` - 最新版本（v1.6）
+- `latest` - 最新版本（v1.6.2）
+- `v1.6.2` - 稳定版本 v1.6.2
+- `v1.6.1` - 稳定版本 v1.6.1
 - `v1.6` - 稳定版本 v1.6
 - `v1.5` - 稳定版本 v1.5
 - `v1.4` - 稳定版本 v1.4
@@ -552,6 +579,8 @@ Windows 用户可使用自动化脚本简化操作：
 ## 更新日志
 <details>
 <summary>点击展开更新日志</summary>
+
+### 最新的更新日志请前往 [Releases](https://github.com/menghuanan/dynamic-bot/releases)
 
 ### v1.6 (2026-02-13)
 
@@ -970,8 +999,25 @@ Windows 用户可使用自动化脚本简化操作：
    - 日志文件位于 `logs/bilibili-bot.log`
    - 错误日志位于 `logs/error.log`
 
-<span style="color:red;">**注意**: DEBUG 日志会输出大量信息，仅在排查问题时启用，日常使用建议保持 INFO 级别。</span>
+**注意**: DEBUG 日志会输出大量信息，仅在排查问题时启用，日常使用建议保持 INFO 级别。
 
+## 常见问题
+
+- **Q: 为什么 bot 发送图片失败？**
+  - A: 如果使用 `file` 模式发送图片失败，请改为：`send_mode: "base64"`。
+    `file` 模式依赖本地文件路径，在 Docker 或跨机器环境下容易因路径映射或权限问题导致失败。
+
+- **Q: 为什么 bot 对命令没有反应？**
+  - A: 请确保 `config/BiliConfig.yml` 中已正确配置 `admin`，并确认你使用的是管理员账号。
+
+- **Q: 如果 NapCat 和 bot 部署在不同环境（不同服务器/不同容器）怎么办？**
+  - A: 
+    1. 先确保两者可以正常网络通信（检查端口、防火墙、IP 地址）。
+    2. 强烈建议将 `config/bot.yml` 中的 `send_mode` 设置为：`send_mode: "base64"`。
+       因为 `file` 模式无法跨机器访问本地文件。
+
+- **Q: 没有更多问题了吗？**
+  - A: 目前使用人数不多，暂时没有更多问题了。
 
 
 ## 许可证
