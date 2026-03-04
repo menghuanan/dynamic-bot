@@ -19,7 +19,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     # 字体支持 (Skia 绘图需要)
     fonts-dejavu-core \
-    fonts-noto-cjk \
     fonts-noto-color-emoji \
     # 基础 X11 库
     libx11-6 \
@@ -51,9 +50,9 @@ ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 ENV MALLOC_CONF=background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000,narenas:1,tcache:false
 
 # ============================================
-# JVM 参数配置 - 固定内存策略
+# JVM 参数配置 - 低占用优先策略
 #
-# 目标: 5-10分钟内内存稳定，无业务时无波动
+# 目标: 降低常驻内存，同时保持 7x24 稳定
 #
 # 实测数据参考:
 #   - Heap used: ~30MB, 但 G1 需要预留空间
@@ -62,11 +61,10 @@ ENV MALLOC_CONF=background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000,n
 #   - Thread: ~3MB (35-40线程)
 #   - Other (Skia): ~1MB
 #
-# 固定配置策略:
-#   - 堆内存固定 192MB (Xms=Xmx)
-#   - CodeCache 预分配 24MB
-#   - Metaspace 初始 32MB
-#   - 启动时立即占用 ~280MB，但无后续增长
+# 当前策略:
+#   - 堆内存默认 64m~160m
+#   - 收紧 Direct/Metaspace/CodeCache 预留
+#   - 保留绘图能力（Xvfb + Skia）
 # ============================================
 ENV JAVA_TOOL_OPTIONS="\
     -XX:+UseG1GC \
@@ -74,20 +72,20 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:G1HeapRegionSize=4m \
     -XX:InitiatingHeapOccupancyPercent=30 \
     -XX:G1ReservePercent=15 \
-    -XX:MaxDirectMemorySize=64m \
-    -XX:MetaspaceSize=32m \
-    -XX:MaxMetaspaceSize=48m \
+    -XX:MaxDirectMemorySize=24m \
+    -XX:MetaspaceSize=16m \
+    -XX:MaxMetaspaceSize=40m \
     -XX:CompressedClassSpaceSize=16m \
-    -XX:InitialCodeCacheSize=24m \
-    -XX:ReservedCodeCacheSize=48m \
+    -XX:InitialCodeCacheSize=8m \
+    -XX:ReservedCodeCacheSize=32m \
     -XX:+HeapDumpOnOutOfMemoryError \
     -XX:HeapDumpPath=/app/logs/heapdump.hprof \
     -XX:+ExitOnOutOfMemoryError \
     -XX:+UseStringDeduplication \
     -XX:+ParallelRefProcEnabled \
-    -XX:NativeMemoryTracking=summary \
     -XX:CompileThreshold=500 \
     -XX:Tier4CompileThreshold=500 \
+    -Xss256k \
     -Djdk.nio.maxCachedBufferSize=65536 \
     -Dio.netty.allocator.maxCachedBufferCapacity=65536 \
     -Dio.netty.allocator.cacheTrimIntervalMillis=5000 \
@@ -106,7 +104,7 @@ ENV JAVA_TOOL_OPTIONS="\
 # ============================================
 ARG APP_VERSION=auto
 ENV DISPLAY=:99
-ENV XVFB_SCREEN_SIZE=1920x1080x24
+ENV XVFB_SCREEN_SIZE=1280x720x24
 ENV XVFB_DISPLAY=:99
 
 # 创建必要的目录
@@ -139,17 +137,10 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # ============================================
-# 默认命令参数 - 固定堆内存
+# 默认命令参数 - 低基线堆内存
 #
-# 内存预算 (目标 ~280MB 启动, 限制 512MB):
-#   - Heap: 192MB (固定, Xms=Xmx)
-#   - Metaspace: 32-48MB (初始32MB)
-#   - CodeCache: 24-48MB (初始24MB)
-#   - DirectBuffer: 64MB
-#   - CompressedClassSpace: 16MB
-#   - Thread stacks: ~40MB (40线程 x 1MB)
-#   - Other/Native: ~50MB (Skia + jemalloc 开销)
-#
-# 固定堆优势: 无 GC 导致的内存波动
+# 说明:
+#   - 如需跨环境固定参数，建议在 docker-compose 中显式传入 command。
+#   - shm_size、mem_limit、mem_reservation 属于运行时配置，应在 compose 设置。
 # ============================================
-CMD ["-Xms192m", "-Xmx192m"]
+CMD ["-Xms64m", "-Xmx160m"]
