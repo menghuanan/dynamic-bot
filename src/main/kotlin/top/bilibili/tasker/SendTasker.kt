@@ -411,6 +411,12 @@ object SendTasker : BiliTasker("SendTasker") {
             }
         }
 
+        // 处理 {atAll} 占位符（at全体）
+        if (currentText.contains("{atAll}")) {
+            segments.add(MessageSegment.atAll())
+            currentText = currentText.replace("{atAll}", "")
+        }
+
         // 添加剩余的文本内容
         if (currentText.isNotBlank()) {
             segments.add(MessageSegment.text(currentText.trim()))

@@ -48,6 +48,7 @@ data class MessageSegment(
         fun text(text: String) = MessageSegment("text", mapOf("text" to text))
         fun image(file: String) = MessageSegment("image", mapOf("file" to file))
         fun at(qq: Long) = MessageSegment("at", mapOf("qq" to qq.toString()))
+        fun atAll() = MessageSegment("at", mapOf("qq" to "all"))
         fun reply(id: Int) = MessageSegment("reply", mapOf("id" to id.toString()))
     }
 }
