@@ -1,4 +1,4 @@
-package top.bilibili.core.resource
+﻿package top.bilibili.core.resource
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -165,6 +165,44 @@ class ResourceManagementRegressionGuardTest {
             "loadFonts should ignore non-font files in data/font",
         )
     }
+    @Test
+    fun `load fonts should not auto download but should keep bundled fallback loading`() {
+        val init = read("src/main/kotlin/top/bilibili/Init.kt")
+
+        assertFalse(
+            init.contains("URL("),
+            "loadFonts should not fetch fonts over the network",
+        )
+        assertFalse(
+            init.contains("ZipInputStream"),
+            "loadFonts should not unzip downloaded font archives",
+        )
+        assertFalse(
+            init.contains("下载字体失败"),
+            "loadFonts should not retain download retry logic",
+        )
+        assertFalse(
+            init.contains("LXGWWenKai-Bold.ttf"),
+            "loadFonts should not special-case auto downloaded LXGW fonts",
+        )
+        assertTrue(
+            init.contains("forEachDirectoryEntry"),
+            "loadFonts should still scan data/font for user-provided overrides",
+        )
+        assertTrue(
+            init.contains("loadTypefaceFromResource"),
+            "loadFonts should still load bundled resource fonts as fallback",
+        )
+        assertTrue(
+            init.contains("\"/font/SourceHanSansSC-Regular.otf\" to \"Source Han Sans SC\""),
+            "loadFonts should still bundle Source Han Sans SC fallback",
+        )
+        assertTrue(
+            init.contains("\"/font/FansCard.ttf\" to \"FansCard\""),
+            "loadFonts should still bundle FansCard fallback",
+        )
+    }
+
 
     @Test
     fun `load svg should close temporary skia data buffer`() {

@@ -1,4 +1,4 @@
-package top.bilibili
+﻿package top.bilibili
 
 import top.bilibili.BiliConfigManager
 import top.bilibili.core.BiliBiliBot
@@ -10,9 +10,7 @@ import top.bilibili.data.toCookie
 import top.bilibili.utils.FontUtils.loadTypeface
 import top.bilibili.utils.biliClient
 import top.bilibili.utils.decode
-import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.zip.ZipInputStream
 import kotlin.io.path.createDirectory
 import kotlin.io.path.exists
 import kotlin.io.path.forEachDirectoryEntry
@@ -80,56 +78,11 @@ suspend fun loadFonts() {
 
     val fontFolder = BiliBiliBot.dataFolder.resolve("font")
     val fontFolderPath = BiliBiliBot.dataFolderPath.resolve("font")
-    val LXGW = fontFolder.resolve("LXGWWenKai-Bold.ttf")
 
     try {
         fontFolderPath.apply {
             if (!exists()) createDirectory()
 
-            val hasFontFile = fontFolder.listFiles()?.any {
-                it.isFile && it.extension.lowercase() in setOf("ttf", "otf", "ttc")
-            } == true
-            if (!hasFontFile || !LXGW.exists()) {
-                try {
-                    val downloadUrl = "https://file.zfont.cn/d/file/font_cn_file/霞鹜文楷-v1.235.2.zip"
-                    val zipFile = fontFolder.resolve("LXGW-temp.zip")
-                    var downloaded = false
-
-                    for (attempt in 1..3) {
-                        runCatching {
-                            URL(downloadUrl).openStream().use { input ->
-                                zipFile.outputStream().use { output -> input.copyTo(output) }
-                            }
-                        }.onSuccess {
-                            downloaded = true
-                        }.onFailure {
-                            BiliBiliBot.logger.warn("下载字体失败，重试 $attempt/3: ${it.message}")
-                        }
-                        if (downloaded) break
-                    }
-
-                    if (downloaded && zipFile.exists()) {
-                        ZipInputStream(zipFile.inputStream().buffered()).use { zip ->
-                            var entry = zip.nextEntry
-                            while (entry != null) {
-                                if (!entry.isDirectory && entry.name.endsWith("LXGWWenKai-Bold.ttf", ignoreCase = true)) {
-                                    LXGW.outputStream().use { out -> zip.copyTo(out) }
-                                    break
-                                }
-                                zip.closeEntry()
-                                entry = zip.nextEntry
-                            }
-                        }
-                        runCatching { zipFile.delete() }
-                    }
-
-                    if (!LXGW.exists()) {
-                        BiliBiliBot.logger.warn("自动下载字体失败，请手动放置 LXGWWenKai-Bold.ttf 到 data/font 目录")
-                    }
-                } catch (e: Throwable) {
-                    BiliBiliBot.logger.error("下载字体失败!", e)
-                }
-            }
 
             // 从 data/font 目录加载字体
             var fontLoaded = false
