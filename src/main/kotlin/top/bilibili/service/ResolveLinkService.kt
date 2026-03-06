@@ -11,11 +11,11 @@ import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.*
 
 
-suspend fun matchingRegular(content: String): ResolvedLinkInfo? {
-    return matchingInternalRegular(content)
+suspend fun matchingRegular(content: String, subject: String? = null): ResolvedLinkInfo? {
+    return matchingInternalRegular(content, subject)
 }
 
-suspend fun matchingAllRegular(content: String): List<ResolvedLinkInfo> {
+suspend fun matchingAllRegular(content: String, subject: String? = null): List<ResolvedLinkInfo> {
     val results = mutableListOf<ResolvedLinkInfo>()
     val processedIds = mutableSetOf<String>()
 
@@ -38,7 +38,7 @@ suspend fun matchingAllRegular(content: String): List<ResolvedLinkInfo> {
                         val realLink = biliClient.redirect("https://b23.tv/$id")
                         if (realLink != null) {
                             logger.info("短链接 https://b23.tv/$id 解析为: $realLink")
-                            matchingInternalRegular(realLink)?.let { results.add(it) }
+                            matchingInternalRegular(realLink, subject)?.let { results.add(it) }
                         }
                     } else if (linkType == LinkType.Dynamic && isOpusMatch(matchResult)) {
                         val opusUrl = normalizeOpusUrl(matchResult.value)
@@ -47,13 +47,13 @@ suspend fun matchingAllRegular(content: String): List<ResolvedLinkInfo> {
                             val articleKey = "${LinkType.Article.name}:$cvId"
                             if (!processedIds.contains(articleKey)) {
                                 processedIds.add(articleKey)
-                                results.add(ResolvedLinkInfo(LinkType.Article, cvId))
+                                results.add(ResolvedLinkInfo(LinkType.Article, cvId, subject))
                             }
                         } else {
-                            results.add(ResolvedLinkInfo(linkType, id))
+                            results.add(ResolvedLinkInfo(linkType, id, subject))
                         }
                     } else {
-                        results.add(ResolvedLinkInfo(linkType, id))
+                        results.add(ResolvedLinkInfo(linkType, id, subject))
                     }
                 }
 
@@ -65,12 +65,12 @@ suspend fun matchingAllRegular(content: String): List<ResolvedLinkInfo> {
     return results
 }
 
-data class ResolvedLinkInfo(val type: LinkType, val id: String) : ResolveLink {
-    override suspend fun drawGeneral(): String? = type.drawGeneral(id)
+data class ResolvedLinkInfo(val type: LinkType, val id: String, val subject: String? = null) : ResolveLink {
+    override suspend fun drawGeneral(): String? = type.drawGeneral(id, subject)
     override suspend fun getLink(): String = type.getLink(id)
 }
 
-suspend fun matchingInternalRegular(content: String): ResolvedLinkInfo? {
+suspend fun matchingInternalRegular(content: String, subject: String? = null): ResolvedLinkInfo? {
     var matchResult: MatchResult? = null
     var type: LinkType? = null
 
@@ -102,7 +102,7 @@ suspend fun matchingInternalRegular(content: String): ResolvedLinkInfo? {
         if (realLink != null) {
             logger.info("短链接 https://b23.tv/$id 解析为: $realLink")
             // 递归解析真实链接
-            return matchingInternalRegular(realLink)
+            return matchingInternalRegular(realLink, subject)
         } else {
             logger.warn("短链接解析失败: https://b23.tv/$id")
             return null
@@ -113,11 +113,11 @@ suspend fun matchingInternalRegular(content: String): ResolvedLinkInfo? {
         val opusUrl = normalizeOpusUrl(matchResult.value)
         val cvId = resolveOpusCvId(opusUrl)
         if (cvId != null) {
-            return ResolvedLinkInfo(LinkType.Article, cvId)
+            return ResolvedLinkInfo(LinkType.Article, cvId, subject)
         }
     }
 
-    return ResolvedLinkInfo(type, id)
+    return ResolvedLinkInfo(type, id, subject)
 }
 
 private fun isOpusMatch(matchResult: MatchResult): Boolean {
@@ -172,13 +172,13 @@ enum class LinkType(val regex: List<Regex>) {
         """(?:b23\.tv|bili2233\.cn)\\?/([0-9A-z]+)""".toRegex()
     ));
 
-    suspend fun drawGeneral(id: String): String? {
+    suspend fun drawGeneral(id: String, subject: String? = null): String? {
         return when (this) {
             VideoLink -> {
                 biliClient.getVideoDetail(id)?.run {
                     val author = biliClient.userInfo(owner.mid)?.toDrawAuthorData() ?: toDrawAuthorData()
                     val videoData = toDrawData()
-                    val colors = getDefaultColors()
+                    val colors = resolveColors(author.mid, subject)
                     val footer = buildFooter(author.name, author.mid, id, pubdate.formatRelativeTime, "视频")
 
                     SkiaManager.executeDrawing {
@@ -194,7 +194,7 @@ enum class LinkType(val regex: List<Regex>) {
             Article -> {
                 biliClient.getArticleDetail("cv$id")?.run {
                     val articleData = toDrawData()
-                    val colors = getDefaultColors()
+                    val colors = resolveColors(author.mid, subject)
                     val footer = buildFooter(author.name, author.mid, id, time.formatRelativeTime, "专栏")
 
                     SkiaManager.executeDrawing {
@@ -208,11 +208,11 @@ enum class LinkType(val regex: List<Regex>) {
                 }
             }
             Dynamic -> {
-                val color = Color.makeRGB(BiliConfigManager.config.imageConfig.defaultColor)
                 biliClient.getDynamicDetail(id)?.run {
+                    val colors = resolveColors(modules.moduleAuthor.mid, subject)
                     SkiaManager.executeDrawing {
-                        val dynamic = this@run.drawDynamic(this, color)
-                        val img = makeCardBg(this, dynamic.height, listOf(color)) {
+                        val dynamic = this@run.drawDynamic(this, colors.first())
+                        val img = makeCardBg(this, dynamic.height, colors) {
                             it.drawImage(dynamic, 0f, 0f)
                         }
                         cacheImage(img, "$idStr.png", CacheType.DRAW_SEARCH)
@@ -223,7 +223,7 @@ enum class LinkType(val regex: List<Regex>) {
                 val room = biliClient.getLiveDetail(id) ?: return null
                 val author = biliClient.userInfo(room.uid)?.toDrawAuthorData() ?: return null
                 val liveData = room.toDrawData()
-                val colors = getDefaultColors()
+                val colors = resolveColors(room.uid, subject)
                 val area = if (room.parentAreaName != null && room.areaName != null) {
                     "${room.parentAreaName} · ${room.areaName}"
                 } else {
@@ -259,7 +259,7 @@ enum class LinkType(val regex: List<Regex>) {
             }
             User -> {
                 val author = biliClient.userInfo(id.toLong())?.toDrawAuthorData() ?: return null
-                val colors = getDefaultColors()
+                val colors = resolveColors(author.mid, subject)
                 val footer = buildFooter(author.name, author.mid, id, author.sign ?: "", "用户")
 
                 SkiaManager.executeDrawing {
@@ -286,7 +286,7 @@ enum class LinkType(val regex: List<Regex>) {
             ShortLink -> {
                 val link = biliClient.redirect("https://b23.tv/$id")
                 if (link != null) {
-                    matchingInternalRegular(link)?.drawGeneral()
+                    matchingInternalRegular(link, subject)?.drawGeneral()
                 } else null
             }
         }
@@ -303,6 +303,11 @@ enum class LinkType(val regex: List<Regex>) {
             ShortLink -> "$BASE_SHORT/$id"
         }
     }
+}
+
+private fun resolveColors(uid: Long, subject: String?): List<Int> {
+    return DynamicService.resolveColor(uid, subject)
+        .split(";", "；").map { Color.makeRGB(it.trim()) }
 }
 
 private fun getDefaultColors(): List<Int> {

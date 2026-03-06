@@ -12,6 +12,8 @@ import top.bilibili.draw.makeDrawLive
 import top.bilibili.draw.makeRGB
 import top.bilibili.utils.formatRelativeTime
 import top.bilibili.utils.logger
+import top.bilibili.service.DynamicService
+import top.bilibili.service.resolveColor
 
 object LiveMessageTasker : BiliTasker() {
     override var interval: Int = 0
@@ -46,15 +48,15 @@ object LiveMessageTasker : BiliTasker() {
             cover,
             area,
             LIVE_LINK(roomId.toString()),
-            makeLive(),
+            makeLive(contact),
             contact
         )
     }
 
-    suspend fun LiveInfo.makeLive(): String? {
+    suspend fun LiveInfo.makeLive(contact: String? = null): String? {
         return if (BiliConfigManager.config.enableConfig.drawEnable) {
             logger.info("开始生成直播封面图片...")
-            val color = BiliData.dynamic[uid]?.color ?: BiliConfigManager.config.imageConfig.defaultColor
+            val color = DynamicService.resolveColor(uid, contact)
             val colors = color.split(";", "；").map { Color.makeRGB(it.trim()) }
             val drawPath = makeDrawLive(colors)
             logger.info("直播封面图片生成完成: $drawPath")

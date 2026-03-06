@@ -17,6 +17,7 @@ data class BiliDataWrapper(
     var dynamicPushTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf(),
     var livePushTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf(),
     var liveCloseTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf(),
+    var dynamicColorByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf(),
     var atAll: MutableMap<String, MutableMap<Long, MutableSet<AtAllType>>> = mutableMapOf(),
     var group: MutableMap<String, Group> = mutableMapOf(),
     var bangumi: MutableMap<Long, Bangumi> = mutableMapOf(),
@@ -35,6 +36,7 @@ data class BiliDataWrapper(
                 dynamicPushTemplateByUid = biliData.dynamicPushTemplateByUid,
                 livePushTemplateByUid = biliData.livePushTemplateByUid,
                 liveCloseTemplateByUid = biliData.liveCloseTemplateByUid,
+                dynamicColorByUid = biliData.dynamicColorByUid,
                 atAll = biliData.atAll,
                 group = biliData.group,
                 bangumi = biliData.bangumi,
@@ -53,6 +55,7 @@ data class BiliDataWrapper(
             biliData.dynamicPushTemplateByUid = wrapper.dynamicPushTemplateByUid
             biliData.livePushTemplateByUid = wrapper.livePushTemplateByUid
             biliData.liveCloseTemplateByUid = wrapper.liveCloseTemplateByUid
+            biliData.dynamicColorByUid = wrapper.dynamicColorByUid
             biliData.atAll = wrapper.atAll
             biliData.group = wrapper.group
             biliData.bangumi = wrapper.bangumi

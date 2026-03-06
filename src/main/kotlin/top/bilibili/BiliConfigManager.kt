@@ -12,7 +12,7 @@ import java.nio.file.Paths
  */
 object BiliConfigManager {
     private val logger = LoggerFactory.getLogger(BiliConfigManager::class.java)
-    private const val CURRENT_DATA_VERSION = 1
+    private const val CURRENT_DATA_VERSION = 2
 
     lateinit var config: BiliConfig
         private set

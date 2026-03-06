@@ -113,8 +113,9 @@ object SettingsCommandService {
     }
 
     private suspend fun applyColorChange(contactId: Long, isGroup: Boolean, userArg: String, colorArg: String) {
+        val subject = if (isGroup) "group:$contactId" else "private:$contactId"
         val result = matchUser(userArg) { uid ->
-            DynamicService.setColor(uid, colorArg)
+            DynamicService.setColor(uid, subject, colorArg)
         } ?: "未匹配到用户哦"
         if (result == "设置完成") {
             val saved = BiliConfigManager.saveData()

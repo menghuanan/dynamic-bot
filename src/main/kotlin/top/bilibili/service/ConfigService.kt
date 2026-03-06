@@ -84,7 +84,7 @@ object ConfigService {
                 appendLine("- 默认主题色: ${runtimeConfig.imageConfig.defaultColor}")
                 appendLine("- 设置命令: /bili config color <uid|用户名> <HEX颜色>")
             } else {
-                appendLine("- 当前主题色: ${BiliData.dynamic[uid]?.color ?: runtimeConfig.imageConfig.defaultColor}")
+                appendLine("- 当前主题色: ${DynamicService.resolveColor(uid, subject)}")
                 appendLine("- 设置命令: /bili config color $uid <HEX颜色>")
             }
             appendLine()

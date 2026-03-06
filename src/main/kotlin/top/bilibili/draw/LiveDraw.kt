@@ -1,4 +1,4 @@
-﻿package top.bilibili.draw
+package top.bilibili.draw
 
 import org.jetbrains.skia.*
 import org.jetbrains.skia.paragraph.Alignment
@@ -15,7 +15,7 @@ import kotlin.math.abs
 
 suspend fun LiveInfo.makeDrawLive(colors: List<Int>): String {
     return SkiaManager.executeDrawing {
-        val live = this@makeDrawLive.drawLive(this)
+        val live = this@makeDrawLive.drawLive(this, colors.first())
         val img = makeCardBg(this, live.height, colors) {
             it.drawImage(live, 0f, 0f)
         }
@@ -24,10 +24,10 @@ suspend fun LiveInfo.makeDrawLive(colors: List<Int>): String {
     }
 }
 
-suspend fun LiveInfo.drawLive(session: DrawingSession): Image {
+suspend fun LiveInfo.drawLive(session: DrawingSession, qrCodeColor: Int): Image {
     val margin = quality.cardMargin * 2
 
-    val avatar = drawAvatar(session)
+    val avatar = drawAvatar(session, qrCodeColor)
     val fw = cardRect.width - quality.cardOutlineWidth / 2
     val fallbackUrl = imgApi(cover, fw.toInt(), (fw * 0.625).toInt())
     val coverImg = with(session) { getOrDownloadImageDefault(cover, fallbackUrl, CacheType.IMAGES).track() }
@@ -115,7 +115,7 @@ suspend fun LiveInfo.drawLive(session: DrawingSession): Image {
     }
 }
 
-suspend fun LiveInfo.drawAvatar(session: DrawingSession): Image {
+suspend fun LiveInfo.drawAvatar(session: DrawingSession, qrCodeColor: Int): Image {
     val liveFace = face
     val liveTitle = title
     val liveUname = uname
@@ -171,9 +171,9 @@ suspend fun LiveInfo.drawAvatar(session: DrawingSession): Image {
     y += quality.nameFontSize + space * 0.5f
     timeParagraph.paint(canvas, x, y)
 
-    val color = BiliConfigManager.data.dynamic[liveUid]?.color ?: BiliConfigManager.config.imageConfig.defaultColor
-    val colors = color.split(";", "；").map { Color.makeRGB(it.trim()) }.first()
-    canvas.drawLiveOrnament(session, "https://live.bilibili.com/$liveRoomId", colors, liveArea)
+    canvas.drawLiveOrnament(session, "https://live.bilibili.com/$liveRoomId", qrCodeColor, liveArea)
+
+
 
     return with(session) {
         surface.makeImageSnapshot().track()

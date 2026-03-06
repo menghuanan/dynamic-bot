@@ -147,7 +147,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         val matchedLinks = mutableListOf<Pair<String, top.bilibili.service.ResolvedLinkInfo>>()
 
         for (link in allLinks) {
-            val infos = top.bilibili.service.matchingAllRegular(link)
+            val infos = top.bilibili.service.matchingAllRegular(link, "group:$groupId")
             for (info in infos) {
                 matchedLinks.add(link to info)
             }

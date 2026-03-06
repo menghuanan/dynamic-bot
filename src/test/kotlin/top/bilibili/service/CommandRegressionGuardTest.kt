@@ -143,6 +143,46 @@ class CommandRegressionGuardTest {
     }
 
     @Test
+    fun `dynamic and live rendering should resolve color by current contact`() {
+        val dynamicTasker = read("src/main/kotlin/top/bilibili/tasker/DynamicMessageTasker.kt")
+        val liveTasker = read("src/main/kotlin/top/bilibili/tasker/LiveMessageTasker.kt")
+        assertTrue(
+            dynamicTasker.contains("makeDynamic(contact)"),
+            "dynamic message build should pass contact into draw generation"
+        )
+        assertTrue(
+            dynamicTasker.contains("DynamicService.resolveColor("),
+            "dynamic draw path should resolve color with subject awareness"
+        )
+        assertTrue(
+            liveTasker.contains("makeLive(contact)"),
+            "live message build should pass contact into draw generation"
+        )
+        assertTrue(
+            liveTasker.contains("DynamicService.resolveColor(uid, contact)"),
+            "live draw path should resolve color with subject awareness"
+        )
+    }
+
+    @Test
+    fun `link resolve should carry subject into color aware rendering`() {
+        val listener = read("src/main/kotlin/top/bilibili/tasker/ListenerTasker.kt")
+        val resolve = read("src/main/kotlin/top/bilibili/service/ResolveLinkService.kt")
+        assertTrue(
+            listener.contains("matchingAllRegular(link, \"group:\$groupId\")"),
+            "listener should pass group subject into resolve matching"
+        )
+        assertTrue(
+            resolve.contains("type.drawGeneral(id, subject)"),
+            "resolved link should keep subject when drawing"
+        )
+        assertTrue(
+            resolve.contains("matchingInternalRegular(realLink, subject)"),
+            "short link recursion should preserve subject"
+        )
+    }
+
+    @Test
     fun `napcat send path should await api response instead of queue-only success`() {
         val text = read("src/main/kotlin/top/bilibili/napcat/NapCatClient.kt")
         assertTrue(text.contains("sendActionAndAwaitResponse"), "send path should wait for OneBot response")

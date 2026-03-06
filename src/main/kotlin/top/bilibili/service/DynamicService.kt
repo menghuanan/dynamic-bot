@@ -186,12 +186,12 @@ object DynamicService {
         return segments.joinToString(";")
     }
 
+    @Deprecated("Use subject-scoped color binding")
     suspend fun setColor(uid: Long, color: String) = mutex.withLock {
-        val subData = dynamic[uid] ?: return@withLock "没有订阅过 UID: $uid"
-        val normalized = normalizeColorInput(color)
+        dynamic[uid] ?: return@withLock "没有订阅过 UID: $uid"
+        normalizeColorInput(color)
             ?: return@withLock "格式错误，请输入16进制颜色，如: #d3edfa 或 #d3edfa;#fde8ed"
-        subData.color = normalized
-        "设置完成"
+        "请在目标会话中使用 /bili color 重新设置主题色"
     }
 
     suspend fun addDirectSubscribe(uid: Long, subject: String, isSelf: Boolean = true) = mutex.withLock {

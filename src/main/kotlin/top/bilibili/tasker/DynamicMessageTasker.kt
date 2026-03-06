@@ -13,6 +13,8 @@ import top.bilibili.draw.makeDrawDynamic
 import top.bilibili.draw.makeRGB
 import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.*
+import top.bilibili.service.DynamicService
+import top.bilibili.service.resolveColor
 
 object DynamicMessageTasker : BiliTasker() {
 
@@ -78,7 +80,7 @@ object DynamicMessageTasker : BiliTasker() {
             textContent(),
             dynamicImages(),
             dynamicLinks(),
-            makeDynamic(),
+            makeDynamic(contact),
             contact
         )
     }
@@ -229,10 +231,13 @@ object DynamicMessageTasker : BiliTasker() {
 
     }
 
-    suspend fun DynamicItem.makeDynamic(): String? {
+    suspend fun DynamicItem.makeDynamic(contact: String? = null): String? {
         return if (BiliConfigManager.config.enableConfig.drawEnable) {
-            val color = (if (this.type == DYNAMIC_TYPE_PGC) bangumi[mid]?.color else dynamic[mid]?.color)
-                ?: BiliConfigManager.config.imageConfig.defaultColor
+            val color = if (this.type == DYNAMIC_TYPE_PGC) {
+                bangumi[mid]?.color ?: BiliConfigManager.config.imageConfig.defaultColor
+            } else {
+                DynamicService.resolveColor(mid, contact)
+            }
             val colors = color.split(";", "；").map { Color.makeRGB(it.trim()) }
             makeDrawDynamic(colors)
         } else null

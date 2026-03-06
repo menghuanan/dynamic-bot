@@ -31,7 +31,10 @@ object BiliData {
     var livePushTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf()
     var liveCloseTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf()
 
-    // key: subject -> uid -> at-all types
+    // key: subject -> uid -> custom color
+    var dynamicColorByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf()
+
+// key: subject -> uid -> at-all types
     var atAll: MutableMap<String, MutableMap<Long, MutableSet<AtAllType>>> = mutableMapOf()
 
     // key: group name - 分组
@@ -47,7 +50,6 @@ object BiliData {
 @Serializable
 data class SubData(
     val name: String,
-    var color: String? = null,
     var last: Long = 0L,
     var lastLive: Long = 0L,
     val contacts: MutableSet<String> = mutableSetOf(),
