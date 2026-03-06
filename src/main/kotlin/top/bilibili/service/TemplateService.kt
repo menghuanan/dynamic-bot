@@ -1,93 +1,164 @@
 package top.bilibili.service
 
-// TODO: [Mirai依赖] 需要重写为 NapCat 实现
-// import net.mamoe.mirai.contact.Contact
-// import net.mamoe.mirai.message.data.buildForwardMessage
+import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
-import top.bilibili.api.getDynamicDetail
-import top.bilibili.api.getLive
+import top.bilibili.core.ContactId
 import top.bilibili.data.DynamicMessage
-import top.bilibili.data.LIVE_LINK
+import top.bilibili.data.DynamicType
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
-// TODO: [Mirai依赖] buildMessage 方法需要重写
-// import top.bilibili.tasker.DynamicMessageTasker.buildMessage
-// import top.bilibili.tasker.LiveMessageTasker.buildMessage
-// import top.bilibili.tasker.SendTasker.buildMessage
-import top.bilibili.utils.biliClient
+import top.bilibili.napcat.MessageSegment
+import top.bilibili.utils.parseContactId
 
 object TemplateService {
-    // TODO: [Mirai依赖] 需要重写模板列表展示功能
-    /*
-    suspend fun listTemplate(type: String, subject: Contact) {
-        val template = when (type) {
-            "d" -> BiliConfigManager.config.templateConfig.dynamicPush
-            "l" -> BiliConfigManager.config.templateConfig.livePush
-            "le" -> BiliConfigManager.config.templateConfig.liveClose
-            else -> {
-                subject.sendMessage("类型错误 d:动态 l:直播 le:直播结束")
-                return
-            }
-        }
+    private val runtimeConfig: BiliConfig
+        get() = runCatching { BiliConfigManager.config }.getOrElse { BiliConfig() }
 
-        // https://t.bilibili.com/385190177693666264
-        val dynamic = when (type) {
-            "d" -> biliClient.getDynamicDetail("385190177693666264")?.buildMessage()!!
-            "l" -> biliClient.getLive(1, 1)?.rooms?.first()?.buildMessage()!!
-            "le" -> LiveCloseMessage(
-                0,0,"Test", "2022年1月1日 00:00:00", 1640966400, "2022年1月1日 01:02:03",
-                "1小时 2分钟 3秒", "测试测试测试TEST", "游戏", LIVE_LINK("0")
-            )
-            else -> return
-        }
-        subject.sendMessage(buildForwardMessage(subject) {
-            var pt = 0
-            subject.bot named dynamic.name at dynamic.timestamp says if (type == "d") "动态推送模板" else "直播推送模板"
-            subject.bot named dynamic.name at dynamic.timestamp says "下面每个转发消息都代表一个模板推送效果"
-            for (t in template) {
-                subject.bot named dynamic.name at dynamic.timestamp + pt says t.key
-                subject.bot named dynamic.name at dynamic.timestamp + pt says buildForwardMessage(subject) {
-                    when (dynamic) {
-                        is DynamicMessage -> dynamic.buildMessage(t.value, listOf(subject)).forEach {
-                            subject.bot named dynamic.name at dynamic.timestamp + pt says it
-                        }
-                        is LiveMessage -> dynamic.buildMessage(t.value, listOf(subject)).forEach {
-                            subject.bot named dynamic.name at dynamic.timestamp + pt says it
-                        }
-                        is LiveCloseMessage -> dynamic.buildMessage(t.value).forEach {
-                            subject.bot named dynamic.name at dynamic.timestamp + pt says it
-                        }
-                    }
-                }
-                pt += 86400
-            }
-        })
+    private fun templateMap(type: String) = when (type) {
+        "d" -> runtimeConfig.templateConfig.dynamicPush
+        "l" -> runtimeConfig.templateConfig.livePush
+        "le" -> runtimeConfig.templateConfig.liveClose
+        else -> null
     }
-    */
+
+    private fun pushBindingMap(type: String) = when (type) {
+        "d" -> BiliData.dynamicPushTemplate
+        "l" -> BiliData.livePushTemplate
+        "le" -> BiliData.liveCloseTemplate
+        else -> null
+    }
+
+    private fun pushBindingByUidMap(type: String) = when (type) {
+        "d" -> BiliData.dynamicPushTemplateByUid
+        "l" -> BiliData.livePushTemplateByUid
+        "le" -> BiliData.liveCloseTemplateByUid
+        else -> null
+    }
+
+    fun listTemplateText(type: String): String {
+        val templates = templateMap(type) ?: return "类型错误 d:动态 l:直播 le:直播结束"
+        return buildString {
+            appendLine("模板列表 ($type):")
+            templates.forEach { (name, value) ->
+                appendLine("- $name")
+                appendLine("  ${value.replace("\r", "\\r").replace("\n", "\\n")}")
+            }
+        }.trim()
+    }
 
     suspend fun listTemplate(type: String, subject: Any) {
-        // TODO: 实现基于 NapCat 的模板列表展示
+        val subjectStr = subject as? String ?: return
+        val contact: ContactId = parseContactId(subjectStr) ?: return
+        MessageGatewayProvider.require().sendMessage(contact, listOf(MessageSegment.text(listTemplateText(type))))
     }
 
-    fun setTemplate(type: String, template: String, subject: String): String {
-        val pushTemplates = when (type) {
-            "d" -> BiliConfigManager.config.templateConfig.dynamicPush
-            "l" -> BiliConfigManager.config.templateConfig.livePush
-            "le" -> BiliConfigManager.config.templateConfig.liveClose
+    suspend fun previewTemplate(type: String, template: String, subject: String): String {
+        val templates = templateMap(type) ?: return "类型错误 d:动态 l:直播 le:直播结束"
+        val selected = templates[template] ?: return "没有这个模板: $template"
+        val contact = parseContactId(subject) ?: return "联系人格式错误"
+        val sampleMessage = buildSampleMessage(type, subject) ?: return "类型错误 d:动态 l:直播 le:直播结束"
+        val renderedSegments = TemplateRenderService.buildSegments(
+            message = sampleMessage,
+            contactStr = subject,
+            overrideTemplate = selected
+        )
+
+        val previewSegments = buildList {
+            add(MessageSegment.text("模板预览: $template ($type)"))
+            add(MessageSegment.text("\n"))
+            addAll(renderedSegments)
+        }
+
+        val sent = MessageGatewayProvider.require().sendMessage(contact, previewSegments)
+        return if (sent) "预览已发送（基于实发渲染链）" else "预览发送失败"
+    }
+
+    fun explainTemplate(type: String): String {
+        val scope = when (type) {
+            "d" -> "动态推送模板"
+            "l" -> "开播推送模板"
+            "le" -> "下播推送模板"
             else -> return "类型错误 d:动态 l:直播 le:直播结束"
         }
-        val push = when (type) {
-            "d" -> BiliConfigManager.data.dynamicPushTemplate
-            "l" -> BiliConfigManager.data.livePushTemplate
-            "le" -> BiliConfigManager.data.liveCloseTemplate
-            else -> return "类型错误 d:动态 l:直播 le:直播结束"
+
+        return buildString {
+            appendLine("$scope 说明")
+            appendLine("作用: 控制推送消息的文案布局与消息段顺序。")
+            appendLine("可改变: 文本结构、换行拆分(\\r)、占位符展示内容。")
+            appendLine()
+            appendLine("常用占位符:")
+            appendLine("{name} {uid} {mid} {time} {link}")
+            appendLine("{type} {title} {content} {duration} {area}")
+            appendLine("{draw} {images} {links}")
+        }.trim()
+    }
+
+    fun setTemplate(type: String, template: String, subject: String, uid: Long? = null): String {
+        val templates = templateMap(type) ?: return "类型错误 d:动态 l:直播 le:直播结束"
+        val bindings = pushBindingMap(type) ?: return "类型错误 d:动态 l:直播 le:直播结束"
+        val byUidBindings = pushBindingByUidMap(type) ?: return "类型错误 d:动态 l:直播 le:直播结束"
+        parseContactId(subject) ?: return "联系人格式错误"
+
+        if (!templates.containsKey(template)) {
+            return "没有这个模板: $template"
         }
-        return if (pushTemplates.containsKey(template)) {
-            push.forEach { (_, u) -> u.remove(subject) }
-            if (!push.containsKey(template)) push[template] = mutableSetOf()
-            push[template]!!.add(subject)
-            "配置完成"
-        } else "没有这个模板哦 $template"
+
+        if (uid != null) {
+            if (uid <= 0L) return "UID 格式错误"
+            if (!isFollow(uid, subject)) return "该群未订阅 UID: $uid"
+            byUidBindings.getOrPut(subject) { mutableMapOf() }[uid] = template
+            return "配置完成"
+        }
+
+        bindings.forEach { (_, users) -> users.remove(subject) }
+        bindings.getOrPut(template) { mutableSetOf() }.add(subject)
+        return "配置完成"
+    }
+
+    private fun buildSampleMessage(type: String, subject: String): top.bilibili.data.BiliMessage? {
+        return when (type) {
+            "d" -> DynamicMessage(
+                did = "1000000000",
+                mid = 10086L,
+                name = "示例UP",
+                type = DynamicType.DYNAMIC_TYPE_AV,
+                time = "2026-03-06 12:00:00",
+                timestamp = 1772788800,
+                content = "这是一条模板预览示例内容",
+                images = emptyList(),
+                links = listOf(DynamicMessage.Link(tag = "示例链接", value = "https://www.bilibili.com")),
+                drawPath = null,
+                contact = subject,
+            )
+            "l" -> LiveMessage(
+                rid = 20000L,
+                mid = 10086L,
+                name = "示例主播",
+                time = "2026-03-06 12:00:00",
+                timestamp = 1772788800,
+                title = "示例直播标题",
+                cover = "https://example.com/cover.jpg",
+                area = "示例分区",
+                link = "https://live.bilibili.com/20000",
+                drawPath = null,
+                contact = subject,
+            )
+            "le" -> LiveCloseMessage(
+                rid = 20000L,
+                mid = 10086L,
+                name = "示例主播",
+                time = "2026-03-06 12:00:00",
+                timestamp = 1772788800,
+                endTime = "2026-03-06 13:20:00",
+                duration = "1小时20分钟",
+                title = "示例直播标题",
+                area = "示例分区",
+                link = "https://live.bilibili.com/20000",
+                drawPath = null,
+                contact = subject,
+            )
+            else -> null
+        }
     }
 }

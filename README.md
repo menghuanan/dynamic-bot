@@ -252,6 +252,8 @@ admin: "管理员QQ号"
     /bili filter del <UID> <索引> - 删除过滤器(如 t0, r1)
 
     其他:
+    /bili color <uid|用户名> <HEX颜色> - 设置订阅主题色（仅超管）
+    /bili config color <uid|用户名> <HEX颜色> - 通过 config 入口设置主题色（仅超管）
     /bili help - 显示此帮助
 </details>
 

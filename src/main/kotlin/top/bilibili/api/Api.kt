@@ -1,4 +1,4 @@
-﻿package top.bilibili.api
+package top.bilibili.api
 
 // Login
 const val LOGIN_QRCODE = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate"

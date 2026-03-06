@@ -1,6 +1,8 @@
-﻿package top.bilibili.tasker
+package top.bilibili.tasker
 
 import kotlinx.coroutines.*
+import top.bilibili.core.resource.BusinessLifecycleManager
+import top.bilibili.core.resource.TaskResourcePolicyRegistry
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.utils.logger
 import kotlin.coroutines.CoroutineContext
@@ -15,7 +17,7 @@ abstract class BiliTasker(
         val taskers = mutableListOf<BiliTasker>()
 
         fun cancelAll() {
-            taskers.forEach {
+            taskers.toList().forEach {
                 it.cancel()
             }
         }
@@ -33,6 +35,10 @@ abstract class BiliTasker(
     protected open fun after() {}
 
     override fun start(): Boolean {
+        val taskName = this::class.simpleName ?: "UnknownTasker"
+        val policy = TaskResourcePolicyRegistry.policyOf(taskName)
+            ?: error("任务未声明资源策略: $taskName")
+
         job = launch(coroutineContext) {
             var consecutiveErrors = 0
             val maxErrors = 10
@@ -48,9 +54,15 @@ abstract class BiliTasker(
             if (interval == -1) {
                 // 一次性任务
                 runCatching {
-                    before()
-                    main()
-                    after()
+                    BusinessLifecycleManager.run(
+                        owner = taskName,
+                        operation = "run-once",
+                        strictness = policy.strictness,
+                    ) {
+                        before()
+                        main()
+                        after()
+                    }
                 }.onFailure { e ->
                     logger.error("一次性任务 ${this::class.simpleName} 执行失败", e)
                 }
@@ -58,9 +70,15 @@ abstract class BiliTasker(
                 // 周期性任务
                 while (isActive) {
                     val result = runCatching {
-                        before()
-                        main()
-                        after()
+                        BusinessLifecycleManager.run(
+                            owner = taskName,
+                            operation = "tick",
+                            strictness = policy.strictness,
+                        ) {
+                            before()
+                            main()
+                            after()
+                        }
                     }
 
                     if (result.isFailure) {

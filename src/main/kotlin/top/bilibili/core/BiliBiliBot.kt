@@ -4,17 +4,26 @@ import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfigManager
 import top.bilibili.config.ConfigManager
-import top.bilibili.napcat.MessageEvent
 import top.bilibili.napcat.MessageSegment
 import top.bilibili.napcat.NapCatClient
 import top.bilibili.data.BiliCookie
 import top.bilibili.data.DynamicDetail
 import top.bilibili.data.LiveDetail
 import top.bilibili.data.BiliMessage
-import top.bilibili.api.userInfo
-import top.bilibili.api.getEpisodeInfo
+import top.bilibili.service.CacheMaintenanceService
+import top.bilibili.service.FirstRunService
+import top.bilibili.service.MessageEventDispatchService
+import top.bilibili.service.MessageGatewayProvider
+import top.bilibili.service.NapCatMessageGateway
+import top.bilibili.service.StartupDataInitService
+import top.bilibili.service.TaskBootstrapService
+import top.bilibili.service.closeServiceClient
 import top.bilibili.utils.ImageCache
+import top.bilibili.tasker.BiliCheckTasker
 import top.bilibili.tasker.BiliTasker
+import top.bilibili.core.resource.LambdaResourcePartition
+import top.bilibili.core.resource.ResourceSupervisor
+import top.bilibili.core.resource.ResourceStrictness
 import kotlinx.coroutines.channels.Channel
 import java.io.File
 import java.io.InputStream
@@ -61,6 +70,7 @@ object BiliBiliBot : CoroutineScope {
 
     /** ✅ 事件收集协程的显式引用 */
     private var eventCollectorJob: Job? = null
+    private val resourceSupervisor = ResourceSupervisor()
 
     /**
      * 检查 NapCat 客户端是否已初始化
@@ -77,7 +87,7 @@ object BiliBiliBot : CoroutineScope {
      */
     fun requireNapCat(): NapCatClient {
         require(::napCat.isInitialized) {
-            "NapCat 客户端尚未初始化，请确保程序已正确启动"
+            "NapCat 客户端尚未初始化，请先完成启动。"
         }
         return napCat
     }
@@ -87,7 +97,7 @@ object BiliBiliBot : CoroutineScope {
      */
     fun requireConfig(): top.bilibili.config.BotConfig {
         require(::config.isInitialized) {
-            "配置尚未加载，请确保配置文件存在且格式正确"
+            "配置尚未加载。"
         }
         return config
     }
@@ -169,7 +179,7 @@ object BiliBiliBot : CoroutineScope {
                     context.getLogger("ROOT").level = ch.qos.logback.classic.Level.DEBUG
                 }
                 val source = if (commandLineDebugMode == true) "命令行参数" else "配置文件"
-                logger.debug("Debug 模式已启用（来源：$source）")
+                logger.debug("调试模式已启用（来源：$source）")
             }
         } catch (e: Exception) {
             logger.error("加载配置失败: ${e.message}")
@@ -182,6 +192,8 @@ object BiliBiliBot : CoroutineScope {
         logger.info("========================================")
 
         try {
+            resourceSupervisor.reset()
+
             // 0. 创建必要的目录
             logger.info("正在初始化目录结构...")
             listOf("config", "data", "temp", "logs").forEach { dir ->
@@ -197,11 +209,13 @@ object BiliBiliBot : CoroutineScope {
             logger.info("正在加载配置...")
             ConfigManager.init()
             config = ConfigManager.botConfig
+            top.bilibili.data.BiliImageTheme.reload()
+            top.bilibili.data.BiliImageQuality.reload()
 
             // 清理所有缓存（启动时）
             if (BiliConfigManager.config.enableConfig.cacheClearEnable) {
                 logger.info("正在清理所有缓存...")
-                clearAllCache()
+                CacheMaintenanceService.clearAllCache()
             }
 
             if (!config.napcat.validate()) {
@@ -213,6 +227,13 @@ object BiliBiliBot : CoroutineScope {
             // 2. 初始化 NapCat 客户端
             logger.info("正在初始化 NapCat 客户端...")
             napCat = NapCatClient(config.napcat)
+            MessageGatewayProvider.register(
+                NapCatMessageGateway(
+                    napCatProvider = { requireNapCat() },
+                    adminIdProvider = { BiliConfigManager.config.admin },
+                    logger = logger
+                )
+            )
 
             // 3. 订阅消息事件（✅ 显式管理协程）
             eventCollectorJob = launch {
@@ -220,7 +241,7 @@ object BiliBiliBot : CoroutineScope {
                     try {
                         // ✅ 单个事件处理最多 5 秒
                         withTimeout(5000) {
-                            handleMessageEvent(event)
+                            MessageEventDispatchService.handleMessageEvent(event)
                         }
                     } catch (e: TimeoutCancellationException) {
                         logger.warn("处理事件超时: ${event.messageType}")
@@ -232,13 +253,14 @@ object BiliBiliBot : CoroutineScope {
 
             // 4. 启动 NapCat 客户端
             napCat.start()
+            registerResourcePartitions()
 
             // 5. 初始化 B站数据（✅ 添加超时保护）
             launch {
                 try {
                     withTimeout(60000) {  // 60 秒超时
                         delay(3000) // 等待 WebSocket 连接
-                        initBiliData()
+                        StartupDataInitService.initBiliData()
                     }
                 } catch (e: TimeoutCancellationException) {
                     logger.error("初始化数据超时")
@@ -251,18 +273,18 @@ object BiliBiliBot : CoroutineScope {
                 try {
                     withTimeout(30000) {  // 30 秒超时
                         delay(5000) // 等待初始化完成
-                        startTasks()
+                        TaskBootstrapService.startTasks()
 
                         // 首次运行检查
                         delay(1000)
-                        checkFirstRun()
+                        FirstRunService.checkFirstRun(config)
                     }
                 } catch (e: TimeoutCancellationException) {
                     logger.error("启动任务超时")
                 }
             }
 
-            logger.info("Bot 启动成功！")
+            logger.info("Bot 启动成功")
 
         } catch (e: Exception) {
             logger.error("Bot 启动失败: ${e.message}", e)
@@ -281,54 +303,26 @@ object BiliBiliBot : CoroutineScope {
         logger.info("正在停止 Bot...")
 
         try {
-            // 1. 优先关闭所有 Channel，触发消费者退出
-            try {
-                dynamicChannel.close()
-                liveChannel.close()
-                messageChannel.close()
-                // ✅ P2修复: missChannel 已删除，不需要关闭
-                logger.debug("所有 Channel 已关闭")
-            } catch (e: Exception) {
-                logger.warn("关闭 Channel 失败: ${e.message}", e)
-            }
+            val report = runCatching {
+                runBlocking { resourceSupervisor.stopAll() }
+            }.onFailure {
+                logger.error("统一资源总管停止失败，进入分区兜底释放: ${it.message}", it)
+            }.getOrNull()
 
-            // 2. ✅ 优先取消事件收集器
-            runBlocking {
-                eventCollectorJob?.cancelAndJoin()  // ✅ P0修复: 等待协程完成，避免资源竞争
-            }
-            eventCollectorJob = null
-
-            // 3. 停止 NapCat 客户端
-            if (::napCat.isInitialized) {
-                napCat.stop()
-            }
-
-            // 4. 停止所有任务
-            BiliTasker.cancelAll()
-
-            // 5. 关闭 ImageCache
-            try {
-                ImageCache.close()
-            } catch (e: Exception) {
-                logger.error("关闭 ImageCache 失败: ${e.message}", e)
-            }
-
-            // 6. 关闭 BiliClient
-            try {
-                top.bilibili.utils.biliClient.close()
-                logger.info("BiliClient 已关闭")
-            } catch (e: Exception) {
-                logger.error("关闭 BiliClient 失败: ${e.message}", e)
-            }
-
-            // 7. 关闭 SkiaManager
-            try {
-                runBlocking {
-                    top.bilibili.skia.SkiaManager.shutdown()
+            if (report != null) {
+                if (report.totalPartitions == 0) {
+                    logger.warn("统一资源总管未注册分区，进入兜底释放")
+                    runBlocking { fallbackStopResources() }
+                } else if (!report.success) {
+                    logger.warn(
+                        "统一资源总管停止存在失败: total=${report.totalPartitions}, failed=${report.failedPartitions}, failures=${report.failures}"
+                    )
+                    runBlocking { fallbackStopResources() }
+                } else {
+                    logger.info("统一资源总管已完成全部分区释放")
                 }
-                logger.info("SkiaManager 已关闭")
-            } catch (e: Exception) {
-                logger.error("关闭 SkiaManager 失败: ${e.message}", e)
+            } else {
+                runBlocking { fallbackStopResources() }
             }
 
             // 8. 保存配置和数据
@@ -377,1669 +371,231 @@ object BiliBiliBot : CoroutineScope {
         }
     }
 
-    /** 清理所有缓存 */
-    private fun clearAllCache() {
-        try {
-            val cacheDir = java.io.File("data/cache")
-            if (!cacheDir.exists()) {
-                logger.info("缓存目录不存在，跳过清理")
-                return
-            }
-
-            var totalDeleted = 0
-            // 递归删除所有子文件夹中的文件
-            cacheDir.walkTopDown().forEach { file ->
-                if (file.isFile) {
-                    try {
-                        if (file.delete()) {
-                            totalDeleted++
-                        }
-                    } catch (e: Exception) {
-                        logger.error("删除缓存文件失败: ${file.path}, ${e.message}")
-                    }
-                }
-            }
-
-            logger.info("缓存清理完成，共删除 $totalDeleted 个文件")
-        } catch (e: Exception) {
-            logger.error("清理缓存时发生错误: ${e.message}", e)
-        }
-    }
-
-    /** 处理 QQ 消息事件 */
-    private suspend fun handleMessageEvent(event: MessageEvent) {
-        try {
-            when (event.messageType) {
-                "group" -> handleGroupMessage(event)
-                "private" -> handlePrivateMessage(event)
-                else -> logger.debug("收到未知类型的消息: ${event.messageType}")
-            }
-        } catch (e: Exception) {
-            logger.error("处理消息事件失败: ${e.message}", e)
-        }
-    }
-
-    /** 简化消息内容用于日志显示 */
-    private fun simplifyMessageForLog(rawMessage: String): String {
-        // 检查是否包含 CQ 码
-        if (!rawMessage.contains("[CQ:")) {
-            // 纯文本消息，直接返回（限制长度）
-            return if (rawMessage.length > 100) {
-                rawMessage.take(100) + "..."
-            } else {
-                rawMessage
-            }
-        }
-
-        // 包含 CQ 码，需要简化
-        val result = StringBuilder()
-
-        // 修复：限制输入长度防止 ReDoS
-        val safeMessage = if (rawMessage.length > 10000) {
-            logger.warn("消息过长 (${rawMessage.length} 字符)，截断处理")
-            rawMessage.take(10000)
-        } else {
-            rawMessage
-        }
-
-        val cqPattern = """\[CQ:([^,\]]+)(?:,[^\]]+)?\]""".toRegex()
-
-        var lastIndex = 0
-        cqPattern.findAll(safeMessage).forEach { match ->
-            // 添加 CQ 码之前的文本
-            if (match.range.first > lastIndex) {
-                result.append(safeMessage.substring(lastIndex, match.range.first))
-            }
-
-            // 简化 CQ 码
-            val cqType = match.groupValues[1]
-            when (cqType) {
-                "image" -> result.append("[图片]")
-                "face" -> result.append("[表情]")
-                "at" -> result.append("[提及]")
-                "reply" -> result.append("[回复]")
-                "video" -> result.append("[视频]")
-                "record" -> result.append("[语音]")
-                "file" -> result.append("[文件]")
-                "json" -> result.append("[JSON消息]")
-                "xml" -> result.append("[XML消息]")
-                else -> result.append("[$cqType]")
-            }
-
-            lastIndex = match.range.last + 1
-        }
-
-        // 添加最后的文本
-        if (lastIndex < safeMessage.length) {
-            result.append(safeMessage.substring(lastIndex))
-        }
-
-        // 限制总长度
-        val simplified = result.toString()
-        return if (simplified.length > 100) {
-            simplified.take(100) + "..."
-        } else {
-            simplified
-        }
-    }
-
-    /** 处理群消息 */
-    private suspend fun handleGroupMessage(event: MessageEvent) {
-        val groupId = event.groupId ?: return
-        val userId = event.userId
-        val message = event.rawMessage
-
-        logger.info("群消息 [$groupId] 来自 $userId: ${simplifyMessageForLog(message)}")
-
-        // 处理登录命令（仅管理员可用）
-        if (isSuperAdmin(userId) && (message.trim() == "/login" || message.trim() == "登录")) {
-            logger.info("触发登录命令，准备发送二维码...")
-            launch {
-                top.bilibili.service.LoginService.login(isGroup = true, contactId = groupId)
-            }
-            return
-        }
-
-        // 处理快速订阅命令（仅管理员可用）
-        if (isSuperAdmin(userId) && message.trim().startsWith("/add ")) {
-            val uid = message.trim().removePrefix("/add ").trim().toLongOrNull()
-            if (uid != null) {
-                handleSubscribe(groupId, uid, isGroup = true)
-            } else {
-                sendGroupMessage(groupId, listOf(MessageSegment.text("UID 格式错误")))
-            }
-            return
-        }
-
-        // 处理快速取消订阅命令（仅管理员可用）
-        if (isSuperAdmin(userId) && message.trim().startsWith("/del ")) {
-            val uid = message.trim().removePrefix("/del ").trim().toLongOrNull()
-            if (uid != null) {
-                handleUnsubscribe(groupId, uid, isGroup = true)
-            } else {
-                sendGroupMessage(groupId, listOf(MessageSegment.text("UID 格式错误")))
-            }
-            return
-        }
-
-        // 处理订阅列表查询命令（仅管理员可用）
-        if (isSuperAdmin(userId) && message.trim() == "/list") {
-            handleListSubscriptions(groupId, isGroup = true)
-            return
-        }
-
-        // ✅ 处理快捷黑名单命令（仅超级管理员可用）
-        if (isSuperAdmin(userId)) {
-            when {
-                // /black list - 查看黑名单列表
-                message.trim() == "/black list" -> {
-                    handleBlacklistList(groupId, isGroup = true)
-                    return
-                }
-                // /black [QQ号] - 添加黑名单
-                message.trim().startsWith("/black ") -> {
-                    val targetId = message.trim().removePrefix("/black ").trim().toLongOrNull()
-                    if (targetId != null) {
-                        handleBlacklistAdd(groupId, targetId, isGroup = true)
-                    } else {
-                        sendGroupMessage(groupId, listOf(MessageSegment.text("QQ号格式错误")))
-                    }
-                    return
-                }
-                // /unblock [QQ号] - 取消黑名单
-                message.trim().startsWith("/unblock ") -> {
-                    val targetId = message.trim().removePrefix("/unblock ").trim().toLongOrNull()
-                    if (targetId != null) {
-                        handleBlacklistRemove(groupId, targetId, isGroup = true)
-                    } else {
-                        sendGroupMessage(groupId, listOf(MessageSegment.text("QQ号格式错误")))
-                    }
-                    return
-                }
-            }
-        }
-
-        // 处理手动触发检查命令（仅管理员可用，用于测试）
-        if (isSuperAdmin(userId) && message.trim() == "/check") {
-            sendGroupMessage(groupId, listOf(MessageSegment.text("正在检查订阅...")))
-            launch {
-                try {
-                    // 触发一次检查，忽略时间限制，获取最新动态
-                    val result = top.bilibili.tasker.DynamicCheckTasker.executeManualCheck()
-                    if (result > 0) {
-                        sendGroupMessage(groupId, listOf(MessageSegment.text("检查完成！检测到 $result 条动态，正在处理...")))
-                    } else {
-                        sendGroupMessage(groupId, listOf(MessageSegment.text("检查完成！暂无新动态")))
-                    }
-                } catch (e: Exception) {
-                    sendGroupMessage(groupId, listOf(MessageSegment.text("检查失败: ${e.message}")))
-                    logger.error("手动检查失败", e)
-                }
-            }
-            return
-        }
-
-        // 处理 /bili 命令系统（仅管理员可用）
-        if ((isSuperAdmin(userId) || isGroupAdmin(groupId, userId)) && message.trim().startsWith("/bili ")) {
-            handleBiliCommand(groupId, userId, message.trim(), isGroup = true)
-            return
-        }
-    }
-
-    /** 处理私聊消息 */
-    private suspend fun handlePrivateMessage(event: MessageEvent) {
-        val userId = event.userId
-        val message = event.rawMessage
-
-        logger.info("私聊消息 来自 $userId: ${simplifyMessageForLog(message)}")
-
-        // 处理登录命令（仅管理员可用）
-        if (isSuperAdmin(userId) && (message.trim() == "/login" || message.trim() == "登录")) {
-            logger.info("触发登录命令，准备发送二维码...")
-            launch {
-                top.bilibili.service.LoginService.login(isGroup = false, contactId = userId)
-            }
-            return
-        }
-
-        // TODO: 实现其他私聊命令处理
-    }
-
-    /** 检查是否为超级管理员 */
-    private fun isSuperAdmin(userId: Long): Boolean {
-        return userId == BiliConfigManager.config.admin
-    }
-
-    /** 检查是否为当前群的普通管理员 */
-    private fun isGroupAdmin(groupId: Long, userId: Long): Boolean {
-        val groupConfig = ConfigManager.botConfig.admins.find { it.groupId == groupId }
-        return groupConfig?.userIds?.contains(userId) == true
-    }
-
-    /** 处理订阅 */
-    private suspend fun handleSubscribe(contactId: Long, uid: Long, isGroup: Boolean) {
-        try {
-            val contactStr = if (isGroup) "group:$contactId" else "private:$contactId"
-
-            // 获取用户信息
-            val userInfo = top.bilibili.utils.biliClient.userInfo(uid)
-            if (userInfo == null) {
-                val msg = "无法获取用户信息，UID 可能不存在: $uid"
-                if (isGroup) {
-                    sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                } else {
-                    sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                }
-                return
-            }
-
-            // 添加订阅
-            val subData = top.bilibili.BiliData.dynamic.getOrPut(uid) {
-                top.bilibili.SubData(
-                    name = userInfo.name ?: "未知用户",
-                    contacts = mutableSetOf(),
-                    banList = mutableMapOf()
-                )
-            }
-
-            if (contactStr in subData.contacts) {
-                val userName = userInfo.name ?: "未知用户"
-                val msg = "已经订阅过 $userName (UID: $uid) 了"
-                if (isGroup) {
-                    sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                } else {
-                    sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                }
-                return
-            }
-
-            subData.contacts.add(contactStr)
-            top.bilibili.BiliConfigManager.saveData()
-
-            val userName = userInfo.name ?: "未知用户"
-            val msg = "订阅成功！\n用户: $userName\nUID: $uid"
-            if (isGroup) {
-                sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            } else {
-                sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            }
-
-        } catch (e: Exception) {
-            logger.error("处理订阅失败: ${e.message}", e)
-            val msg = "订阅失败: ${e.message}"
-            if (isGroup) {
-                sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            } else {
-                sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            }
-        }
-    }
-
-    /** 处理取消订阅 */
-    private suspend fun handleUnsubscribe(contactId: Long, uid: Long, isGroup: Boolean) {
-        try {
-            val contactStr = if (isGroup) "group:$contactId" else "private:$contactId"
-
-            val subData = top.bilibili.BiliData.dynamic[uid]
-            if (subData == null || contactStr !in subData.contacts) {
-                val msg = "没有订阅过 UID: $uid"
-                if (isGroup) {
-                    sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                } else {
-                    sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                }
-                return
-            }
-
-            subData.contacts.remove(contactStr)
-            top.bilibili.BiliConfigManager.saveData()
-
-            val msg = "取消订阅成功！UID: $uid"
-            if (isGroup) {
-                sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            } else {
-                sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            }
-
-        } catch (e: Exception) {
-            logger.error("处理取消订阅失败: ${e.message}", e)
-            val msg = "取消订阅失败: ${e.message}"
-            if (isGroup) {
-                sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            } else {
-                sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            }
-        }
-    }
-
-    /** 处理查询订阅列表 */
-    private suspend fun handleListSubscriptions(contactId: Long, isGroup: Boolean) {
-        try {
-            val contactStr = if (isGroup) "group:$contactId" else "private:$contactId"
-
-            val subscriptions = top.bilibili.BiliData.dynamic
-                .filter { contactStr in it.value.contacts }
-                .map { "${it.value.name} (UID: ${it.key})" }
-
-            val msg = if (subscriptions.isEmpty()) {
-                "当前没有任何订阅"
-            } else {
-                "订阅列表:\n${subscriptions.joinToString("\n")}"
-            }
-
-            if (isGroup) {
-                sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            } else {
-                sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            }
-
-        } catch (e: Exception) {
-            logger.error("查询订阅列表失败: ${e.message}", e)
-        }
-    }
-
-    /** 处理 /bili 命令 */
-    private suspend fun handleBiliCommand(contactId: Long, userId: Long, message: String, isGroup: Boolean) {
-        try {
-            val args = message.substringAfter("/bili ").trim().split(Regex("\\s+"))
-            if (args.isEmpty()) {
-                sendHelpMessage(contactId, userId, isGroup)
-                return
-            }
-
-            when (args[0].lowercase()) {
-                "add" -> handleBiliAdd(contactId, userId, args, isGroup)
-                "remove", "rm" -> handleBiliRemove(contactId, userId, args, isGroup)
-                "list", "ls" -> handleBiliList(contactId, userId, args, isGroup)
-                "groups" -> handleBiliListGroups(contactId, userId, args, isGroup)
-                "group" -> handleBiliGroupCommand(contactId, userId, args, isGroup)
-                "filter" -> handleBiliFilterCommand(contactId, userId, args, isGroup)
-                "admin" -> handleBiliAdminCommand(contactId, userId, args, isGroup)
-                "blacklist", "bl" -> handleBiliBlacklistCommand(contactId, userId, args, isGroup)
-                "help" -> sendHelpMessage(contactId, userId, isGroup)
-                else -> {
-                    val msg = "未知命令: ${args[0]}\n使用 /bili help 查看帮助"
-                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                }
-            }
-        } catch (e: Exception) {
-            logger.error("处理 /bili 命令失败: ${e.message}", e)
-            val msg = "命令执行失败: ${e.message}"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-        }
-    }
-
-    /** 发送帮助信息 */
-    private suspend fun sendHelpMessage(contactId: Long, userId: Long, isGroup: Boolean) {
-        // 权限检查
-        if (!isSuperAdmin(userId) && (!isGroup || !isGroupAdmin(contactId, userId))) return
-
-        val isSuper = isSuperAdmin(userId)
-        val msg = if (isSuper) {
-            """
-            订阅管理:
-            /bili add <UID|ss|md|ep> [群号] - 添加订阅
-            /bili remove <UID|ss|md|ep> [群号] - 移除订阅
-            /bili list - 查看当前群的订阅
-            /bili list <UID|ss|md|ep> - 查看订阅推送到哪些群
-
-            分组管理:
-            /bili group create <分组名> - 创建分组
-            /bili group delete <分组名> - 删除分组
-            /bili group add <分组名> <群号> - 将群加入分组
-            /bili group remove <分组名> <群号> - 从分组移除群
-            /bili group list [分组名] - 查看分组信息
-            /bili group subscribe <分组名> <UID|ss|md|ep> - 订阅到分组
-            /bili group unsubscribe <分组名> <UID|ss|md|ep> - 从分组移除订阅
-            /bili groups - 查看所有分组
-
-            过滤器管理:
-            /bili filter add <UID> <type|regex> <模式> <内容> - 添加过滤器
-              type模式: /bili filter add <UID> type <black|white> <动态|转发动态|视频|音乐|专栏|直播>
-              regex模式: /bili filter add <UID> regex <black|white> <正则表达式>
-            /bili filter list <UID> - 查看过滤器
-            /bili filter del <UID> <索引> - 删除过滤器(如 t0, r1)
-
-            管理员管理:
-            /bili admin add <QQ号> - 添加本群普通管理员
-            /bili admin remove <QQ号> - 移除本群普通管理员
-            /bili admin list - 查询本群管理员
-            /bili admin all - 查询全部普通管理员
-
-            其他:
-            /bili help - 显示此帮助
-            /login或 登录 - 扫码登录
-            /check - 手动触发检查
-            /add <UID> - 快速订阅
-            /del <UID> - 快速取消订阅
-            /list - 查看订阅列表
-            /black [QQ号] - 添加黑名单
-            /unblock [QQ号] - 取消黑名单
-            /black list - 查看黑名单
-            """.trimIndent()
-        } else {
-            """
-            订阅管理:
-            /bili add <UID|ss|md|ep> - 添加订阅
-            /bili remove <UID|ss|md|ep> - 移除订阅
-            /bili list - 查看当前群的订阅
-
-            过滤器管理:
-            /bili filter add <UID> <type|regex> <模式> <内容> - 添加过滤器
-              type模式: /bili filter add <UID> type <black|white> <动态|转发动态|视频|音乐|专栏|直播>
-              regex模式: /bili filter add <UID> regex <black|white> <正则表达式>
-            /bili filter list <UID> - 查看过滤器
-            /bili filter del <UID> <索引> - 删除过滤器(如 t0, r1)
-
-            其他:
-            /bili help - 显示此帮助
-            """.trimIndent()
-        }
-
-        val imageName = if (isSuper) "admin_help.png" else "HELP.png"
-        val imageSent = runCatching {
-            val imageUrl = getHelpImageFileUrl(imageName)
-            if (imageUrl != null) {
-                val imageSegments = listOf(MessageSegment.image(imageUrl))
-                if (isGroup) sendGroupMessage(contactId, imageSegments)
-                else sendPrivateMessage(contactId, imageSegments)
-            } else {
-                false
-            }
-        }.getOrDefault(false)
-
-        if (!imageSent) {
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-        }
-    }
-
-    private fun getHelpImageFileUrl(imageName: String): String? {
-        val tempFile = tempPath.resolve(imageName).toFile()
-        if (!tempFile.exists()) {
-            // ✅ 使用新的安全 API
-            val bytes = getResourceBytes("image/$imageName")
-            if (bytes == null) {
-                logger.warn("帮助图片资源不存在: image/$imageName")
-                return null
-            }
-            tempFile.parentFile?.mkdirs()
-            try {
-                tempFile.writeBytes(bytes)
-            } catch (e: Exception) {
-                logger.warn("写入帮助图片失败: ${e.message}")
-                return null
-            }
-        }
-        return ImageCache.toFileUrl(tempFile.absolutePath)
-    }
-
-    /** 处理 /bili add */
-    private suspend fun handleBiliAdd(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        // 私聊非超管直接忽略
-        if (!isGroup && !isSuperAdmin(userId)) return
-
-        if (args.size < 2) {
-            val msg = "用法: /bili add <UID|ss|md|ep> [群号]"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val id = args[1]
-        var targetGroupId: Long? = null
-
-        if (args.size == 2) {
-            // 简短模式: /bili add <UID> -> 目标为当前群
-            if (isSuperAdmin(userId) || isGroupAdmin(contactId, userId)) {
-                targetGroupId = contactId
-            } else {
-                return // 无权
-            }
-        } else {
-            // 指定模式: /bili add <UID> <群号> -> 仅超管
-            if (isSuperAdmin(userId)) {
-                targetGroupId = args[2].toLongOrNull()
-            } else {
-                if (isGroupAdmin(contactId, userId)) {
-                    val msg = "普通管理员请使用简短格式: /bili add <UID> (无需群号)"
-                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                }
-                return
-            }
-        }
-
-        if (targetGroupId == null) {
-            val msg = "群号格式错误"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val targetContactStr = "group:$targetGroupId"
-        val result = if (top.bilibili.service.pgcRegex.matches(id)) {
-            top.bilibili.service.PgcService.followPgc(id, targetContactStr)
-        } else {
-            val uid = id.toLongOrNull()
-            if (uid == null) {
-                val msg = "UID 格式错误"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                return
-            }
-            top.bilibili.service.DynamicService.addSubscribe(uid, targetContactStr, isSelf = false)
-        }
-
-        top.bilibili.BiliConfigManager.saveData()
-
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(result)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(result)))
-    }
-
-    /** 处理 /bili remove */
-    private suspend fun handleBiliRemove(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        // 私聊非超管直接忽略
-        if (!isGroup && !isSuperAdmin(userId)) return
-
-        if (args.size < 2) {
-            val msg = "用法: /bili remove <UID|ss|md|ep> [群号]"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val id = args[1]
-        var targetGroupId: Long? = null
-
-        if (args.size == 2) {
-            // 简短模式: /bili remove <UID> -> 目标为当前群
-            if (isSuperAdmin(userId) || isGroupAdmin(contactId, userId)) {
-                targetGroupId = contactId
-            } else {
-                return // 无权
-            }
-        } else {
-            // 指定模式: /bili remove <UID> <群号> -> 仅超管
-            if (isSuperAdmin(userId)) {
-                targetGroupId = args[2].toLongOrNull()
-            } else {
-                if (isGroupAdmin(contactId, userId)) {
-                    val msg = "普通管理员请使用简短格式: /bili remove <UID> (无需群号)"
-                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                }
-                return
-            }
-        }
-
-        if (targetGroupId == null) {
-            val msg = "群号格式错误"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val targetContactStr = "group:$targetGroupId"
-        val result = if (top.bilibili.service.pgcRegex.matches(id)) {
-            top.bilibili.service.PgcService.delPgc(id, targetContactStr)
-        } else {
-            val uid = id.toLongOrNull()
-            if (uid == null) {
-                val msg = "UID 格式错误"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                return
-            }
-            top.bilibili.service.DynamicService.removeSubscribe(uid, targetContactStr, isSelf = false)
-        }
-
-        top.bilibili.BiliConfigManager.saveData()
-
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(result)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(result)))
-    }
-
-    /** 处理 /bili list */
-    private suspend fun handleBiliList(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        if (args.size == 1) {
-            // 查看当前群的订阅
-            // 权限: 已由入口 handleGroupMessage 保证 (isSuperAdmin || isGroupAdmin)
-            val contactStr = "group:$contactId"
-            val userSubscriptions = top.bilibili.BiliData.dynamic
-                .filter { contactStr in it.value.contacts }
-                .map { "${it.value.name} (UID: ${it.key})" }
-            val bangumiSubscriptions = top.bilibili.BiliData.bangumi
-                .filter { contactStr in it.value.contacts }
-                .map { "${it.value.title} (ss${it.value.seasonId})" }
-            val subscriptions = userSubscriptions + bangumiSubscriptions
-
-            val msg = if (subscriptions.isEmpty()) {
-                "当前群没有任何订阅"
-            } else {
-                "当前群订阅列表:\n${subscriptions.joinToString("\n")}"
-            }
-
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-        } else {
-            // 查看指定 UID 推送到哪些群 (涉及隐私，仅超管)
-            if (!isSuperAdmin(userId)) {
-                val msg = "权限不足: 仅超级管理员可查看推送范围"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                return
-            }
-
-            val id = args[1]
-            if (top.bilibili.service.pgcRegex.matches(id)) {
-                val match = top.bilibili.service.pgcRegex.find(id)!!
-                var idType = match.groupValues[1]
-                var idValue = match.groupValues[2].toLong()
-
-                if (idType == "ep") {
-                    val season = top.bilibili.service.client.getEpisodeInfo(idValue)
-                    if (season == null) {
-                        val msg = "获取番剧信息失败"
-                        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                        return
-                    }
-                    idType = "ss"
-                    idValue = season.seasonId
-                }
-
-                val bangumi = when (idType) {
-                    "ss" -> top.bilibili.BiliData.bangumi[idValue]
-                    "md" -> top.bilibili.BiliData.bangumi.values.firstOrNull { it.mediaId == idValue }
-                    else -> null
-                }
-
-                val msg = when (idType) {
-                    "ss", "md" -> {
-                        if (bangumi == null) {
-                            "没有订阅过番剧: ${idType}${idValue}"
-                        } else {
-                            val groups = bangumi.contacts
-                                .filter { it.startsWith("group:") }
-                                .map { it.removePrefix("group:") }
-                            if (groups.isEmpty()) {
-                                "${bangumi.title} (ss${bangumi.seasonId})\n没有推送到任何群"
-                            } else {
-                                "${bangumi.title} (ss${bangumi.seasonId})\n推送到以下群:\n${groups.joinToString("\n")}"
-                            }
-                        }
-                    }
-                    else -> "ID 格式错误"
-                }
-
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                return
-            }
-
-            // 查看指定 UID 推送到哪些群
-            val uid = id.toLongOrNull()
-            if (uid == null) {
-                val msg = "UID 或番剧ID 格式错误"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                return
-            }
-
-            val subData = top.bilibili.BiliData.dynamic[uid]
-            if (subData == null) {
-                val msg = "没有订阅过 UID: $uid"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                return
-            }
-
-            val groups = subData.contacts
-                .filter { it.startsWith("group:") }
-                .map { it.removePrefix("group:") }
-
-            val msg = if (groups.isEmpty()) {
-                "${subData.name} (UID: $uid)\n没有推送到任何群"
-            } else {
-                "${subData.name} (UID: $uid)\n推送到以下群:\n${groups.joinToString("\n")}"
-            }
-
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-        }
-    }
-
-    /** 处理 /bili groups */
-    private suspend fun handleBiliListGroups(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        if (!isSuperAdmin(userId)) return // 仅超管
-
-        val groups = top.bilibili.BiliData.group
-
-        val msg = if (groups.isEmpty()) {
-            "当前没有任何分组"
-        } else {
-            val groupList = groups.map { (name, group) ->
-                "$name (${group.contacts.size} 个群)"
-            }.joinToString("\n")
-            "分组列表:\n$groupList\n\n使用 /bili group list <分组名> 查看详情"
-        }
-
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-    }
-
-    /** 处理 /bili group 命令 */
-    private suspend fun handleBiliGroupCommand(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        if (!isSuperAdmin(userId)) return // 仅超管
-
-        if (args.size < 2) {
-            val msg = "用法: /bili group <create|delete|add|remove|list|subscribe|unsubscribe>"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        when (args[1].lowercase()) {
-            "create" -> handleBiliGroupCreate(contactId, userId, args, isGroup)
-            "delete", "del" -> handleBiliGroupDelete(contactId, args, isGroup)
-            "add" -> handleBiliGroupAdd(contactId, args, isGroup)
-            "remove", "rm" -> handleBiliGroupRemove(contactId, args, isGroup)
-            "list", "ls" -> handleBiliGroupList(contactId, userId, args, isGroup)
-            "subscribe", "sub" -> handleBiliGroupSubscribe(contactId, args, isGroup)
-            "unsubscribe", "unsub" -> handleBiliGroupUnsubscribe(contactId, args, isGroup)
-            else -> {
-                val msg = "未知子命令: ${args[1]}"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            }
-        }
-    }
-
-    /** 处理 /bili admin 命令 */
-    private suspend fun handleBiliAdminCommand(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        if (!isSuperAdmin(userId)) return // 仅超管
-
-        if (args.size < 2) {
-            val msg = """
-                用法:
-                /bili admin add <QQ号> - 添加本群普通管理员
-                /bili admin remove <QQ号> - 移除本群普通管理员
-                /bili admin list - 查询本群管理员
-                /bili admin all - 查询全部普通管理员
-            """.trimIndent()
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        when (args[1].lowercase()) {
-            "add" -> {
-                if (!isGroup) {
-                    sendPrivateMessage(contactId, listOf(MessageSegment.text("请在群聊中使用此命令")))
-                    return
-                }
-                if (args.size < 3) {
-                    sendGroupMessage(contactId, listOf(MessageSegment.text("用法: /bili admin add <QQ号>")))
-                    return
-                }
-                val targetId = args[2].toLongOrNull()
-                if (targetId == null) {
-                    sendGroupMessage(contactId, listOf(MessageSegment.text("QQ号格式错误")))
-                    return
-                }
-
-                val admins = ConfigManager.botConfig.admins
-                var groupConfig = admins.find { it.groupId == contactId }
-                if (groupConfig == null) {
-                    groupConfig = top.bilibili.config.GroupAdminConfig(contactId)
-                    admins.add(groupConfig)
-                }
-
-                if (targetId in groupConfig.userIds) {
-                    sendGroupMessage(contactId, listOf(MessageSegment.text("用户 $targetId 已经是本群管理员")))
-                    return
-                }
-
-                groupConfig.userIds.add(targetId)
-                ConfigManager.saveConfig()
-                sendGroupMessage(contactId, listOf(MessageSegment.text("已将 $targetId 添加为本群普通管理员")))
-            }
-            "remove", "rm" -> {
-                if (!isGroup) {
-                    sendPrivateMessage(contactId, listOf(MessageSegment.text("请在群聊中使用此命令")))
-                    return
-                }
-                if (args.size < 3) {
-                    sendGroupMessage(contactId, listOf(MessageSegment.text("用法: /bili admin remove <QQ号>")))
-                    return
-                }
-                val targetId = args[2].toLongOrNull()
-                if (targetId == null) {
-                    sendGroupMessage(contactId, listOf(MessageSegment.text("QQ号格式错误")))
-                    return
-                }
-
-                val groupConfig = ConfigManager.botConfig.admins.find { it.groupId == contactId }
-                if (groupConfig == null || targetId !in groupConfig.userIds) {
-                    sendGroupMessage(contactId, listOf(MessageSegment.text("用户 $targetId 不是本群管理员")))
-                    return
-                }
-
-                groupConfig.userIds.remove(targetId)
-                // 如果该群没有管理员了，可以选择移除该群配置，也可以保留
-                if (groupConfig.userIds.isEmpty()) {
-                    ConfigManager.botConfig.admins.remove(groupConfig)
-                }
-                ConfigManager.saveConfig()
-                sendGroupMessage(contactId, listOf(MessageSegment.text("已移除 $targetId 的本群普通管理员身份")))
-            }
-            "list", "ls" -> {
-                if (!isGroup) {
-                    sendPrivateMessage(contactId, listOf(MessageSegment.text("请在群聊中使用此命令")))
-                    return
-                }
-                val groupConfig = ConfigManager.botConfig.admins.find { it.groupId == contactId }
-                if (groupConfig == null || groupConfig.userIds.isEmpty()) {
-                    sendGroupMessage(contactId, listOf(MessageSegment.text("本群暂无普通管理员")))
-                } else {
-                    sendGroupMessage(contactId, listOf(MessageSegment.text("本群普通管理员: ${groupConfig.userIds.joinToString("、")}")))
-                }
-            }
-            "all" -> {
-                val admins = ConfigManager.botConfig.admins
-                if (admins.isEmpty()) {
-                    val msg = "暂无任何普通管理员"
-                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                } else {
-                    val sb = StringBuilder()
-                    admins.forEach { config ->
-                        if (config.userIds.isNotEmpty()) {
-                            sb.append("群聊：${config.groupId}群聊\n")
-                            sb.append("普通管理员：${config.userIds.joinToString("、")}\n")
-                        }
-                    }
-                    val msg = sb.toString().trim()
-                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                }
-            }
-            else -> {
-                val msg = "未知子命令: ${args[1]}"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            }
-        }
-    }
-
-    /** 创建分组 */
-    private suspend fun handleBiliGroupCreate(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        if (args.size < 3) {
-            val msg = "用法: /bili group create <分组名>"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val groupName = args[2]
-
-        if (groupName in top.bilibili.BiliData.group) {
-            val msg = "分组 $groupName 已存在"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        top.bilibili.BiliData.group[groupName] = top.bilibili.Group(
-            name = groupName,
-            creator = userId,
-            admin = mutableSetOf(userId),
-            contacts = mutableSetOf()
-        )
-        top.bilibili.BiliConfigManager.saveData()
-
-        val msg = "成功创建分组: $groupName"
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-    }
-
-    /** 删除分组 */
-    private suspend fun handleBiliGroupDelete(contactId: Long, args: List<String>, isGroup: Boolean) {
-        if (args.size < 3) {
-            val msg = "用法: /bili group delete <分组名>"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val groupName = args[2]
-
-        if (groupName !in top.bilibili.BiliData.group) {
-            val msg = "分组 $groupName 不存在"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        top.bilibili.BiliData.group.remove(groupName)
-        top.bilibili.BiliConfigManager.saveData()
-
-        val msg = "成功删除分组: $groupName"
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-    }
-
-    /** 将群加入分组 */
-    private suspend fun handleBiliGroupAdd(contactId: Long, args: List<String>, isGroup: Boolean) {
-        if (args.size < 4) {
-            val msg = "用法: /bili group add <分组名> <群号>"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val groupName = args[2]
-        val targetGroupId = args[3].toLongOrNull()
-
-        if (targetGroupId == null) {
-            val msg = "群号格式错误"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val group = top.bilibili.BiliData.group[groupName]
-        if (group == null) {
-            val msg = "分组 $groupName 不存在"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val contactStr = "group:$targetGroupId"
-        if (contactStr in group.contacts) {
-            val msg = "群 $targetGroupId 已在分组 $groupName 中"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        group.contacts.add(contactStr)
-        top.bilibili.BiliConfigManager.saveData()
-
-        val msg = "成功将群 $targetGroupId 加入分组 $groupName"
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-    }
-
-    /** 从分组移除群 */
-    private suspend fun handleBiliGroupRemove(contactId: Long, args: List<String>, isGroup: Boolean) {
-        if (args.size < 4) {
-            val msg = "用法: /bili group remove <分组名> <群号>"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val groupName = args[2]
-        val targetGroupId = args[3].toLongOrNull()
-
-        if (targetGroupId == null) {
-            val msg = "群号格式错误"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val group = top.bilibili.BiliData.group[groupName]
-        if (group == null) {
-            val msg = "分组 $groupName 不存在"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val contactStr = "group:$targetGroupId"
-        if (contactStr !in group.contacts) {
-            val msg = "群 $targetGroupId 不在分组 $groupName 中"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        group.contacts.remove(contactStr)
-        top.bilibili.BiliConfigManager.saveData()
-
-        val msg = "成功从分组 $groupName 移除群 $targetGroupId"
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-    }
-
-    /** 查看分组信息 */
-    private suspend fun handleBiliGroupList(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        if (args.size < 3) {
-            // 查看所有分组
-            handleBiliListGroups(contactId, userId, args, isGroup)
-            return
-        }
-
-        val groupName = args[2]
-        val group = top.bilibili.BiliData.group[groupName]
-
-        if (group == null) {
-            val msg = "分组 $groupName 不存在"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val groups = group.contacts
-            .filter { it.startsWith("group:") }
-            .map { it.removePrefix("group:") }
-
-        val subscriptions = group.contacts.flatMap { contact ->
-            val userSubscriptions = top.bilibili.BiliData.dynamic
-                .filter { contact in it.value.contacts }
-                .map { "${it.value.name} (UID: ${it.key})" }
-            val bangumiSubscriptions = top.bilibili.BiliData.bangumi
-                .filter { contact in it.value.contacts }
-                .map { "${it.value.title} (ss${it.value.seasonId})" }
-            userSubscriptions + bangumiSubscriptions
-        }.distinct()
-
-        val subscriptionText = if (subscriptions.isEmpty()) {
-            "订阅列表: 无"
-        } else {
-            "订阅列表:\n${subscriptions.joinToString("\n")}"
-        }
-
-        val msg = if (groups.isEmpty()) {
-            "分组: $groupName\n创建者: ${group.creator}\n当前没有任何群\n$subscriptionText"
-        } else {
-            "分组: $groupName\n创建者: ${group.creator}\n包含群:\n${groups.joinToString("\n")}\n$subscriptionText"
-        }
-
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-    }
-
-    /** 订阅到分组 */
-    private suspend fun handleBiliGroupSubscribe(contactId: Long, args: List<String>, isGroup: Boolean) {
-        if (args.size < 4) {
-            val msg = "用法: /bili group subscribe <分组名> <UID|ss|md|ep>"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val groupName = args[2]
-        val id = args[3]
-
-        val group = top.bilibili.BiliData.group[groupName]
-        if (group == null) {
-            val msg = "分组 $groupName 不存在"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        // 为分组中的所有联系人添加订阅
-        // 使用 DynamicService 添加第一个订阅（会自动处理关注逻辑）
-        if (group.contacts.isEmpty()) {
-            val msg = "分组 $groupName 中没有任何联系人"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        var addedCount = 0
-        var firstError: String? = null
-
-        for (contact in group.contacts) {
-            try {
-                val result = if (top.bilibili.service.pgcRegex.matches(id)) {
-                    top.bilibili.service.PgcService.followPgc(id, contact)
-                } else {
-                    val uid = id.toLongOrNull()
-                    if (uid == null) {
-                        val msg = "UID 格式错误"
-                        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                        return
-                    }
-                    top.bilibili.service.DynamicService.addSubscribe(uid, contact, isSelf = false)
-                }
-                // 如果包含"成功"或者不包含错误提示，则认为添加成功
-                if (!result.contains("订阅过") && (result.contains("成功") || !result.contains("失败") && !result.contains("错误"))) {
-                    addedCount++
-                } else if (firstError == null && result.contains("失败")) {
-                    firstError = result
-                }
-            } catch (e: Exception) {
-                if (firstError == null) {
-                    firstError = e.message
-                }
-            }
-        }
-
-        top.bilibili.BiliConfigManager.saveData()
-
-        val msg = if (firstError != null && addedCount == 0) {
-            "订阅失败：$firstError"
-        } else {
-            buildString {
-                appendLine("订阅操作完成！")
-                appendLine("UID: $id")
-                appendLine("分组: $groupName")
-                appendLine("成功添加: $addedCount 个联系人")
-                if (firstError != null) {
-                    appendLine("部分失败: $firstError")
-                }
-            }.trim()
-        }
-
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-    }
-
-    private suspend fun handleBiliGroupUnsubscribe(contactId: Long, args: List<String>, isGroup: Boolean) {
-        if (args.size < 4) {
-            val msg = "用法: /bili group unsubscribe <分组名> <UID|ss|md|ep>"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val groupName = args[2]
-        val id = args[3]
-
-        val group = top.bilibili.BiliData.group[groupName]
-        if (group == null) {
-            val msg = "分组 $groupName 不存在"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        if (group.contacts.isEmpty()) {
-            val msg = "分组 $groupName 中没有任何联系人"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        var removedCount = 0
-        var firstError: String? = null
-
-        for (contact in group.contacts) {
-            try {
-                val result = if (top.bilibili.service.pgcRegex.matches(id)) {
-                    top.bilibili.service.PgcService.delPgc(id, contact)
-                } else {
-                    val uid = id.toLongOrNull()
-                    if (uid == null) {
-                        val msg = "ID 格式错误"
-                        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                        return
-                    }
-                    top.bilibili.service.DynamicService.removeSubscribe(uid, contact, isSelf = false)
-                }
-                if (result.contains("成功")) {
-                    removedCount++
-                } else if (firstError == null && (result.contains("失败") || result.contains("错误"))) {
-                    firstError = result
-                }
-            } catch (e: Exception) {
-                if (firstError == null) {
-                    firstError = e.message
-                }
-            }
-        }
-
-        top.bilibili.BiliConfigManager.saveData()
-
-        val msg = if (firstError != null && removedCount == 0) {
-            "取消订阅失败：$firstError"
-        } else {
-            buildString {
-                appendLine("取消订阅操作完成！")
-                appendLine("目标: $id")
-                appendLine("分组: $groupName")
-                appendLine("成功移除: $removedCount 个联系人")
-                if (firstError != null) {
-                    appendLine("部分失败: $firstError")
-                }
-            }.trim()
-        }
-
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-    }
-
-    /** 处理 /bili filter 命令 */
-    private suspend fun handleBiliFilterCommand(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        // 权限: 超级管理员 或 当前群普通管理员
-        if (!isSuperAdmin(userId) && (!isGroup || !isGroupAdmin(contactId, userId))) return
-
-        if (args.size < 2) {
-            val msg = """
-                用法:
-                /bili filter add <UID> <type|regex> <black|white> <内容>
-                /bili filter list <UID>
-                /bili filter del <UID> <索引>
-            """.trimIndent()
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        when (args[1].lowercase()) {
-            "add" -> handleBiliFilterAdd(contactId, args, isGroup)
-            "list", "ls" -> handleBiliFilterList(contactId, args, isGroup)
-            "del", "delete", "rm" -> handleBiliFilterDel(contactId, args, isGroup)
-            else -> {
-                val msg = "未知的过滤器命令: ${args[1]}\n使用 /bili filter 查看帮助"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            }
-        }
-    }
-
-    /** 处理 /bili filter add */
-    private suspend fun handleBiliFilterAdd(contactId: Long, args: List<String>, isGroup: Boolean) {
-        // /bili filter add <UID> <type|regex> <black|white> <内容>
-        if (args.size < 6) {
-            val msg = """
-                用法:
-                /bili filter add <UID> type <black|white> <动态|转发动态|视频|音乐|专栏|直播>
-                /bili filter add <UID> regex <black|white> <正则表达式>
-            """.trimIndent()
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val uid = args[2].toLongOrNull()
-        if (uid == null) {
-            val msg = "UID 格式错误"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val filterTypeStr = args[3].lowercase()
-        val filterType = when (filterTypeStr) {
-            "type" -> top.bilibili.FilterType.TYPE
-            "regex" -> top.bilibili.FilterType.REGULAR
-            else -> {
-                val msg = "过滤器类型错误，只能是 type 或 regex"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                return
-            }
-        }
-
-        val modeStr = args[4].lowercase()
-        val mode = when (modeStr) {
-            "black", "blacklist", "黑名单" -> top.bilibili.FilterMode.BLACK_LIST
-            "white", "whitelist", "白名单" -> top.bilibili.FilterMode.WHITE_LIST
-            else -> {
-                val msg = "模式错误，只能是 black 或 white"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                return
-            }
-        }
-
-        val content = args.drop(5).joinToString(" ")
-        val subject = if (isGroup) "group:$contactId" else "private:$contactId"
-
-        val result = top.bilibili.service.FilterService.addFilter(filterType, mode, content, uid, subject)
-        top.bilibili.BiliConfigManager.saveData()
-
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(result)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(result)))
-    }
-
-    /** 处理 /bili filter list */
-    private suspend fun handleBiliFilterList(contactId: Long, args: List<String>, isGroup: Boolean) {
-        if (args.size < 3) {
-            val msg = "用法: /bili filter list <UID>"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val uid = args[2].toLongOrNull()
-        if (uid == null) {
-            val msg = "UID 格式错误"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val subject = if (isGroup) "group:$contactId" else "private:$contactId"
-        val result = top.bilibili.service.FilterService.listFilter(uid, subject)
-
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(result)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(result)))
-    }
-
-    /** 处理 /bili filter del */
-    private suspend fun handleBiliFilterDel(contactId: Long, args: List<String>, isGroup: Boolean) {
-        if (args.size < 4) {
-            val msg = "用法: /bili filter del <UID> <索引>\n示例: /bili filter del 123456 t0"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val uid = args[2].toLongOrNull()
-        if (uid == null) {
-            val msg = "UID 格式错误"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        val index = args[3]
-        val subject = if (isGroup) "group:$contactId" else "private:$contactId"
-
-        val result = top.bilibili.service.FilterService.delFilter(index, uid, subject)
-        top.bilibili.BiliConfigManager.saveData()
-
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(result)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(result)))
-    }
-
-    /** 处理 /bili blacklist 命令 */
-    private suspend fun handleBiliBlacklistCommand(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        // 仅超级管理员可用
-        if (!isSuperAdmin(userId)) {
-            val msg = "权限不足: 仅超级管理员可使用黑名单功能"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        if (args.size < 2) {
-            val msg = """
-                用法:
-                /bili blacklist add <QQ号> - 添加到链接解析黑名单
-                /bili blacklist remove <QQ号> - 从黑名单移除
-                /bili blacklist list - 查看黑名单列表
-            """.trimIndent()
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        when (args[1].lowercase()) {
-            "add" -> {
-                if (args.size < 3) {
-                    val msg = "用法: /bili blacklist add <QQ号>"
-                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                    return
-                }
-
-                val targetId = args[2].toLongOrNull()
-                if (targetId == null) {
-                    val msg = "QQ号格式错误"
-                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                    return
-                }
-
-                if (top.bilibili.BiliData.linkParseBlacklist.contains(targetId)) {
-                    val msg = "用户 $targetId 已在黑名单中"
-                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                    return
-                }
-
-                top.bilibili.BiliData.linkParseBlacklist.add(targetId)
-                top.bilibili.BiliConfigManager.saveData()
-
-                val msg = "已将 $targetId 添加到链接解析黑名单\nBot 将忽略该用户的所有链接解析请求"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            }
-            "remove", "rm", "del" -> {
-                if (args.size < 3) {
-                    val msg = "用法: /bili blacklist remove <QQ号>"
-                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                    return
-                }
-
-                val targetId = args[2].toLongOrNull()
-                if (targetId == null) {
-                    val msg = "QQ号格式错误"
-                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                    return
-                }
-
-                if (!top.bilibili.BiliData.linkParseBlacklist.contains(targetId)) {
-                    val msg = "用户 $targetId 不在黑名单中"
-                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-                    return
-                }
-
-                top.bilibili.BiliData.linkParseBlacklist.remove(targetId)
-                top.bilibili.BiliConfigManager.saveData()
-
-                val msg = "已将 $targetId 从链接解析黑名单移除"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            }
-            "list", "ls" -> {
-                val blacklist = top.bilibili.BiliData.linkParseBlacklist
-                val msg = if (blacklist.isEmpty()) {
-                    "链接解析黑名单为空"
-                } else {
-                    "链接解析黑名单 (${blacklist.size} 个用户):\n${blacklist.joinToString("\n")}"
-                }
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            }
-            else -> {
-                val msg = "未知子命令: ${args[1]}\n使用 /bili blacklist 查看帮助"
-                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            }
-        }
-    }
-
-    /** ✅ 处理添加黑名单 */
-    private suspend fun handleBlacklistAdd(contactId: Long, targetId: Long, isGroup: Boolean) {
-        if (top.bilibili.BiliData.linkParseBlacklist.contains(targetId)) {
-            val msg = "用户 $targetId 已在黑名单中"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        top.bilibili.BiliData.linkParseBlacklist.add(targetId)
-        top.bilibili.BiliConfigManager.saveData()
-
-        val msg = "已将 $targetId 添加到链接解析黑名单\nBot 将忽略该用户的所有链接解析请求"
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-    }
-
-    /** ✅ 处理移除黑名单 */
-    private suspend fun handleBlacklistRemove(contactId: Long, targetId: Long, isGroup: Boolean) {
-        if (!top.bilibili.BiliData.linkParseBlacklist.contains(targetId)) {
-            val msg = "用户 $targetId 不在黑名单中"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
-
-        top.bilibili.BiliData.linkParseBlacklist.remove(targetId)
-        top.bilibili.BiliConfigManager.saveData()
-
-        val msg = "已将 $targetId 从链接解析黑名单移除"
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-    }
-
-    /** ✅ 处理查看黑名单列表 */
-    private suspend fun handleBlacklistList(contactId: Long, isGroup: Boolean) {
-        val blacklist = top.bilibili.BiliData.linkParseBlacklist
-        val msg = if (blacklist.isEmpty()) {
-            "链接解析黑名单为空"
-        } else {
-            "链接解析黑名单 (${blacklist.size} 个用户):\n${blacklist.joinToString("\n")}"
-        }
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-    }
-
-    /** 初始化 B站数据 */
-    private suspend fun initBiliData() {
-        try {
-            logger.info("正在初始化 B站数据...")
-            // 调用 Init.kt 中的初始化函数
-            top.bilibili.initData()
-
-            // 启动时清理过期的图片缓存
-            logger.info("清理过期的图片缓存...")
-            try {
-                top.bilibili.utils.ImageCache.cleanExpiredCache()
-            } catch (e: Exception) {
-                logger.warn("清理图片缓存时出错: ${e.message}")
-            }
-
-            logger.info("B站数据初始化完成")
-        } catch (e: Exception) {
-            logger.error("初始化 B站数据失败: ${e.message}", e)
-        }
-    }
-
-    /** 启动所有任务 */
-    private fun startTasks() {
-        try {
-            logger.info("正在启动任务...")
-
-            // 启动链接解析任务
-            logger.info("启动 ListenerTasker...")
-            top.bilibili.tasker.ListenerTasker.start()
-
-            // 启动订阅相关任务
-            logger.info("启动 DynamicCheckTasker...")
-            top.bilibili.tasker.DynamicCheckTasker.start()
-
-            logger.info("启动 LiveCheckTasker...")
-            top.bilibili.tasker.LiveCheckTasker.start()
-
-            logger.info("启动 LiveCloseCheckTasker...")
-            top.bilibili.tasker.LiveCloseCheckTasker.start()
-
-            logger.info("启动 DynamicMessageTasker...")
-            top.bilibili.tasker.DynamicMessageTasker.start()
-
-            logger.info("启动 LiveMessageTasker...")
-            top.bilibili.tasker.LiveMessageTasker.start()
-
-            logger.info("启动 SendTasker...")
-            top.bilibili.tasker.SendTasker.start()
-
-            logger.info("启动 CacheClearTasker...")
-            top.bilibili.tasker.CacheClearTasker.start()
-
-            logger.info("启动 LogClearTasker...")
-            top.bilibili.tasker.LogClearTasker.start()
-
-            logger.info("启动 SkiaCleanupTasker...")
-            top.bilibili.tasker.SkiaCleanupTasker.start()
-
-            // 启动守护进程（最后启动，监控所有其他任务）
-            logger.info("启动 ProcessGuardian 守护进程...")
-            top.bilibili.tasker.ProcessGuardian.start()
-
-            logger.info("所有任务已启动")
-        } catch (e: Exception) {
-            logger.error("启动任务失败: ${e.message}", e)
-        }
-    }
-
-    /** 首次运行检查 */
-    private suspend fun checkFirstRun() {
-        if (config.firstRunFlag == 0) {
-            logger.info("首次运行检查: 检测到 first_run_flag=0，准备发送欢迎消息...")
-
-            val adminId = BiliConfigManager.config.admin
-            if (adminId <= 0L) {
-                logger.warn("首次运行检查: 未配置超级管理员 ID，跳过欢迎消息")
-                return
-            }
-
-            val welcomeMsg = """
-                欢迎使用 BiliBili 动态推送 Bot
-                /bili help - 显示完整帮助
-                /login或 登录 - 扫码登录
-                /check - 手动触发检查
-                /add <UID> - 快速订阅
-                /del <UID> - 快速取消订阅
-                /list - 查看订阅列表
-                /black [QQ号] - 添加黑名单
-                /unblock [QQ号] - 取消黑名单
-                /black list - 查看黑名单
-            """.trimIndent()
-
-            try {
-                // 尝试发送消息
-                val success = sendPrivateMessage(adminId, listOf(MessageSegment.text(welcomeMsg)))
-                if (success) {
-                    logger.info("欢迎消息发送成功")
-                    config.firstRunFlag = 1
-                    ConfigManager.saveConfig()
-                    logger.info("已更新 first_run_flag 为 1 并保存配置")
-                } else {
-                    logger.warn("欢迎消息发送失败 (可能是连接未就绪)")
-                }
-            } catch (e: Exception) {
-                logger.error("发送欢迎消息时发生错误: ${e.message}", e)
-            }
-        }
-    }
-
     /** 发送群消息 */
     suspend fun sendGroupMessage(groupId: Long, message: List<MessageSegment>): Boolean {
-        return napCat.sendGroupMessage(groupId, message)
+        return MessageGatewayProvider.require().sendGroupMessage(groupId, message)
     }
 
     /** 发送私聊消息 */
     suspend fun sendPrivateMessage(userId: Long, message: List<MessageSegment>): Boolean {
-        return napCat.sendPrivateMessage(userId, message)
+        return MessageGatewayProvider.require().sendPrivateMessage(userId, message)
     }
 
     suspend fun sendAdminMessage(message: String): Boolean {
-        val adminId = BiliConfigManager.config.admin
-        if (adminId <= 0L) {
-            logger.warn("未配置管理员 ID，无法发送通知")
-            return false
-        }
-        return sendPrivateMessage(adminId, listOf(MessageSegment.text(message)))
+        return MessageGatewayProvider.require().sendAdminMessage(message)
     }
 
     /** 发送消息到指定联系人 */
     suspend fun sendMessage(contact: ContactId, message: List<MessageSegment>): Boolean {
-        return when (contact.type) {
-            "group" -> sendGroupMessage(contact.id, message)
-            "private" -> sendPrivateMessage(contact.id, message)
-            else -> {
-                logger.warn("未知的联系人类型: ${contact.type}")
-                false
-            }
+        return MessageGatewayProvider.require().sendMessage(contact, message)
+    }
+
+    private fun registerResourcePartitions() {
+        resourceSupervisor.reset()
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "scope-job",
+                owns = listOf("BiliBiliBot.job"),
+                strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
+                stopAction = {
+                    try {
+                        withTimeout(10_000) {
+                            job?.cancelAndJoin()
+                            logger.info("所有协程已正常结束")
+                        }
+                    } catch (_: TimeoutCancellationException) {
+                        logger.warn("等待协程结束超时，强制取消")
+                        job?.cancel()
+                    } finally {
+                        job = null
+                    }
+                },
+            )
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "skia-manager",
+                owns = listOf("SkiaManager", "FontManager"),
+                strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
+                stopAction = {
+                    top.bilibili.skia.SkiaManager.shutdown()
+                    logger.info("Skia 管理器已关闭")
+                },
+            )
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "bili-client",
+                owns = listOf("biliClient"),
+                strictness = ResourceStrictness.STRICT,
+                stopAction = {
+                    top.bilibili.utils.biliClient.close()
+                    logger.info("B站客户端已关闭")
+                },
+            )
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "service-bili-client",
+                owns = listOf("service.client"),
+                strictness = ResourceStrictness.STRICT,
+                stopAction = {
+                    closeServiceClient()
+                    logger.info("Service 共享 B站客户端已关闭")
+                },
+            )
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "check-tasker-bili-client",
+                owns = listOf("BiliCheckTasker.client"),
+                strictness = ResourceStrictness.STRICT,
+                stopAction = {
+                    BiliCheckTasker.closeSharedClient()
+                    logger.info("检查任务共享 B站客户端已关闭")
+                },
+            )
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "image-cache",
+                owns = listOf("ImageCache"),
+                strictness = ResourceStrictness.STRICT,
+                stopAction = {
+                    ImageCache.close()
+                },
+            )
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "taskers",
+                owns = listOf("BiliTasker.*"),
+                strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
+                stopAction = {
+                    BiliTasker.cancelAll()
+                },
+            )
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "gateway-napcat",
+                owns = listOf("NapCatClient", "MessageGatewayProvider"),
+                strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
+                stopAction = {
+                    if (::napCat.isInitialized) {
+                        napCat.stop()
+                    }
+                    MessageGatewayProvider.unregister()
+                },
+            )
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "event-collector",
+                owns = listOf("eventCollectorJob"),
+                strictness = ResourceStrictness.STRICT,
+                stopAction = {
+                    eventCollectorJob?.cancelAndJoin()
+                    eventCollectorJob = null
+                },
+            )
+        )
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "channels",
+                owns = listOf("dynamicChannel", "liveChannel", "messageChannel"),
+                strictness = ResourceStrictness.STRICT,
+                stopAction = {
+                    dynamicChannel.close()
+                    liveChannel.close()
+                    messageChannel.close()
+                    logger.debug("所有 Channel 已关闭")
+                },
+            )
+        )
+    }
+
+    private suspend fun fallbackStopResources() {
+        runCatching {
+            dynamicChannel.close()
+            liveChannel.close()
+            messageChannel.close()
+            logger.debug("兜底释放: 所有 Channel 已关闭")
+        }.onFailure {
+            logger.warn("兜底释放: 关闭 Channel 失败: ${it.message}", it)
         }
+
+        runCatching {
+            eventCollectorJob?.cancelAndJoin()
+            eventCollectorJob = null
+        }.onFailure {
+            logger.warn("兜底释放: 停止事件收集器失败: ${it.message}", it)
+        }
+
+        runCatching {
+            if (::napCat.isInitialized) {
+                napCat.stop()
+            }
+            MessageGatewayProvider.unregister()
+        }.onFailure {
+            logger.warn("兜底释放: 停止网关/NapCat失败: ${it.message}", it)
+        }
+
+        runCatching { BiliTasker.cancelAll() }
+            .onFailure { logger.warn("兜底释放: 停止任务失败: ${it.message}", it) }
+
+        runCatching { ImageCache.close() }
+            .onFailure { logger.warn("兜底释放: 关闭 ImageCache 失败: ${it.message}", it) }
+
+        runCatching {
+            top.bilibili.utils.biliClient.close()
+            logger.info("兜底释放: B站客户端已关闭")
+        }.onFailure {
+            logger.warn("兜底释放: 关闭 BiliClient 失败: ${it.message}", it)
+        }
+
+        runCatching {
+            closeServiceClient()
+            logger.info("兜底释放: Service 共享 B站客户端已关闭")
+        }.onFailure {
+            logger.warn("兜底释放: 关闭 Service 共享 BiliClient 失败: ${it.message}", it)
+        }
+
+        runCatching {
+            BiliCheckTasker.closeSharedClient()
+            logger.info("兜底释放: 检查任务共享 B站客户端已关闭")
+        }.onFailure {
+            logger.warn("兜底释放: 关闭检查任务共享 BiliClient 失败: ${it.message}", it)
+        }
+
+        runCatching {
+            top.bilibili.skia.SkiaManager.shutdown()
+            logger.info("兜底释放: Skia 管理器已关闭")
+        }.onFailure {
+            logger.warn("兜底释放: 关闭 SkiaManager 失败: ${it.message}", it)
+        }
+
+        runCatching {
+            withTimeout(10_000) {
+                job?.cancelAndJoin()
+                logger.info("兜底释放: 所有协程已正常结束")
+            }
+        }.onFailure {
+            logger.warn("兜底释放: 等待协程结束失败，强制取消: ${it.message}", it)
+            job?.cancel()
+        }
+        job = null
     }
 }
+
+

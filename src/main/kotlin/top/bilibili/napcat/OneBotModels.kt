@@ -3,6 +3,7 @@ package top.bilibili.napcat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
+import kotlinx.serialization.json.JsonObject
 
 /**
  * 消息事件
@@ -48,6 +49,7 @@ data class MessageSegment(
         fun text(text: String) = MessageSegment("text", mapOf("text" to text))
         fun image(file: String) = MessageSegment("image", mapOf("file" to file))
         fun at(qq: Long) = MessageSegment("at", mapOf("qq" to qq.toString()))
+        fun atAll() = MessageSegment("at", mapOf("qq" to "all"))
         fun reply(id: Int) = MessageSegment("reply", mapOf("id" to id.toString()))
     }
 }
@@ -83,7 +85,7 @@ data class MetaEvent(
     @SerialName("sub_type")
     val subType: String? = null,
     val interval: Long? = null,
-    val status: Map<String, @Contextual Any>? = null
+    val status: JsonObject? = null
 )
 
 /**
@@ -95,7 +97,8 @@ data class OneBotResponse(
     val retcode: Int,
     val data: kotlinx.serialization.json.JsonElement? = null,
     val message: String = "",
-    val wording: String = ""
+    val wording: String = "",
+    val echo: String? = null
 )
 
 /**

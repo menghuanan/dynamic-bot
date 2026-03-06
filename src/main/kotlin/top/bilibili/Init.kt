@@ -10,12 +10,15 @@ import top.bilibili.data.toCookie
 import top.bilibili.utils.FontUtils.loadTypeface
 import top.bilibili.utils.biliClient
 import top.bilibili.utils.decode
-// TODO: 移除 Mirai 依赖，需要实现自定义字体下载功能
-// import xyz.cssxsh.mirai.skia.downloadTypeface
+import java.net.URL
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.zip.ZipInputStream
 import kotlin.io.path.createDirectory
 import kotlin.io.path.exists
 import kotlin.io.path.forEachDirectoryEntry
 import kotlin.io.path.name
+
+private val fontsInitialized = AtomicBoolean(false)
 
 suspend fun initData() {
     checkCookie()
@@ -70,51 +73,99 @@ suspend fun initTagid() {
 }
 
 suspend fun loadFonts() {
+    if (!fontsInitialized.compareAndSet(false, true)) {
+        BiliBiliBot.logger.debug("字体已初始化，跳过重复加载")
+        return
+    }
+
     val fontFolder = BiliBiliBot.dataFolder.resolve("font")
     val fontFolderPath = BiliBiliBot.dataFolderPath.resolve("font")
     val LXGW = fontFolder.resolve("LXGWWenKai-Bold.ttf")
 
-    fontFolderPath.apply {
-        if (!exists()) createDirectory()
-        if (fontFolder.listFiles().none { it.isFile } || !LXGW.exists()) {
-            try {
-                // TODO: 实现字体下载功能（原使用 xyz.cssxsh.mirai.skia.downloadTypeface）
-                // 可以使用 Ktor HTTP 客户端下载并解压字体文件
-                // downloadTypeface(fontFolder, "https://file.zfont.cn/d/file/font_cn_file/霞鹜文楷-v1.235.2.zip")
-                BiliBiliBot.logger.warn("字体下载功能暂未实现，请手动下载字体文件到 data/font 目录")
-                /*
-                val f = fontFolder.resolve("霞鹜文楷-v1.235.2")
-                f.resolve("LXGWWenKai-Bold.ttf").copyTo(LXGW)
+    try {
+        fontFolderPath.apply {
+            if (!exists()) createDirectory()
+
+            val hasFontFile = fontFolder.listFiles()?.any {
+                it.isFile && it.extension.lowercase() in setOf("ttf", "otf", "ttc")
+            } == true
+            if (!hasFontFile || !LXGW.exists()) {
                 try {
-                    f.walkBottomUp().onLeave { it.delete() }
-                }catch (_: Exception) { }
-                */
-            }catch (e: Throwable) {
-                BiliBiliBot.logger.error("下载字体失败!", e)
+                    val downloadUrl = "https://file.zfont.cn/d/file/font_cn_file/霞鹜文楷-v1.235.2.zip"
+                    val zipFile = fontFolder.resolve("LXGW-temp.zip")
+                    var downloaded = false
+
+                    for (attempt in 1..3) {
+                        runCatching {
+                            URL(downloadUrl).openStream().use { input ->
+                                zipFile.outputStream().use { output -> input.copyTo(output) }
+                            }
+                        }.onSuccess {
+                            downloaded = true
+                        }.onFailure {
+                            BiliBiliBot.logger.warn("下载字体失败，重试 $attempt/3: ${it.message}")
+                        }
+                        if (downloaded) break
+                    }
+
+                    if (downloaded && zipFile.exists()) {
+                        ZipInputStream(zipFile.inputStream().buffered()).use { zip ->
+                            var entry = zip.nextEntry
+                            while (entry != null) {
+                                if (!entry.isDirectory && entry.name.endsWith("LXGWWenKai-Bold.ttf", ignoreCase = true)) {
+                                    LXGW.outputStream().use { out -> zip.copyTo(out) }
+                                    break
+                                }
+                                zip.closeEntry()
+                                entry = zip.nextEntry
+                            }
+                        }
+                        runCatching { zipFile.delete() }
+                    }
+
+                    if (!LXGW.exists()) {
+                        BiliBiliBot.logger.warn("自动下载字体失败，请手动放置 LXGWWenKai-Bold.ttf 到 data/font 目录")
+                    }
+                } catch (e: Throwable) {
+                    BiliBiliBot.logger.error("下载字体失败!", e)
+                }
+            }
+
+            // 从 data/font 目录加载字体
+            var fontLoaded = false
+            forEachDirectoryEntry { fontPath ->
+                if (!fontPath.toFile().isFile) return@forEachDirectoryEntry
+
+                val extension = fontPath.name.substringAfterLast('.', "")
+                if (extension.lowercase() in setOf("ttf", "otf", "ttc")) {
+                    runCatching {
+                        loadTypeface(fontPath.toString(), fontPath.name.substringBeforeLast('.'))
+                    }.onSuccess {
+                        fontLoaded = true
+                    }.onFailure { err ->
+                        BiliBiliBot.logger.warn("加载字体失败: ${fontPath.name}: ${err.message}")
+                    }
+                } else {
+                    BiliBiliBot.logger.debug("跳过非字体文件: ${fontPath.name}")
+                }
+            }
+
+            // 如果 data/font 目录没有字体文件，尝试从 resources/font 目录加载
+            if (!fontLoaded) {
+                BiliBiliBot.logger.info("data/font 目录为空，尝试从 resources/font 目录加载字体...")
+                // 只加载实际存在于 resources/font 目录的字体文件
+                val resourceFonts = listOf(
+                    "/font/SourceHanSansSC-Regular.otf" to "Source Han Sans SC",
+                    "/font/FansCard.ttf" to "FansCard"
+                )
+
+                for ((path, alias) in resourceFonts) {
+                    top.bilibili.utils.FontUtils.loadTypefaceFromResource(path, alias)
+                }
             }
         }
-
-        // 从 data/font 目录加载字体
-        var fontLoaded = false
-        forEachDirectoryEntry {
-            if (it.toFile().isFile) {
-                loadTypeface(it.toString(), it.name.split(".").first())
-                fontLoaded = true
-            }
-        }
-
-        // 如果 data/font 目录没有字体文件，尝试从 resources/font 目录加载
-        if (!fontLoaded) {
-            BiliBiliBot.logger.info("data/font 目录为空，尝试从 resources/font 目录加载字体...")
-            // 只加载实际存在于 resources/font 目录的字体文件
-            val resourceFonts = listOf(
-                "/font/SourceHanSansSC-Regular.otf" to "Source Han Sans SC",
-                "/font/FansCard.ttf" to "FansCard"
-            )
-
-            for ((path, alias) in resourceFonts) {
-                top.bilibili.utils.FontUtils.loadTypefaceFromResource(path, alias)
-            }
-        }
+    } catch (e: Throwable) {
+        fontsInitialized.set(false)
+        throw e
     }
 }

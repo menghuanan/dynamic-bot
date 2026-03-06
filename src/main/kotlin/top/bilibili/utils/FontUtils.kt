@@ -1,20 +1,42 @@
-﻿package top.bilibili.utils
+package top.bilibili.utils
 
 import org.jetbrains.skia.*
 import org.jetbrains.skia.paragraph.FontCollection
 import org.jetbrains.skia.paragraph.TypefaceFontProvider
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 object FontUtils {
 
     private val fontMgr = FontMgr.default
     private val fontProvider = TypefaceFontProvider()
     val fonts = FontCollection().setDynamicFontManager(fontProvider).setDefaultFontManager(fontMgr)
+    private val registeredTypefaceKeys = ConcurrentHashMap.newKeySet<String>()
+    private val registeredAliasKeys = ConcurrentHashMap.newKeySet<String>()
 
     var defaultFont: Typeface? = null
 
     private fun registerTypeface(typeface: Typeface?, alias: String? = null) {
-        fontProvider.registerTypeface(typeface)
-        if (alias != null) fontProvider.registerTypeface(typeface, alias)
+        if (typeface == null) return
+
+        val style = typeface.fontStyle
+        val baseKey = buildString {
+            append(typeface.familyName.lowercase(Locale.ROOT))
+            append(':')
+            append(style.weight)
+            append(':')
+            append(style.width)
+            append(':')
+            append(style.slant.ordinal)
+        }
+        if (registeredTypefaceKeys.add(baseKey)) {
+            fontProvider.registerTypeface(typeface)
+        }
+
+        val aliasKey = alias?.trim()?.takeIf { it.isNotEmpty() }?.lowercase(Locale.ROOT)
+        if (aliasKey != null && registeredAliasKeys.add(aliasKey)) {
+            fontProvider.registerTypeface(typeface, alias)
+        }
     }
 
 
@@ -44,11 +66,15 @@ object FontUtils {
             if (inputStream != null) {
                 val bytes = inputStream.use { it.readBytes() }
                 val data = Data.makeFromBytes(bytes)
-                val face = fontMgr.makeFromData(data, index) ?: throw IllegalArgumentException("无法从数据加载字体")
-                if (defaultFont == null) defaultFont = face
-                registerTypeface(face, alias)
-                logger.info("从 resources 加载字体 ${face.familyName} 成功")
-                face
+                try {
+                    val face = fontMgr.makeFromData(data, index) ?: throw IllegalArgumentException("无法从数据加载字体")
+                    if (defaultFont == null) defaultFont = face
+                    registerTypeface(face, alias)
+                    logger.info("从 resources 加载字体 ${face.familyName} 成功")
+                    face
+                } finally {
+                    data.close()
+                }
             } else {
                 logger.warn("资源文件不存在: $resourcePath")
                 null
@@ -60,9 +86,14 @@ object FontUtils {
     }
 
     fun loadTypeface(data: Data, index: Int = 0): Typeface {
-        val face = fontMgr.makeFromData(data, index) ?: throw IllegalArgumentException("无法从数据加载字体")
-        registerTypeface(face)
-        return face
+        return try {
+            val face = fontMgr.makeFromData(data, index) ?: throw IllegalArgumentException("无法从数据加载字体")
+            if (defaultFont == null) defaultFont = face
+            registerTypeface(face)
+            face
+        } finally {
+            data.close()
+        }
     }
 
 }

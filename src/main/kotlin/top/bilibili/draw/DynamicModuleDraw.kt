@@ -246,8 +246,9 @@ suspend fun ModuleDispute.drawGeneral(session: DrawingSession): Image {
 
     var x = quality.cardPadding.toFloat() + 10
     val y = quality.contentFontSize * 0.8f + quality.lineSpace
+    var svg: org.jetbrains.skia.svg.SVGDOM? = null
     try {
-        val svg = loadSVG("icon/DISPUTE.svg")
+        svg = loadSVG("icon/DISPUTE.svg")
         if (svg != null) {
             val iconSize = quality.contentFontSize
             val iconImage = svg.makeImage(session, iconSize, iconSize)
@@ -258,6 +259,10 @@ suspend fun ModuleDispute.drawGeneral(session: DrawingSession): Image {
         }
     } catch (e: Exception) {
         logger.warn("加载 DISPUTE 图标失败: ${e.message}")
+    } finally {
+        if (svg != null) {
+            svg.close()
+        }
     }
 
     canvas.drawTextArea(disputeTitle, textCardRect, x, y, font, Paint().apply { color = Color.makeRGB(231, 139, 31) })
@@ -286,8 +291,9 @@ suspend fun ModuleDynamic.Topic.drawGeneral(session: DrawingSession): Image {
 
     var x = quality.cardPadding.toFloat()
     val y = quality.contentFontSize * 0.8f + quality.lineSpace
+    var svg: org.jetbrains.skia.svg.SVGDOM? = null
     try {
-        val svg = loadSVG("icon/TOPIC.svg")
+        svg = loadSVG("icon/TOPIC.svg")
         if (svg != null) {
             val iconSize = quality.contentFontSize
             val iconImage = svg.makeImage(session, iconSize, iconSize)
@@ -298,6 +304,10 @@ suspend fun ModuleDynamic.Topic.drawGeneral(session: DrawingSession): Image {
         }
     } catch (e: Exception) {
         logger.warn("加载 TOPIC 图标失败: ${e.message}")
+    } finally {
+        if (svg != null) {
+            svg.close()
+        }
     }
 
     canvas.drawTextArea(topicName, textCardRect, x, y, font, linkPaint)
@@ -389,8 +399,9 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(session: DrawingSession): Imag
             "RICH_TEXT_NODE_TYPE_VOTE",
             "RICH_TEXT_NODE_TYPE_LOTTERY",
             "RICH_TEXT_NODE_TYPE_BV" -> {
+                var svg: org.jetbrains.skia.svg.SVGDOM? = null
                 try {
-                    val svg = loadSVG("icon/${it.type}.svg")
+                    svg = loadSVG("icon/${it.type}.svg")
                     if (svg != null) {
                         val iconSize = quality.contentFontSize
                         val iconImage = svg.makeImage(session, iconSize, iconSize)
@@ -401,6 +412,10 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(session: DrawingSession): Imag
                     }
                 } catch (e: Exception) {
                     logger.warn("加载 ${it.type} 图标失败: ${e.message}")
+                } finally {
+                    if (svg != null) {
+                        svg.close()
+                    }
                 }
 
                 val point = canvas.drawTextArea(it.text, textCardRect, x, y, font, linkPaint)
@@ -694,4 +709,3 @@ suspend fun Canvas.drawOrnament(
         }
     }
 }
-

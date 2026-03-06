@@ -1,6 +1,7 @@
-package top.bilibili.tasker
+﻿package top.bilibili.tasker
 
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -17,57 +18,73 @@ import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
 import top.bilibili.data.DynamicType
 import top.bilibili.napcat.MessageSegment
-import top.bilibili.utils.ImageCache
+import top.bilibili.service.AtAllService
+import top.bilibili.service.TemplateRenderService
 import top.bilibili.utils.parseContactId
 
 /**
- * 消息发送任务
- * 从 messageChannel 接收消息，转换为 OneBot v11 格式并通过 NapCat 发送
+ * 娑堟伅鍙戦€佷换鍔?
+ * 浠?messageChannel 鎺ユ敹娑堟伅锛岃浆鎹负 OneBot v11 鏍煎紡骞堕€氳繃 NapCat 鍙戦€?
  */
 object SendTasker : BiliTasker("SendTasker") {
     override var interval: Int = 1
     override val unitTime: Long = 500
+    private const val AT_ALL_WARN_INTERVAL_MS = 60 * 60 * 1000L
 
     private val messageQueue = Channel<Pair<ContactId, List<MessageSegment>>>(100)
+    private val atAllPermissionWarnTs = mutableMapOf<Long, Long>()
 
     override fun init() {
         BiliBiliBot.logger.info("SendTasker 已启动")
 
-        // 启动消息队列处理协程
-        BiliBiliBot.launch {
+        // 鍚姩娑堟伅闃熷垪澶勭悊鍗忕▼
+        launch {
             processMessageQueue()
         }
 
-        // 启动消息接收处理协程
-        BiliBiliBot.launch {
+        // 鍚姩娑堟伅鎺ユ敹澶勭悊鍗忕▼
+        launch {
             processMessages()
         }
     }
 
     override suspend fun main() {
-        // ✅ 明确表示等待取消
+        // 鉁?鏄庣‘琛ㄧず绛夊緟鍙栨秷
         awaitCancellation()
     }
 
-    override fun after() {
-        // ✅ P0修复: 关闭 messageQueue，防止 Channel 泄漏
-        messageQueue.close()
+    override fun cancel(cause: CancellationException?) {
+        messageQueue.close(cause)
+        super.cancel(cause)
     }
 
     /**
-     * 处理消息发送队列
+     * 澶勭悊娑堟伅鍙戦€侀槦鍒?
      */
     private suspend fun processMessageQueue() {
         for ((contact, segments) in messageQueue) {
             try {
-                val success = BiliBiliBot.sendMessage(contact, segments)
+                val gateway = top.bilibili.service.MessageGatewayProvider.require()
+                var success = gateway.sendMessage(contact, segments)
+
+                if (!success && contact.type == "group" && containsAtAllSegment(segments)) {
+                    val downgradedSegments = segments.filterNot { it.type == "at" && it.data["qq"] == "all" }
+                    if (downgradedSegments.isNotEmpty()) {
+                        BiliBiliBot.logger.warn("检测到 @全体 发送失败，尝试降级重发: ${contact.type}:${contact.id}")
+                        success = gateway.sendMessage(contact, downgradedSegments)
+                        if (success) {
+                            notifyAtAllFallback(contact.id)
+                        }
+                    }
+                }
+
                 if (success) {
                     BiliBiliBot.logger.info("消息已发送到 ${contact.type}:${contact.id}")
                 } else {
-                    BiliBiliBot.logger.warn("消息发送失败 ${contact.type}:${contact.id}")
+                    BiliBiliBot.logger.warn("消息发送失败: ${contact.type}:${contact.id}")
                 }
 
-                // 发送间隔
+                // 鍙戦€侀棿闅?
                 delay(BiliConfigManager.config.pushConfig.pushInterval)
             } catch (e: Exception) {
                 BiliBiliBot.logger.error("发送消息时出错: ${e.message}", e)
@@ -76,7 +93,7 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     /**
-     * 处理从 messageChannel 接收的消息
+     * 澶勭悊浠?messageChannel 鎺ユ敹鐨勬秷鎭?
      */
     private suspend fun processMessages() {
         for (message in BiliBiliBot.messageChannel) {
@@ -90,7 +107,7 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     /**
-     * 发送消息到所有订阅者
+     * 鍙戦€佹秷鎭埌鎵€鏈夎闃呰€?
      */
     private suspend fun sendToSubscribers(message: BiliMessage) {
         val dynamicMessage = message as? DynamicMessage
@@ -101,11 +118,11 @@ object SendTasker : BiliTasker("SendTasker") {
         val dynamicSub = if (!useBangumi) BiliData.dynamic[message.mid] else null
 
         if (useBangumi && bangumiSub == null) {
-            BiliBiliBot.logger.warn("番剧 ${dynamicMessage?.pgcSeasonId} 没有订阅数据，无法推送")
+            BiliBiliBot.logger.warn("番剧 ${dynamicMessage?.pgcSeasonId} 没有订阅数据，跳过推送")
             return
         }
         if (!useBangumi && dynamicSub == null) {
-            BiliBiliBot.logger.warn("用户 ${message.mid} 没有订阅数据，无法推送")
+            BiliBiliBot.logger.warn("用户 ${message.mid} 没有订阅数据，跳过推送")
             return
         }
 
@@ -114,7 +131,7 @@ object SendTasker : BiliTasker("SendTasker") {
 
         BiliBiliBot.logger.info("准备推送到 ${contacts.size} 个联系人")
 
-        // 如果消息已指定联系人，只发送给该联系人
+        // 濡傛灉娑堟伅宸叉寚瀹氳仈绯讳汉锛屽彧鍙戦€佺粰璇ヨ仈绯讳汉
         val specificContact = message.contact
         if (specificContact != null) {
             BiliBiliBot.logger.info("消息指定了联系人: $specificContact")
@@ -124,17 +141,18 @@ object SendTasker : BiliTasker("SendTasker") {
                 return
             }
             val segments = buildMessageSegments(message, specificContact)
-            messageQueue.send(contact to segments)
+            val finalSegments = applyAtAllIfNeeded(contact, specificContact, message, segments)
+            messageQueue.send(contact to finalSegments)
             return
         }
 
-        // 发送给所有订阅该用户的联系人
+        // 鍙戦€佺粰鎵€鏈夎闃呰鐢ㄦ埛鐨勮仈绯讳汉
         for (contactStr in contacts) {
             try {
                 BiliBiliBot.logger.info("处理联系人: $contactStr")
                 val contact = parseContactId(contactStr) ?: continue
 
-                // 检查是否被禁用
+                // 妫€鏌ユ槸鍚﹁绂佺敤
                 if (banList.contains(contactStr)) {
                     BiliBiliBot.logger.debug("联系人 $contactStr 已禁用推送")
                     continue
@@ -145,21 +163,76 @@ object SendTasker : BiliTasker("SendTasker") {
                     continue
                 }
 
-                // 构建消息段
+                // 鏋勫缓娑堟伅娈?
                 val segments = buildMessageSegments(message, contactStr)
                 BiliBiliBot.logger.info("为联系人 $contactStr 构建了 ${segments.size} 个消息段")
 
-                // 加入发送队列
-                messageQueue.send(contact to segments)
+                val finalSegments = applyAtAllIfNeeded(contact, contactStr, message, segments)
+
+                // 鍔犲叆鍙戦€侀槦鍒?
+                messageQueue.send(contact to finalSegments)
                 BiliBiliBot.logger.info("消息已加入发送队列: ${contact.type}:${contact.id}")
 
-                // 消息间隔
+                // 娑堟伅闂撮殧
                 delay(BiliConfigManager.config.pushConfig.messageInterval)
 
             } catch (e: Exception) {
                 BiliBiliBot.logger.error("处理联系人 $contactStr 时出错: ${e.message}", e)
             }
         }
+    }
+
+    private suspend fun applyAtAllIfNeeded(
+        contact: ContactId,
+        contactStr: String,
+        message: BiliMessage,
+        segments: List<MessageSegment>
+    ): List<MessageSegment> {
+        if (contact.type != "group") return segments
+        val alreadyAtAll = segments.any { it.type == "at" && it.data["qq"] == "all" }
+        if (alreadyAtAll) return segments
+        val atAllEnabled = AtAllService.shouldAtAll(contactStr, message.mid, message)
+        if (!atAllEnabled) return segments
+
+        val canAtAll = runCatching {
+            BiliBiliBot.isNapCatInitialized() && BiliBiliBot.napCat.canAtAllInGroup(contact.id)
+        }.getOrElse {
+            BiliBiliBot.logger.warn("检查群 ${contact.id} 的 @全体 权限失败: ${it.message}")
+            false
+        }
+
+        if (!canAtAll) {
+            notifyAtAllPermissionMissing(contact.id, message.mid)
+            return segments
+        }
+
+        return listOf(MessageSegment.atAll()) + segments
+    }
+
+    private suspend fun notifyAtAllPermissionMissing(groupId: Long, uid: Long) {
+        val now = System.currentTimeMillis()
+        val last = atAllPermissionWarnTs[groupId]
+        if (last != null && now - last < AT_ALL_WARN_INTERVAL_MS) return
+        atAllPermissionWarnTs[groupId] = now
+
+        val notice = "群 $groupId 已配置 At全体(UID: $uid)，但 Bot 无 @全体 权限，已自动降级为普通推送。请将 Bot 设为管理员。"
+        runCatching { top.bilibili.service.MessageGatewayProvider.require().sendAdminMessage(notice) }
+            .onFailure { BiliBiliBot.logger.warn("发送 @全体 降级提醒失败: ${it.message}") }
+    }
+
+    private suspend fun notifyAtAllFallback(groupId: Long) {
+        val now = System.currentTimeMillis()
+        val last = atAllPermissionWarnTs[groupId]
+        if (last != null && now - last < AT_ALL_WARN_INTERVAL_MS) return
+        atAllPermissionWarnTs[groupId] = now
+
+        val notice = "群 $groupId 的 @全体 推送发送失败，已自动降级为普通推送。请检查 Bot 是否具备 @全体 权限或当日次数是否耗尽。"
+        runCatching { top.bilibili.service.MessageGatewayProvider.require().sendAdminMessage(notice) }
+            .onFailure { BiliBiliBot.logger.warn("发送 @全体 重试降级提醒失败: ${it.message}") }
+    }
+
+    private fun containsAtAllSegment(segments: List<MessageSegment>): Boolean {
+        return segments.any { it.type == "at" && it.data["qq"] == "all" }
     }
 
     private fun shouldSendToContact(message: BiliMessage, contactStr: String): Boolean {
@@ -246,174 +319,13 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     /**
-     * 构建 OneBot v11 消息段
+     * 鏋勫缓 OneBot v11 娑堟伅娈?
      */
     private suspend fun buildMessageSegments(
         message: BiliMessage,
         contactStr: String
     ): List<MessageSegment> {
-        BiliBiliBot.logger.info("开始构建消息段...")
-        val segments = mutableListOf<MessageSegment>()
-
-        try {
-            // 获取模板
-            BiliBiliBot.logger.info("获取推送模板...")
-            val template = when (message) {
-                is DynamicMessage -> getTemplate(contactStr, message.mid, "dynamic")
-                is LiveMessage -> getTemplate(contactStr, message.mid, "live")
-                is LiveCloseMessage -> getTemplate(contactStr, message.mid, "liveClose")
-            }
-            BiliBiliBot.logger.info("使用模板: $template")
-
-            // 解析模板，分割为多条消息（使用 \r 分隔）
-            val messageParts = template.split("\r")
-            BiliBiliBot.logger.info("模板分割为 ${messageParts.size} 部分")
-
-            for ((index, part) in messageParts.withIndex()) {
-                if (index > 0) {
-                    // 在多条消息之间添加分隔符（使用空消息段）
-                    segments.add(MessageSegment.text("\n"))
-                }
-
-                // 替换模板变量
-                BiliBiliBot.logger.info("替换模板变量...")
-                val content = replacePlaceholders(part, message)
-                BiliBiliBot.logger.info("替换后内容: ${content.take(100)}...")
-
-                // 解析内容，提取图片和文本
-                BiliBiliBot.logger.info("解析内容，提取图片和文本...")
-                parseContent(content, message, segments)
-                BiliBiliBot.logger.info("当前消息段数量: ${segments.size}")
-            }
-
-            BiliBiliBot.logger.info("消息段构建完成，共 ${segments.size} 个")
-            return segments
-        } catch (e: Exception) {
-            BiliBiliBot.logger.error("构建消息段失败: ${e.message}", e)
-            // 返回简单的文本消息作为降级
-            return listOf(MessageSegment.text("${message.name} 发布了新${if (message is DynamicMessage) "动态" else "直播"}"))
-        }
-    }
-
-    /**
-     * 获取推送模板
-     */
-    private fun getTemplate(contactStr: String, mid: Long, type: String): String {
-        val config = BiliConfigManager.config
-        val data = BiliData
-
-        // 检查是否有自定义模板
-        val templateMap = when (type) {
-            "dynamic" -> data.dynamicPushTemplate
-            "live" -> data.livePushTemplate
-            "liveClose" -> data.liveCloseTemplate
-            else -> return ""
-        }
-
-        // 查找联系人的自定义模板
-        val customTemplate = templateMap.entries.find { (_, contacts) ->
-            contactStr in contacts
-        }?.key
-
-        // 获取模板内容
-        val templateName = customTemplate ?: when (type) {
-            "dynamic" -> config.templateConfig.defaultDynamicPush
-            "live" -> config.templateConfig.defaultLivePush
-            "liveClose" -> config.templateConfig.defaultLiveClose
-            else -> "OneMsg"
-        }
-
-        return when (type) {
-            "dynamic" -> config.templateConfig.dynamicPush[templateName] ?: "{draw}\n{name}@{type}\n{link}"
-            "live" -> config.templateConfig.livePush[templateName] ?: "{draw}\n{name}@直播\n{link}"
-            "liveClose" -> config.templateConfig.liveClose[templateName] ?: "{name} 直播结束啦!\n直播时长: {duration}"
-            else -> ""
-        }
-    }
-
-    /**
-     * 替换模板占位符
-     */
-    private fun replacePlaceholders(template: String, message: BiliMessage): String {
-        var result = template
-
-        // 公共字段
-        result = result.replace("{name}", message.name)
-        result = result.replace("{uid}", message.mid.toString())
-        result = result.replace("{mid}", message.mid.toString())
-        result = result.replace("{time}", message.time)
-
-        // 根据消息类型替换特定字段
-        when (message) {
-            is DynamicMessage -> {
-                result = result.replace("{type}", message.type.text)
-                result = result.replace("{did}", message.did)
-                result = result.replace("{content}", message.content)
-                result = result.replace("{link}", "https://t.bilibili.com/${message.did}")
-
-                // 处理 {links} 占位符
-                val linksText = message.links?.joinToString("\n") { "${it.tag}: ${it.value}" } ?: ""
-                result = result.replace("{links}", linksText)
-
-                // {images} 占位符在后面处理
-            }
-            is LiveMessage -> {
-                result = result.replace("{title}", message.title)
-                result = result.replace("{area}", message.area)
-                result = result.replace("{link}", message.link)
-                result = result.replace("{cover}", message.cover)
-            }
-            is LiveCloseMessage -> {
-                result = result.replace("{title}", message.title)
-                result = result.replace("{duration}", message.duration)
-                result = result.replace("{area}", message.area)
-                result = result.replace("{link}", message.link)
-            }
-        }
-
-        return result
-    }
-
-    /**
-     * 解析内容，提取图片和文本
-     */
-    private suspend fun parseContent(
-        content: String,
-        message: BiliMessage,
-        segments: MutableList<MessageSegment>
-    ) {
-        var currentText = content
-
-        // 处理 {draw} 占位符（Skiko 生成的图片）
-        if (currentText.contains("{draw}")) {
-            val drawPath = message.drawPath
-            if (drawPath != null && BiliConfigManager.config.enableConfig.drawEnable) {
-                val imageUrl = ImageCache.toFileUrl(drawPath)
-                segments.add(MessageSegment.image(imageUrl))
-                currentText = currentText.replace("{draw}", "")
-            } else {
-                currentText = currentText.replace("{draw}", "")
-            }
-        }
-
-        // 处理 {images} 占位符（动态图片）
-        if (currentText.contains("{images}")) {
-            if (message is DynamicMessage && !message.images.isNullOrEmpty()) {
-                currentText = currentText.replace("{images}", "")
-                for (imageUrl in message.images) {
-                    val cachedUrl = ImageCache.cacheImage(imageUrl)
-                    if (cachedUrl != null) {
-                        segments.add(MessageSegment.image(cachedUrl))
-                    }
-                }
-            } else {
-                currentText = currentText.replace("{images}", "")
-            }
-        }
-
-        // 添加剩余的文本内容
-        if (currentText.isNotBlank()) {
-            segments.add(MessageSegment.text(currentText.trim()))
-        }
+        return TemplateRenderService.buildSegments(message, contactStr)
     }
 }
+

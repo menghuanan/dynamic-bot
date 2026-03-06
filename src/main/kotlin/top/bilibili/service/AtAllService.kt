@@ -1,14 +1,15 @@
 package top.bilibili.service
 
-// TODO: [Mirai依赖] 需要重写为 NapCat 实现
-// AtAllService - 全体@功能需要重新实现
-/*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import net.mamoe.mirai.contact.Group
 import top.bilibili.AtAllType
-import top.bilibili.command.GroupOrContact
-import top.bilibili.command.subject
+import top.bilibili.BiliData
+import top.bilibili.data.BiliMessage
+import top.bilibili.data.DynamicMessage
+import top.bilibili.data.DynamicType
+import top.bilibili.data.LiveCloseMessage
+import top.bilibili.data.LiveMessage
+import top.bilibili.utils.parseContactId
 
 object AtAllService {
     private val mutex = Mutex()
@@ -24,17 +25,22 @@ object AtAllService {
             else -> null
         }
 
-    suspend fun addAtAll(type: String, uid: Long = 0L, target: GroupOrContact) = mutex.withLock {
-        val atAllType = toAtAllType(type) ?: return "没有这个类型哦 [$type]"
-        if (target.group == null) {
-            if (target.contact !is Group) return "仅在群聊中有用哦"
-            if (target.contact.botPermission.level == 0) return "Bot不为管理员, 无法使用At全体"
-        }
-        val list = atAll.getOrPut(target.subject) { mutableMapOf() }.getOrPut(uid) { mutableSetOf() }
+    suspend fun addAtAll(type: String, uid: Long = 0L, subject: String): String = mutex.withLock {
+        val atAllType = toAtAllType(type) ?: return@withLock "没有这个类型哦 [$type]"
+        val contact = parseContactId(subject) ?: return@withLock "联系人格式错误: $subject"
+        if (contact.type != "group") return@withLock "仅群聊支持 @全体 策略"
+        validateUidScope(uid, subject)?.let { return@withLock it }
+
+        val list = BiliData.atAll
+            .getOrPut(subject) { mutableMapOf() }
+            .getOrPut(uid) { mutableSetOf() }
+
         if (list.isEmpty()) {
             list.add(atAllType)
-            atAll[target.subject]?.set(uid, list)
-        } else when (atAllType) {
+            return@withLock "添加成功"
+        }
+
+        when (atAllType) {
             AtAllType.ALL -> {
                 list.clear()
                 list.add(atAllType)
@@ -56,30 +62,67 @@ object AtAllService {
         "添加成功"
     }
 
-    suspend fun delAtAll(type: String, uid: Long = 0L, subject: String) = mutex.withLock {
+    suspend fun delAtAll(type: String, uid: Long = 0L, subject: String): String = mutex.withLock {
         val atAllType = toAtAllType(type) ?: return@withLock "没有这个类型哦 [$type]"
-        if (atAll[subject]?.get(uid)?.remove(atAllType) == true) "删除成功" else "删除失败"
+        validateUidScope(uid, subject)?.let { return@withLock it }
+
+        val subjectMap = BiliData.atAll[subject] ?: return@withLock "删除失败"
+        val uidMap = subjectMap[uid] ?: return@withLock "删除失败"
+        val removed = uidMap.remove(atAllType)
+        if (!removed) return@withLock "删除失败"
+
+        if (uidMap.isEmpty()) {
+            subjectMap.remove(uid)
+        }
+        if (subjectMap.isEmpty()) {
+            BiliData.atAll.remove(subject)
+        }
+        "删除成功"
     }
 
-    suspend fun listAtAll(uid: Long = 0L, subject: String) = mutex.withLock {
-        val list = atAll[subject]?.get(uid)
+    suspend fun listAtAll(uid: Long = 0L, subject: String): String = mutex.withLock {
+        if (uid == 0L) {
+            val all = BiliData.atAll[subject]
+            if (all.isNullOrEmpty()) return@withLock "没有At全体项哦"
+            return@withLock buildString {
+                all.toSortedMap().forEach { (scopeUid, items) ->
+                    appendLine("UID($scopeUid): ${items.joinToString(",") { it.value }}")
+                }
+            }.trim()
+        }
+
+        validateUidScope(uid, subject)?.let { return@withLock it }
+        val list = BiliData.atAll[subject]?.get(uid)
         if (list.isNullOrEmpty()) return@withLock "没有At全体项哦"
-        buildString { list.forEach { appendLine(it.value) } }
-    }
-}
-*/
-
-// 临时实现：提供空的占位函数
-object AtAllService {
-    suspend fun addAtAll(type: String, uid: Long = 0L, target: Any): String {
-        return "AtAll 功能暂未实现"
+        buildString { list.forEach { appendLine(it.value) } }.trim()
     }
 
-    suspend fun delAtAll(type: String, uid: Long = 0L, subject: String): String {
-        return "AtAll 功能暂未实现"
+    suspend fun shouldAtAll(subject: String, uid: Long, message: BiliMessage): Boolean = mutex.withLock {
+        val list = BiliData.atAll[subject]?.get(uid) ?: return@withLock false
+        if (list.isEmpty()) return@withLock false
+        if (AtAllType.ALL in list) return@withLock true
+
+        return@withLock when (message) {
+            is DynamicMessage -> {
+                AtAllType.DYNAMIC in list || mapDynamicTypeToAtAll(message.type) in list
+            }
+            is LiveMessage -> AtAllType.LIVE in list
+            is LiveCloseMessage -> false
+        }
     }
 
-    suspend fun listAtAll(uid: Long = 0L, subject: String): String {
-        return "AtAll 功能暂未实现"
+    private fun mapDynamicTypeToAtAll(type: DynamicType): AtAllType {
+        return when (type) {
+            DynamicType.DYNAMIC_TYPE_AV -> AtAllType.VIDEO
+            DynamicType.DYNAMIC_TYPE_MUSIC -> AtAllType.MUSIC
+            DynamicType.DYNAMIC_TYPE_ARTICLE -> AtAllType.ARTICLE
+            else -> AtAllType.DYNAMIC
+        }
+    }
+
+    private fun validateUidScope(uid: Long, subject: String): String? {
+        if (uid <= 0L) return "请指定有效 UID（必须是正整数）"
+        if (!isFollow(uid, subject)) return "该群未订阅 UID: $uid"
+        return null
     }
 }

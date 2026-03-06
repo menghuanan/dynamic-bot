@@ -268,16 +268,22 @@ fun List<Image>.assembleCard(session: DrawingSession, id: String, footer: String
 
         if (imageConfig.badgeEnable.left) {
             val svg = loadSVG("icon/${if (isForward) "FORWARD" else "BILIBILI_LOGO"}.svg")
-            val badgeImage = svg?.makeImage(session, quality.contentFontSize, quality.contentFontSize)
-            canvas.drawBadge(
-                tag ?: if (isForward) "转发动态" else "动态",
-                font,
-                theme.mainLeftBadge.fontColor,
-                theme.mainLeftBadge.bgColor,
-                rrect,
-                TOP_LEFT,
-                badgeImage
-            )
+            try {
+                val badgeImage = svg?.makeImage(session, quality.contentFontSize, quality.contentFontSize)
+                canvas.drawBadge(
+                    tag ?: if (isForward) "转发动态" else "动态",
+                    font,
+                    theme.mainLeftBadge.fontColor,
+                    theme.mainLeftBadge.bgColor,
+                    rrect,
+                    TOP_LEFT,
+                    badgeImage
+                )
+            } finally {
+                if (svg != null) {
+                    svg.close()
+                }
+            }
         }
         if (imageConfig.badgeEnable.right) {
             canvas.drawBadge(id, font, theme.mainRightBadge.fontColor, theme.mainRightBadge.bgColor, rrect, TOP_RIGHT)
@@ -482,14 +488,20 @@ suspend fun Canvas.drawAvatar(
 
     if (verifyIcon != "") {
         val svg = loadSVG("icon/$verifyIcon.svg")
-        if (svg != null) {
-            val size = if (hasPendant) verifyIconSize - quality.noPendantFaceInflate / 2 else verifyIconSize
-            val verifyImg = svg.makeImage(session, size, size)
-            drawImage(
-                verifyImg,
-                tarFaceRect.right - size,
-                tarFaceRect.bottom - size
-            )
+        try {
+            if (svg != null) {
+                val size = if (hasPendant) verifyIconSize - quality.noPendantFaceInflate / 2 else verifyIconSize
+                val verifyImg = svg.makeImage(session, size, size)
+                drawImage(
+                    verifyImg,
+                    tarFaceRect.right - size,
+                    tarFaceRect.bottom - size
+                )
+            }
+        } finally {
+            if (svg != null) {
+                svg.close()
+            }
         }
     }
 }
@@ -578,4 +590,3 @@ fun Canvas.drawLabelCard(
         fontPaint
     )
 }
-

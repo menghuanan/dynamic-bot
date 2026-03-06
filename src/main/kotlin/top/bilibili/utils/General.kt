@@ -177,7 +177,21 @@ fun Int.formatDuration(isText: Boolean = true): String = this.toLong().formatDur
 val Long.formatZero: String get() = if (this in 1..9) "0$this" else this.toString()
 val Int.formatZero: String get() = this.toLong().formatZero
 
-fun imgApi(imgUrl: String, width: Int, height: Int): String = "${imgUrl}@${width}w_${height}h_1e_1c.png"
+fun normalizeImageSourceUrl(url: String): String? {
+    val trimmed = url.trim()
+    if (trimmed.isBlank()) return null
+    if (trimmed.startsWith("cache/") || trimmed.startsWith("file://")) return trimmed
+    if (trimmed.startsWith("@")) return null
+    if (trimmed.startsWith("//")) return "https:$trimmed"
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed
+    return null
+}
+
+fun imgApi(imgUrl: String, width: Int, height: Int): String {
+    val normalized = normalizeImageSourceUrl(imgUrl) ?: return ""
+    if (normalized.startsWith("cache/") || normalized.startsWith("file://")) return ""
+    return "${normalized}@${width}w_${height}h_1e_1c.png"
+}
 
 val DynamicItem.link: String
     get() = when (type) {
@@ -360,8 +374,13 @@ private fun isPrivateNetwork(url: String): Boolean {
 
 suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN): ByteArray? {
      try {
+        val normalizedUrl = normalizeImageSourceUrl(url) ?: run {
+            logger.warn("跳过非法资源 URL: $url")
+            return null
+        }
+
         // 安全清理文件名，防止路径遍历攻击
-        val rawFileName = url.split("?").first().split("@").first().split("/").last()
+        val rawFileName = normalizedUrl.split("?").first().split("@").first().split("/").last()
         val fileName = sanitizeFileName(rawFileName)
 
         val filePath = if (cacheType == CacheType.UNKNOWN) {
@@ -372,13 +391,13 @@ suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN)
          if (filePath.exists()) {
             filePath.setLastModifiedTime(FileTime.from(Instant.now()))
             return filePath.readBytes()
-         } else if(url.startsWith("cache/")){
+         } else if(normalizedUrl.startsWith("cache/")){
              return null
          }
          else {
              // 修复：拒绝内网地址访问
-             if (isPrivateNetwork(url)) {
-                 logger.warn("拒绝下载内网 URL (SSRF 防护): $url")
+             if (isPrivateNetwork(normalizedUrl)) {
+                 logger.warn("拒绝下载内网 URL (SSRF 防护): $normalizedUrl")
                  return null
              }
 
@@ -388,7 +407,7 @@ suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN)
              while (retryCount <= maxRetries) {
                  try {
                     biliClient.useHttpClient {
-                        it.get(url).body<ByteArray>().apply {
+                        it.get(normalizedUrl).body<ByteArray>().apply {
                             filePath.writeBytes(this)
                         }
                     }
@@ -397,12 +416,12 @@ suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN)
                         return filePath.readBytes()
                     }
                 }catch (t: Throwable) {
-                    logger.warn("下载资源失败 (尝试 ${retryCount + 1}/${maxRetries + 1}): $url")
+                    logger.warn("下载资源失败 (尝试 ${retryCount + 1}/${maxRetries + 1}): $normalizedUrl")
                     if (retryCount < maxRetries) {
                         kotlinx.coroutines.delay(3000)
                         retryCount++
                     } else {
-                        logger.error("下载资源彻底失败! $url\n$t")
+                        logger.error("下载资源彻底失败! $normalizedUrl\n$t")
                         return null
                     }
                 }
@@ -423,9 +442,16 @@ suspend fun getOrDownloadImage(url: String, cacheType: CacheType = CacheType.UNK
 }
 
 suspend fun getOrDownloadImageDefault(url: String, fallbackUrl: String, cacheType: CacheType = CacheType.UNKNOWN): Image {
-    return (if (BiliConfigManager.config.cacheConfig.downloadOriginal) getOrDownloadImage(url, cacheType) else null) ?:
-    getOrDownloadImage(fallbackUrl, cacheType)?:
-    Image.makeFromEncoded(loadResourceBytes("image/IMAGE_MISS.png"))
+    val normalizedUrl = normalizeImageSourceUrl(url)
+    val normalizedFallbackUrl = normalizeImageSourceUrl(fallbackUrl)
+
+    val original = if (BiliConfigManager.config.cacheConfig.downloadOriginal && normalizedUrl != null) {
+        getOrDownloadImage(normalizedUrl, cacheType)
+    } else null
+
+    return original
+        ?: normalizedFallbackUrl?.let { getOrDownloadImage(it, cacheType) }
+        ?: Image.makeFromEncoded(loadResourceBytes("image/IMAGE_MISS.png"))
 }
 
 
@@ -632,7 +658,7 @@ suspend fun actionNotify(subject: Long?, message: ActionMessage) {
 }
 
 suspend fun actionNotify(message: String) {
-    val success = BiliBiliBot.sendAdminMessage(message)
+    val success = top.bilibili.service.MessageGatewayProvider.require().sendAdminMessage(message)
     if (!success) {
         logger.info("通知消息: $message")
     }
@@ -658,3 +684,4 @@ fun String.md5(): String {
     val md = MessageDigest.getInstance("MD5")
     return md.digest(toByteArray()).joinToString("") { "%02x".format(it) }
 }
+

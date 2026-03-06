@@ -1,4 +1,4 @@
-﻿package top.bilibili.utils.translate
+package top.bilibili.utils.translate
 
 import top.bilibili.BiliConfigManager
 import top.bilibili.utils.json

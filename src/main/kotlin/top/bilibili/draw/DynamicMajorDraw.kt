@@ -185,7 +185,9 @@ suspend fun ModuleDynamic.Major.Common.drawGeneral(session: DrawingSession): Ima
         quality.cardArc
     )
 
-    val coverImg = getOrDownloadImage(cover, CacheType.OTHER)
+    val coverImg = getOrDownloadImage(cover, CacheType.OTHER)?.let {
+        with(session) { it.track() }
+    }
 
     val surface = session.createSurface(
         cardRect.width.toInt(),
@@ -254,8 +256,6 @@ suspend fun ModuleDynamic.Major.Common.drawGeneral(session: DrawingSession): Ima
         desc2Paragraph.paint(canvas, x, y)
     }
 
-    coverImg?.close()
-
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
@@ -284,7 +284,7 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, sho
     }
 
     val fallbackUrl = imgApi(cover, cardContentRect.width.toInt(), (cardContentRect.width * 0.625).toInt())
-    val coverImg = getOrDownloadImageDefault(cover, fallbackUrl, CacheType.IMAGES)
+    val coverImg = with(session) { getOrDownloadImageDefault(cover, fallbackUrl, CacheType.IMAGES).track() }
 
     val videoCoverHeight = cardContentRect.width * coverImg.height / coverImg.width
     val videoCardHeight = videoCoverHeight + titleParagraph.height + descParagraph.height + quality.cardPadding
@@ -402,8 +402,6 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, sho
         quality.badgeHeight + videoCoverHeight + quality.cardPadding / 2 + titleParagraph.height
     )
 
-    coverImg.close()
-
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
@@ -469,7 +467,7 @@ suspend fun drawPgcCard(
     // 下载封面图
     val desiredCoverWidth = cardContentRect.width * 0.4f
     val fallbackUrl = imgApi(cover, desiredCoverWidth.toInt(), 100)
-    val coverImg = getOrDownloadImageDefault(cover, fallbackUrl, CacheType.IMAGES)
+    val coverImg = with(session) { getOrDownloadImageDefault(cover, fallbackUrl, CacheType.IMAGES).track() }
 
     // 计算封面等比缩放后的高度
     val scale = desiredCoverWidth / coverImg.width.toFloat()
@@ -689,8 +687,6 @@ suspend fun drawPgcCard(
     // 第五行：介绍
     evaluateParagraph?.paint(canvas, textX, textY)
 
-    coverImg.close()
-
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
@@ -705,7 +701,7 @@ suspend fun drawLiveSmallCard(
 ): Image {
     val desiredCoverWidth = cardContentRect.width
     val fallbackUrl = imgApi(cover, desiredCoverWidth.toInt(), 100)
-    val coverImg = getOrDownloadImageDefault(cover, fallbackUrl, CacheType.IMAGES)
+    val coverImg = with(session) { getOrDownloadImageDefault(cover, fallbackUrl, CacheType.IMAGES).track() }
 
     val scale = desiredCoverWidth / coverImg.width.toFloat()
     val scaledCoverHeight = coverImg.height.toFloat() * scale
@@ -804,8 +800,6 @@ suspend fun drawLiveSmallCard(
         )
     }
 
-    coverImg.close()
-
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
@@ -821,7 +815,7 @@ suspend fun drawSmallCard(
     // 1) 先把需要的图片下载好，拿到它的实际宽高
     val desiredCoverWidth = cardContentRect.width * 0.4f
     val fallbackUrl = imgApi(cover, desiredCoverWidth.toInt(), 100)
-    val coverImg = getOrDownloadImageDefault(cover, fallbackUrl, CacheType.IMAGES)
+    val coverImg = with(session) { getOrDownloadImageDefault(cover, fallbackUrl, CacheType.IMAGES).track() }
 
     // 2) 根据图片原始宽高和想要的 cover 显示宽度，计算出它等比缩放后的显示高度
     val originWidth = coverImg.width.toFloat()
@@ -943,8 +937,6 @@ suspend fun drawSmallCard(
         )
     }
 
-    coverImg.close()
-
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
@@ -1019,7 +1011,7 @@ suspend fun ModuleDynamic.Major.Draw.drawGeneral(session: DrawingSession): Image
 
     drawItems.forEachIndexed { index, drawItem ->
         val fallbackUrl = imgApi(drawItem.src, drawItemWidth.toInt(), drawItemHeight.toInt())
-        val img = getOrDownloadImageDefault(drawItem.src, fallbackUrl, CacheType.IMAGES)
+        val img = with(session) { getOrDownloadImageDefault(drawItem.src, fallbackUrl, CacheType.IMAGES).track() }
 
         val dstRect = RRect.makeXYWH(x, y, drawItemWidth, drawItemHeight, quality.cardArc)
 
@@ -1038,8 +1030,6 @@ suspend fun ModuleDynamic.Major.Draw.drawGeneral(session: DrawingSession): Image
             strokeWidth = quality.drawOutlineWidth
             isAntiAlias = true
         })
-
-        img.close()
 
         x += drawItemWidth + quality.drawSpace
 
@@ -1066,8 +1056,8 @@ suspend fun ModuleDynamic.Major.Blocked.drawGeneral(session: DrawingSession): Im
     val hintMessage = with(session) {
         ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText("包月充电专属动态").build().track()
     }
-    val bgImage = getOrDownloadImage(bgImg.imgDay, CacheType.IMAGES)!!
-    val lockIcon = getOrDownloadImage(icon.imgDay, CacheType.IMAGES)!!
+    val bgImage = with(session) { getOrDownloadImage(bgImg.imgDay, CacheType.IMAGES)?.track() }!!
+    val lockIcon = with(session) { getOrDownloadImage(icon.imgDay, CacheType.IMAGES)?.track() }!!
 
     val bgWidth = cardContentRect.width - quality.cardPadding * 2
     val bgHeight = bgWidth / bgImage.width * bgImage.height
@@ -1092,9 +1082,6 @@ suspend fun ModuleDynamic.Major.Blocked.drawGeneral(session: DrawingSession): Im
     x = quality.cardPadding.toFloat()
     y += lockHeight + quality.drawSpace
     hintMessageLayout.paint(canvas, x, y)
-
-    bgImage.close()
-    lockIcon.close()
 
     return with(session) { surface.makeImageSnapshot().track() }
 }
@@ -1125,8 +1112,12 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
     var articleCoverHeight = cardContentRect.width * if (covers.size == 1) 0.35f else 0.23166f
     val articleCovers = covers
     suspend fun loadCover(url: String): Image {
-        return getOrDownloadImage(url, CacheType.IMAGES)
-            ?: Image.makeFromEncoded(loadResourceBytes("image/IMAGE_MISS.png"))
+        return with(session) {
+            (
+                getOrDownloadImage(url, CacheType.IMAGES)
+                    ?: Image.makeFromEncoded(loadResourceBytes("image/IMAGE_MISS.png"))
+                ).track()
+        }
     }
     var singleCoverImg: Image? = null
     var coverScale = 1f
@@ -1185,7 +1176,6 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
             false
         )
         canvas.restore()
-        coverImg.close()
     } else {
         var imgX = articleCardRect.left
         canvas.save()
@@ -1194,7 +1184,6 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
             val img = loadCover(cover)
             canvas.drawImage(img, imgX, articleCardRect.top)
             imgX += img.width + 2
-            img.close()
         }
         canvas.restore()
     }
@@ -1307,7 +1296,7 @@ suspend fun ModuleDynamic.Major.Music.drawGeneral(session: DrawingSession): Imag
 
     // 封面
     val fallbackUrl = imgApi(musicCover, musicCardHeight.toInt(), musicCardHeight.toInt())
-    val coverImg = getOrDownloadImageDefault(musicCover, fallbackUrl, CacheType.IMAGES)
+    val coverImg = with(session) { getOrDownloadImageDefault(musicCover, fallbackUrl, CacheType.IMAGES).track() }
     val coverRRect = RRect.makeComplexXYWH(
         musicCardRect.left,
         musicCardRect.top,
@@ -1316,7 +1305,6 @@ suspend fun ModuleDynamic.Major.Music.drawGeneral(session: DrawingSession): Imag
         cardBadgeArc
     ).inflate(-1f) as RRect
     canvas.drawImageRRect(coverImg, coverRRect)
-    coverImg.close()
 
     val space = (musicCardHeight - titleParagraph.height - descParagraph.height) / 3
     val y = musicCardRect.top + space

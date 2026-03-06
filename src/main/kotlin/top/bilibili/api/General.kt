@@ -1,4 +1,4 @@
-﻿package top.bilibili.api
+package top.bilibili.api
 
 import io.ktor.client.call.*
 import io.ktor.client.request.*

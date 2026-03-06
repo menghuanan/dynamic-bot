@@ -1,4 +1,4 @@
-﻿package top.bilibili.tasker
+package top.bilibili.tasker
 
 import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfigManager
@@ -58,7 +58,7 @@ object CacheClearTasker : BiliTasker() {
             consecutiveFailures++
             if (consecutiveFailures >= FAILURE_THRESHOLD) {
                 logger.warn("缓存清理连续失败 $consecutiveFailures 次，发送管理员告警")
-                BiliBiliBot.sendAdminMessage(
+                top.bilibili.service.MessageGatewayProvider.require().sendAdminMessage(
                     "⚠️ 缓存清理连续失败 $consecutiveFailures 次\n" +
                     "错误: $errorMessage\n" +
                     "请检查磁盘空间和文件权限"

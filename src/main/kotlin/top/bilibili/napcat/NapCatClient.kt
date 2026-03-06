@@ -11,6 +11,11 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
 import okhttp3.ConnectionPool
 import org.slf4j.LoggerFactory
 import top.bilibili.config.NapCatConfig
@@ -19,6 +24,7 @@ import java.net.URI
 import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 import java.util.Base64
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -63,12 +69,16 @@ class NapCatClient(
     val eventFlow = _eventFlow.asSharedFlow()
 
     private var session: DefaultClientWebSocketSession? = null
-    private val sendChannel = Channel<String>(capacity = 200)  // ✅ P1修复: 从1000降低到200，降低内存占用
+    private val sendChannelCapacity = 200
+    private val sendChannel = Channel<String>(capacity = sendChannelCapacity)  // ✅ P1修复: 从1000降低到200，降低内存占用
     private val sendMode = config.sendMode.lowercase()
     private val maxBase64ImageSizeBytes = 10L * 1024L * 1024L
+    private val pendingResponses = ConcurrentHashMap<String, CompletableDeferred<OneBotResponse>>()
+    private val queuedMessageCount = AtomicInteger(0)
 
     // ✅ P3修复: 发送队列满载告警标志，避免重复告警
     private var sendQueueFullWarningLogged = false
+    private val base64LogRegex = Regex("""base64://[A-Za-z0-9+/=]+""")
 
     /** Bot 的 QQ 号 */
     var selfId: Long = 0L
@@ -78,7 +88,7 @@ class NapCatClient(
      * ✅ P3修复: 检查发送队列是否已满（供 ProcessGuardian 调用）
      */
     fun isSendQueueFull(): Boolean {
-        return sendChannel.trySend("").isFailure
+        return queuedMessageCount.get() >= sendChannelCapacity
     }
 
     /** 启动客户端 */
@@ -96,6 +106,7 @@ class NapCatClient(
 
         // 标记为未连接状态
         isConnected.set(false)
+        failPendingResponses("NapCat client stopped")
 
         // 关闭发送通道（触发发送协程退出）
         sendChannel.close()
@@ -184,9 +195,10 @@ class NapCatClient(
             // 启动发送协程
             val sendJob = launch {
                 for (message in sendChannel) {
+                    queuedMessageCount.updateAndGet { count -> if (count > 0) count - 1 else 0 }
                     try {
                         send(message)
-                        logger.debug("已发送消息: $message")
+                        logger.debug("已发送消息: ${simplifyOutgoingMessageForLog(message)}")
                     } catch (e: Exception) {
                         logger.error("发送消息失败: ${e.message}", e)
                     }
@@ -219,6 +231,7 @@ class NapCatClient(
                 isConnected.set(false)
                 sendJob.cancel()
                 session = null
+                failPendingResponses("WebSocket disconnected")
                 logger.info("WebSocket 连接已断开")
             }
         }
@@ -290,6 +303,19 @@ class NapCatClient(
 
     /** 处理收到的消息 */
     private suspend fun handleMessage(text: String) {
+        // 优先处理 API 响应，避免被后续消息事件分支吞掉
+        try {
+            val response = json.decodeFromString<OneBotResponse>(text)
+            val responseEcho = response.echo
+            if (!responseEcho.isNullOrBlank()) {
+                pendingResponses.remove(responseEcho)?.complete(response)
+            }
+            logger.debug("收到 API 响应: echo=${responseEcho ?: "null"}, retcode=${response.retcode}")
+            return
+        } catch (_: Exception) {
+            // ignore
+        }
+
         try {
             logger.debug("收到原始消息: $text")
 
@@ -365,26 +391,91 @@ class NapCatClient(
                 echo = System.currentTimeMillis().toString()
             )
 
-            val message = json.encodeToString(request)
+            val response = sendActionAndAwaitResponse(
+                action = request.action,
+                params = request.params,
+                timeoutMillis = 10_000L
+            )
 
-            // ✅ P3修复: 使用 trySend 检测队列是否已满，避免阻塞
-            val result = sendChannel.trySend(message)
-            if (result.isFailure) {
-                if (!sendQueueFullWarningLogged) {
-                    logger.warn("发送队列已满 (容量: 200)，消息可能延迟发送")
-                    sendQueueFullWarningLogged = true
-                }
-                // 队列满时使用阻塞发送
-                sendChannel.send(message)
-            } else {
-                sendQueueFullWarningLogged = false  // 队列有空间，重置告警标志
+            if (response == null) {
+                logger.warn("消息发送超时: action=$action")
+                return false
+            }
+            if (response.status != "ok" || response.retcode != 0) {
+                logger.warn("消息发送失败: action=$action, status=${response.status}, retcode=${response.retcode}, msg=${response.message}")
+                return false
             }
 
-            logger.debug("消息已加入发送队列: $action")
+            logger.debug("消息发送成功: action=$action")
             true
         } catch (e: Exception) {
             logger.error("发送消息失败: ${e.message}", e)
             false
+        }
+    }
+
+    internal fun simplifyOutgoingMessageForLog(rawJson: String): String {
+        val masked = base64LogRegex.replace(rawJson) { match ->
+            val payload = match.value.removePrefix("base64://")
+            if (payload.length <= 24) {
+                "base64://$payload"
+            } else {
+                "base64://${payload.take(10)}...${payload.takeLast(6)}(len=${payload.length})"
+            }
+        }
+
+        return if (masked.length > 800) {
+            masked.take(800) + "...(truncated)"
+        } else {
+            masked
+        }
+    }
+
+    private suspend fun enqueueOutgoingJson(payload: String) {
+        val result = sendChannel.trySend(payload)
+        if (result.isSuccess) {
+            queuedMessageCount.incrementAndGet()
+            sendQueueFullWarningLogged = false
+            return
+        }
+
+        if (!sendQueueFullWarningLogged) {
+            logger.warn("发送队列已满 (容量: $sendChannelCapacity)，消息可能延迟发送")
+            sendQueueFullWarningLogged = true
+        }
+
+        sendChannel.send(payload)
+        queuedMessageCount.incrementAndGet()
+    }
+
+    private fun failPendingResponses(reason: String) {
+        val pending = pendingResponses.entries.toList()
+        pendingResponses.clear()
+        pending.forEach { (_, deferred) ->
+            deferred.completeExceptionally(CancellationException(reason))
+        }
+    }
+
+    private suspend fun sendActionAndAwaitResponse(
+        action: String,
+        params: Map<String, JsonElement> = emptyMap(),
+        timeoutMillis: Long = 5_000L
+    ): OneBotResponse? {
+        if (!isConnected.get()) {
+            logger.warn("WebSocket 未连接，无法请求 action=$action")
+            return null
+        }
+
+        val echo = "${action}_${System.currentTimeMillis()}"
+        val deferred = CompletableDeferred<OneBotResponse>()
+        pendingResponses[echo] = deferred
+
+        return try {
+            val request = OneBotAction(action = action, params = params, echo = echo)
+            enqueueOutgoingJson(json.encodeToString(request))
+            withTimeoutOrNull(timeoutMillis) { deferred.await() }
+        } finally {
+            pendingResponses.remove(echo)
         }
     }
 
@@ -491,6 +582,47 @@ class NapCatClient(
     /** 获取重连次数 */
     fun getReconnectAttempts(): Int = reconnectAttempts.get()
 
+    suspend fun isBotInGroup(groupId: Long): Boolean {
+        val response = sendActionAndAwaitResponse(
+            action = "get_group_list",
+            timeoutMillis = 5_000L
+        ) ?: return false
+
+        if (response.status != "ok" || response.retcode != 0) {
+            logger.warn("查询群列表失败: status=${response.status}, retcode=${response.retcode}, msg=${response.message}")
+            return false
+        }
+
+        val groups = response.data as? JsonArray ?: return false
+        return groups.any { item ->
+            val obj = item as? JsonObject ?: return@any false
+            val id = (obj["group_id"] as? JsonPrimitive)?.content?.toLongOrNull()
+            id == groupId
+        }
+    }
+
+    suspend fun canAtAllInGroup(groupId: Long): Boolean {
+        val selfId = getLoginInfo() ?: return false
+        val response = sendActionAndAwaitResponse(
+            action = "get_group_member_info",
+            params = mapOf(
+                "group_id" to JsonPrimitive(groupId),
+                "user_id" to JsonPrimitive(selfId),
+                "no_cache" to JsonPrimitive(true),
+            ),
+            timeoutMillis = 5_000L
+        ) ?: return false
+
+        if (response.status != "ok" || response.retcode != 0) {
+            logger.warn("查询群成员信息失败: status=${response.status}, retcode=${response.retcode}, msg=${response.message}")
+            return false
+        }
+
+        val data = response.data as? JsonObject ?: return false
+        val role = (data["role"] as? JsonPrimitive)?.content?.lowercase() ?: return false
+        return role == "owner" || role == "admin"
+    }
+
     /** 获取登录信息（Bot QQ 号） */
     private suspend fun getLoginInfo(): Long? {
         if (!isConnected.get()) {
@@ -499,20 +631,22 @@ class NapCatClient(
         }
 
         return try {
-            val request = OneBotAction(
+            val response = sendActionAndAwaitResponse(
                 action = "get_login_info",
-                params = emptyMap(),
-                echo = "login_info_${System.currentTimeMillis()}"
-            )
+                timeoutMillis = 5_000L
+            ) ?: run {
+                logger.warn("请求登录信息超时")
+                return null
+            }
 
-            val message = json.encodeToString(request)
-            sendChannel.send(message)
-            logger.debug("已请求登录信息")
+            if (response.status != "ok" || response.retcode != 0) {
+                logger.warn("请求登录信息失败: status=${response.status}, retcode=${response.retcode}, msg=${response.message}")
+                return null
+            }
 
-            // TODO: 实现响应等待机制
-            // 目前由于 OneBot API 的异步特性，我们暂时无法同步获取响应
-            // 可以考虑在 handleMessage 中解析 API 响应
-            null
+            val data = response.data as? JsonObject ?: return null
+            val selfIdPrimitive = data["user_id"] as? JsonPrimitive ?: return null
+            selfIdPrimitive.content.toLongOrNull()
         } catch (e: Exception) {
             logger.error("获取登录信息失败: ${e.message}", e)
             null

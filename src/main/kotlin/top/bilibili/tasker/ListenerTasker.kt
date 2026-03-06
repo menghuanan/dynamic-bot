@@ -40,7 +40,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         BiliBiliBot.logger.info("ListenerTasker 已启动")
 
         // 启动消息监听协程
-        BiliBiliBot.launch {
+        launch {
             listenMessages()
         }
 
@@ -209,7 +209,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
 
                 if (imagePath == null) {
                     logger.warn("链接解析失败，返回 null")
-                    BiliBiliBot.sendGroupMessage(groupId, listOf(
+                    top.bilibili.service.MessageGatewayProvider.require().sendGroupMessage(groupId, listOf(
                         MessageSegment.text("解析失败")
                     ))
                     continue
@@ -236,13 +236,13 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
                 logger.info("准备发送链接解析结果到群 $groupId")
 
                 // 发送解析结果
-                val success = BiliBiliBot.sendGroupMessage(groupId, replySegments)
+                val success = top.bilibili.service.MessageGatewayProvider.require().sendGroupMessage(groupId, replySegments)
 
                 if (success) {
                     logger.info("链接解析结果已发送到群 $groupId")
                 } else {
                     logger.warn("链接解析结果发送失败")
-                    BiliBiliBot.sendGroupMessage(groupId, listOf(
+                    top.bilibili.service.MessageGatewayProvider.require().sendGroupMessage(groupId, listOf(
                         MessageSegment.text("图片上传失败")
                     ))
                 }
@@ -254,7 +254,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
 
             } catch (e: Exception) {
                 logger.error("解析链接时出错: ${e.message}", e)
-                BiliBiliBot.sendGroupMessage(groupId, listOf(
+                top.bilibili.service.MessageGatewayProvider.require().sendGroupMessage(groupId, listOf(
                     MessageSegment.text("解析失败: ${e.message}")
                 ))
             }

@@ -1,4 +1,4 @@
-﻿package top.bilibili.data
+package top.bilibili.data
 
 import top.bilibili.BiliConfigManager
 import top.bilibili.api.articleShortLink

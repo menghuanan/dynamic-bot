@@ -1,4 +1,4 @@
-﻿package top.bilibili.utils.translate
+package top.bilibili.utils.translate
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

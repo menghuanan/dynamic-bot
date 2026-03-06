@@ -253,7 +253,12 @@ fun loadSVG(path: String): SVGDOM? {
         val resourceStream = top.bilibili.core.BiliBiliBot::class.java.classLoader.getResourceAsStream(resourcePath)
         if (resourceStream != null) {
             resourceStream.use {
-                SVGDOM(Data.makeFromBytes(it.readBytes()))
+                val data = Data.makeFromBytes(it.readBytes())
+                try {
+                    SVGDOM(data)
+                } finally {
+                    data.close()
+                }
             }
         } else {
             logger.warn("SVG 资源未找到: $path")

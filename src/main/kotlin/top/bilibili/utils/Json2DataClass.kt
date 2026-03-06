@@ -1,4 +1,4 @@
-package top.bilibili.utils
+﻿package top.bilibili.utils
 
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -30,7 +30,8 @@ suspend fun json2DataClass(url: String, baseClassName: String): String {
     val client = HttpClient(OkHttp)
     var retryCount = 0
     val maxRetries = 1
-    
+
+    try {
     while (true) {
         try {
             val resStr = client.get(url).body<String>()
@@ -38,13 +39,17 @@ suspend fun json2DataClass(url: String, baseClassName: String): String {
             return resJson.jsonObject.decodeJsonObject(baseClassName)
         } catch (e: Exception) {
             if (retryCount >= maxRetries) {
-                jsonLogger.error("请求最终失败，无法生成 Data Class: ${e.message}", e)
+                jsonLogger.error("璇锋眰鏈€缁堝け璐ワ紝鏃犳硶鐢熸垚 Data Class: ${e.message}", e)
                 throw e
             }
             retryCount++
-            jsonLogger.warn("请求失败，3秒后重试 (第 $retryCount 次): ${e.message}")
+            jsonLogger.warn("璇锋眰澶辫触锛?绉掑悗閲嶈瘯 (绗?$retryCount 娆?: ${e.message}")
             kotlinx.coroutines.delay(3000)
         }
+    }
+    } finally {
+        runCatching { client.close() }
+            .onFailure { jsonLogger.warn("Json2DataClass 关闭客户端失败: ${it.message}", it) }
     }
 }
 
@@ -89,7 +94,7 @@ private fun JsonObject.decodeJsonObject(objName: String): String {
                     }
                 }
             } catch (e: Exception) {
-                jsonLogger.warn("Json2DataClass 解析失败: ${it.key} - ${e.message}", e)
+                jsonLogger.warn("Json2DataClass 瑙ｆ瀽澶辫触: ${it.key} - ${e.message}", e)
             }
         }
         append(")")
@@ -116,3 +121,4 @@ private fun snakeToCamelLowerFirst(name: String): String {
     val k = snakeToCamel(name)
     return k.replaceRange(0, 1, k.first().lowercase())
 }
+

@@ -1,4 +1,4 @@
-﻿package top.bilibili.utils
+package top.bilibili.utils
 
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json

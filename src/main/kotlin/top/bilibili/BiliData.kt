@@ -26,6 +26,14 @@ object BiliData {
     // key: template name - 直播结束模板
     var liveCloseTemplate: MutableMap<String, MutableSet<String>> = mutableMapOf()
 
+    // key: subject -> uid -> template name（按 UID 绑定模板）
+    var dynamicPushTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf()
+    var livePushTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf()
+    var liveCloseTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf()
+
+    // key: subject -> uid -> at-all types
+    var atAll: MutableMap<String, MutableMap<Long, MutableSet<AtAllType>>> = mutableMapOf()
+
     // key: group name - 分组
     var group: MutableMap<String, Group> = mutableMapOf()
 
@@ -43,6 +51,10 @@ data class SubData(
     var last: Long = 0L,
     var lastLive: Long = 0L,
     val contacts: MutableSet<String> = mutableSetOf(),
+    // 订阅来源引用：
+    // - direct:<contact>  表示 /bili add 建立的直接订阅
+    // - groupRef:<name>   表示 /bili group subscribe 建立的分组订阅
+    val sourceRefs: MutableSet<String> = mutableSetOf(),
     val banList: MutableMap<String, String> = mutableMapOf(),
 )
 
@@ -112,6 +124,16 @@ enum class FilterMode(val value: String) {
 enum class DynamicFilterType(val value: String) {
     DYNAMIC("动态"),
     FORWARD("转发动态"),
+    VIDEO("视频"),
+    MUSIC("音乐"),
+    ARTICLE("专栏"),
+    LIVE("直播"),
+}
+
+@Serializable
+enum class AtAllType(val value: String) {
+    ALL("全部"),
+    DYNAMIC("全部动态"),
     VIDEO("视频"),
     MUSIC("音乐"),
     ARTICLE("专栏"),

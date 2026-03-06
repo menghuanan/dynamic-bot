@@ -1,6 +1,9 @@
 package top.bilibili.data
 
+import com.charleskorn.kaml.Yaml
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.Serializable
+import java.io.File
 
 @Serializable
 data class Quality(
@@ -207,6 +210,18 @@ object BiliImageQuality {
     )
 
     fun reload() {
-        // TODO: [配置加载] 从配置文件加载自定义设置
+        val configFile = File("config/ImageQuality.custom.yml")
+        if (!configFile.exists()) {
+            customOverload = false
+            return
+        }
+
+        runCatching {
+            val loaded = Yaml.default.decodeFromString<Quality>(configFile.readText())
+            customQuality = loaded
+            customOverload = true
+        }.onFailure {
+            customOverload = false
+        }
     }
 }

@@ -1,4 +1,4 @@
-﻿package top.bilibili.tasker
+package top.bilibili.tasker
 
 import kotlinx.coroutines.withTimeout
 import top.bilibili.core.BiliBiliBot

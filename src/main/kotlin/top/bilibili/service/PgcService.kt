@@ -1,4 +1,4 @@
-﻿package top.bilibili.service
+package top.bilibili.service
 
 import top.bilibili.Bangumi
 import top.bilibili.api.followPgc

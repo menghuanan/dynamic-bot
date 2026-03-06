@@ -1,4 +1,4 @@
-﻿package top.bilibili
+package top.bilibili
 
 import kotlinx.serialization.Serializable
 import top.bilibili.service.TriggerMode
@@ -175,7 +175,6 @@ data class LinkResolveConfig(
     val triggerMode: TriggerMode = TriggerMode.At,
     val returnLink: Boolean = false,
 )
-
 
 // (www\.bilibili\.com/video/((BV[0-9A-z]{10})|(av\d{1,10})))|^(BV[0-9A-z]{10})|^(av\d{1,10})
 // (www\.bilibili\.com/read/cv\d{1,10})|^(cv\d{1,10})

@@ -1,8 +1,11 @@
 package top.bilibili.data
 
+import com.charleskorn.kaml.Yaml
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.Serializable
 import org.jetbrains.skia.Color
 import top.bilibili.draw.makeRGB
+import java.io.File
 
 @Serializable
 data class Theme(
@@ -155,6 +158,18 @@ object BiliImageTheme {
     )
 
     fun reload() {
-        // TODO: [配置加载] 从配置文件加载自定义设置
+        val configFile = File("config/ImageTheme.custom.yml")
+        if (!configFile.exists()) {
+            customOverload = false
+            return
+        }
+
+        runCatching {
+            val loaded = Yaml.default.decodeFromString<Theme>(configFile.readText())
+            customTheme = loaded
+            customOverload = true
+        }.onFailure {
+            customOverload = false
+        }
     }
 }

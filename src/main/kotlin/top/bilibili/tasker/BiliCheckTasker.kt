@@ -1,4 +1,4 @@
-﻿package top.bilibili.tasker
+package top.bilibili.tasker
 
 import top.bilibili.BiliConfigManager
 import top.bilibili.client.BiliClient
@@ -23,8 +23,28 @@ abstract class BiliCheckTasker(
     private var checkCount = 0
 
     companion object {
+        @Volatile
+        private var sharedClient: BiliClient? = null
+
+        @Synchronized
+        private fun getSharedClient(): BiliClient {
+            return sharedClient ?: BiliClient().also { sharedClient = it }
+        }
+
         @JvmStatic
-        protected val client = BiliClient()
+        protected val client: BiliClient
+            get() = getSharedClient()
+
+        @JvmStatic
+        fun closeSharedClient() {
+            val toClose = synchronized(this) {
+                val current = sharedClient
+                sharedClient = null
+                current
+            }
+            runCatching { toClose?.close() }
+                .onFailure { logger.warn("关闭 BiliCheckTasker 共享 BiliClient 失败: ${it.message}", it) }
+        }
     }
 
     override fun init() {

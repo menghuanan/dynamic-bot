@@ -4,7 +4,6 @@ import org.jetbrains.skia.*
 import org.jetbrains.skia.paragraph.Alignment
 import org.jetbrains.skia.paragraph.ParagraphBuilder
 import org.jetbrains.skia.paragraph.ParagraphStyle
-import org.jetbrains.skia.svg.SVGDOM
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.data.LiveInfo
@@ -67,17 +66,27 @@ suspend fun LiveInfo.drawLive(session: DrawingSession): Image {
     canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
 
     if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
-        val svg = SVGDOM(Data.makeFromBytes(loadResourceBytes("icon/LIVE.svg")))
-        val badgeImage = svg.makeImage(session, quality.contentFontSize, quality.contentFontSize)
-        canvas.drawBadge(
-            "直播",
-            font,
-            theme.mainLeftBadge.fontColor,
-            theme.mainLeftBadge.bgColor,
-            rrect,
-            Position.TOP_LEFT,
-            badgeImage
-        )
+        val svg = loadSVG("icon/LIVE.svg")
+        try {
+            if (svg != null) {
+                val badgeImage = svg.makeImage(session, quality.contentFontSize, quality.contentFontSize)
+                canvas.drawBadge(
+                    "直播",
+                    font,
+                    theme.mainLeftBadge.fontColor,
+                    theme.mainLeftBadge.bgColor,
+                    rrect,
+                    Position.TOP_LEFT,
+                    badgeImage
+                )
+            } else {
+                logger.warn("未找到 LIVE 图标")
+            }
+        } finally {
+            if (svg != null) {
+                svg.close()
+            }
+        }
     }
     if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
         canvas.drawBadge(liveRoomId.toString(), font, Color.WHITE, Color.makeRGB(72, 199, 240), rrect, Position.TOP_RIGHT)

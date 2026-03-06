@@ -1,4 +1,4 @@
-﻿package top.bilibili.data
+package top.bilibili.data
 
 import kotlinx.serialization.Serializable
 

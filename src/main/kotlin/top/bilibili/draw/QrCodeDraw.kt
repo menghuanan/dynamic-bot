@@ -7,9 +7,7 @@ import com.google.zxing.client.j2se.MatrixToImageWriter
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import org.jetbrains.skia.*
-import org.jetbrains.skia.svg.SVGDOM
 import org.jetbrains.skiko.toBitmap
-import top.bilibili.core.BiliBiliBot
 import top.bilibili.skia.DrawingSession
 import top.bilibili.skia.SkiaManager
 
@@ -53,25 +51,27 @@ suspend fun loginQrCode(url: String): Image {
 
             // 尝试加载并绘制 Logo，如果失败则跳过
             try {
-                // ✅ 使用新的安全 API
-                val logoBytes = BiliBiliBot.getResourceBytes("/icon/BILIBILI_LOGO.svg")
-                if (logoBytes != null) {
-                    val svg = SVGDOM(Data.makeFromBytes(logoBytes))
-                    // 使用 createImage 创建临时 Image，手动关闭
-                    val surface = Surface.makeRasterN32Premul(40, 40)
+                val svg = loadSVG("icon/BILIBILI_LOGO.svg")
+                if (svg != null) {
                     try {
-                        svg.setContainerSize(40f, 40f)
-                        svg.render(surface.canvas)
-                        val logoImg = surface.makeImageSnapshot()
+                        // 使用 createImage 创建临时 Image，手动关闭
+                        val surface = Surface.makeRasterN32Premul(40, 40)
                         try {
-                            drawImage(logoImg, 105f, 105f, Paint().apply {
-                                colorFilter = ColorFilter.makeBlend(Color.WHITE, BlendMode.SRC_ATOP)
-                            })
+                            svg.setContainerSize(40f, 40f)
+                            svg.render(surface.canvas)
+                            val logoImg = surface.makeImageSnapshot()
+                            try {
+                                drawImage(logoImg, 105f, 105f, Paint().apply {
+                                    colorFilter = ColorFilter.makeBlend(Color.WHITE, BlendMode.SRC_ATOP)
+                                })
+                            } finally {
+                                logoImg.close()
+                            }
                         } finally {
-                            logoImg.close()
+                            surface.close()
                         }
                     } finally {
-                        surface.close()
+                        svg.close()
                     }
                 } else {
                     // Logo 不存在，绘制文字 "B"

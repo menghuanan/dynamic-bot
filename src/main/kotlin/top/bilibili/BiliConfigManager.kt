@@ -12,6 +12,7 @@ import java.nio.file.Paths
  */
 object BiliConfigManager {
     private val logger = LoggerFactory.getLogger(BiliConfigManager::class.java)
+    private const val CURRENT_DATA_VERSION = 1
 
     lateinit var config: BiliConfig
         private set
@@ -94,6 +95,7 @@ object BiliConfigManager {
                 // 检查文件是否为空或只有 {}
                 if (content.isBlank() || content.trim() == "{}" || content.trim() == "{}") {
                     logger.warn("数据文件为空，使用默认数据")
+                    BiliData.dataVersion = CURRENT_DATA_VERSION
                     return BiliData
                 }
 
@@ -102,11 +104,17 @@ object BiliConfigManager {
 
                 // 应用到 BiliData 全局单例
                 BiliDataWrapper.applyTo(loadedWrapper, BiliData)
+                val migrated = migrateDataIfNeeded(BiliData)
+                if (migrated) {
+                    logger.info("检测到旧版数据结构，已完成迁移并准备写回")
+                    saveData(BiliData)
+                }
 
                 logger.info("数据加载完成：${BiliData.dynamic.size} 个订阅，${BiliData.group.size} 个分组")
                 BiliData
             } else {
                 logger.info("数据文件不存在，创建默认数据")
+                BiliData.dataVersion = CURRENT_DATA_VERSION
                 saveData(BiliData)
                 BiliData
             }
@@ -114,6 +122,40 @@ object BiliConfigManager {
             logger.error("加载数据文件失败，使用默认数据", e)
             BiliData
         }
+    }
+
+    private fun migrateDataIfNeeded(data: BiliData): Boolean {
+        var changed = false
+
+        if (data.dataVersion < CURRENT_DATA_VERSION) {
+            logger.info("开始执行数据版本升级: ${data.dataVersion} -> $CURRENT_DATA_VERSION")
+
+            // v1: 为历史数据补充 sourceRefs，统一订阅来源模型
+            data.dynamic.values.forEach { sub ->
+                if (sub.sourceRefs.isEmpty() && sub.contacts.isNotEmpty()) {
+                    sub.contacts.forEach { contact ->
+                        sub.sourceRefs.add("direct:$contact")
+                    }
+                    changed = true
+                }
+            }
+
+            data.dataVersion = CURRENT_DATA_VERSION
+            changed = true
+            logger.info("数据版本升级完成: v$CURRENT_DATA_VERSION")
+        }
+
+        // 自愈逻辑：防止手工编辑或旧文件导致 sourceRefs 丢失
+        data.dynamic.values.forEach { sub ->
+            if (sub.sourceRefs.isEmpty() && sub.contacts.isNotEmpty()) {
+                sub.contacts.forEach { contact ->
+                    sub.sourceRefs.add("direct:$contact")
+                }
+                changed = true
+            }
+        }
+
+        return changed
     }
 
     /**
@@ -133,8 +175,8 @@ object BiliConfigManager {
      * 保存数据到文件
      * 默认保存 BiliData 全局单例（而不是本地 data 副本）
      */
-    fun saveData(dataToSave: BiliData = BiliData) {
-        try {
+    fun saveData(dataToSave: BiliData = BiliData): Boolean {
+        return try {
             logger.info("准备保存数据：")
             logger.info("- dynamic 数量: ${BiliData.dynamic.size}")
             logger.info("- group 数量: ${BiliData.group.size}")
@@ -154,11 +196,14 @@ object BiliConfigManager {
             val savedContent = dataFile.readText()
             if (savedContent.trim() == "{}" || savedContent.trim() == "{}") {
                 logger.error("警告：保存的文件为空！")
+                false
             } else {
                 logger.info("文件验证：保存成功，大小 ${savedContent.length} 字节")
+                true
             }
         } catch (e: Exception) {
             logger.error("保存数据文件失败", e)
+            false
         }
     }
 
