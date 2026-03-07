@@ -1,4 +1,4 @@
-﻿package top.bilibili.tasker
+package top.bilibili.tasker
 
 import kotlin.test.AfterTest
 import kotlin.test.Test

@@ -1,4 +1,4 @@
-﻿package top.bilibili.napcat
+package top.bilibili.napcat
 
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.Json

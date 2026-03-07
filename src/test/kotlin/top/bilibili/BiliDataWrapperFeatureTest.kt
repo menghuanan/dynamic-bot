@@ -1,4 +1,4 @@
-﻿package top.bilibili
+package top.bilibili
 
 import kotlin.test.AfterTest
 import kotlin.test.Test

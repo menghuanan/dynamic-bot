@@ -1,4 +1,4 @@
-﻿package top.bilibili.core.resource
+package top.bilibili.core.resource
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files

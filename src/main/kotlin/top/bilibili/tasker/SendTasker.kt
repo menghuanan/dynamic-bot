@@ -1,4 +1,4 @@
-﻿package top.bilibili.tasker
+package top.bilibili.tasker
 
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.CancellationException
@@ -23,8 +23,8 @@ import top.bilibili.service.TemplateRenderService
 import top.bilibili.utils.parseContactId
 
 /**
- * 娑堟伅鍙戦€佷换鍔?
- * 浠?messageChannel 鎺ユ敹娑堟伅锛岃浆鎹负 OneBot v11 鏍煎紡骞堕€氳繃 NapCat 鍙戦€?
+ * 消息发送任务
+ * 从 messageChannel 接收消息，转换为 OneBot v11 格式并通过 NapCat 发送
  */
 object SendTasker : BiliTasker("SendTasker") {
     override var interval: Int = 1
@@ -37,19 +37,19 @@ object SendTasker : BiliTasker("SendTasker") {
     override fun init() {
         BiliBiliBot.logger.info("SendTasker 已启动")
 
-        // 鍚姩娑堟伅闃熷垪澶勭悊鍗忕▼
+        // 启动消息队列处理协程
         launch {
             processMessageQueue()
         }
 
-        // 鍚姩娑堟伅鎺ユ敹澶勭悊鍗忕▼
+        // 启动消息接收处理协程
         launch {
             processMessages()
         }
     }
 
     override suspend fun main() {
-        // 鉁?鏄庣‘琛ㄧず绛夊緟鍙栨秷
+        // 明确表示等待取消
         awaitCancellation()
     }
 
@@ -59,7 +59,7 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     /**
-     * 澶勭悊娑堟伅鍙戦€侀槦鍒?
+     * 处理消息发送队列
      */
     private suspend fun processMessageQueue() {
         for ((contact, segments) in messageQueue) {
@@ -93,7 +93,7 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     /**
-     * 澶勭悊浠?messageChannel 鎺ユ敹鐨勬秷鎭?
+     * 处理从 messageChannel 接收的消息
      */
     private suspend fun processMessages() {
         for (message in BiliBiliBot.messageChannel) {
@@ -131,7 +131,7 @@ object SendTasker : BiliTasker("SendTasker") {
 
         BiliBiliBot.logger.info("准备推送到 ${contacts.size} 个联系人")
 
-        // 濡傛灉娑堟伅宸叉寚瀹氳仈绯讳汉锛屽彧鍙戦€佺粰璇ヨ仈绯讳汉
+        // 如果消息已指定联系人，只发送给该联系人
         val specificContact = message.contact
         if (specificContact != null) {
             BiliBiliBot.logger.info("消息指定了联系人: $specificContact")
@@ -146,13 +146,13 @@ object SendTasker : BiliTasker("SendTasker") {
             return
         }
 
-        // 鍙戦€佺粰鎵€鏈夎闃呰鐢ㄦ埛鐨勮仈绯讳汉
+        // 发送给所有订阅该用户的联系人
         for (contactStr in contacts) {
             try {
                 BiliBiliBot.logger.info("处理联系人: $contactStr")
                 val contact = parseContactId(contactStr) ?: continue
 
-                // 妫€鏌ユ槸鍚﹁绂佺敤
+                // 检查是否被禁用
                 if (banList.contains(contactStr)) {
                     BiliBiliBot.logger.debug("联系人 $contactStr 已禁用推送")
                     continue
@@ -163,17 +163,17 @@ object SendTasker : BiliTasker("SendTasker") {
                     continue
                 }
 
-                // 鏋勫缓娑堟伅娈?
+                // 构建消息段
                 val segments = buildMessageSegments(message, contactStr)
                 BiliBiliBot.logger.info("为联系人 $contactStr 构建了 ${segments.size} 个消息段")
 
                 val finalSegments = applyAtAllIfNeeded(contact, contactStr, message, segments)
 
-                // 鍔犲叆鍙戦€侀槦鍒?
+                // 加入发送队列
                 messageQueue.send(contact to finalSegments)
                 BiliBiliBot.logger.info("消息已加入发送队列: ${contact.type}:${contact.id}")
 
-                // 娑堟伅闂撮殧
+                // 消息间隔
                 delay(BiliConfigManager.config.pushConfig.messageInterval)
 
             } catch (e: Exception) {
@@ -319,7 +319,7 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     /**
-     * 鏋勫缓 OneBot v11 娑堟伅娈?
+     * 构建 OneBot v11 消息段
      */
     private suspend fun buildMessageSegments(
         message: BiliMessage,

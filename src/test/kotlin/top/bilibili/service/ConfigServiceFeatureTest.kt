@@ -1,4 +1,4 @@
-﻿package top.bilibili.service
+package top.bilibili.service
 
 import top.bilibili.BiliData
 import top.bilibili.SubData

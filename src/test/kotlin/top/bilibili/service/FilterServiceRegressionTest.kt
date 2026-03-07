@@ -1,4 +1,4 @@
-﻿package top.bilibili.service
+package top.bilibili.service
 
 import kotlinx.coroutines.runBlocking
 import top.bilibili.BiliData

@@ -6,6 +6,7 @@ import java.net.HttpURLConnection
 import java.net.MalformedURLException
 import java.net.URL
 import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.security.KeyManagementException
 import java.security.NoSuchAlgorithmException
 import java.security.cert.CertificateException
@@ -49,7 +50,7 @@ internal object HttpGet {
 
                 // 读取服务器的数据
                 val `is` = conn.inputStream
-                val br = BufferedReader(InputStreamReader(`is`))
+                val br = BufferedReader(InputStreamReader(`is`, StandardCharsets.UTF_8))
                 val builder = StringBuilder()
                 var line: String? = null
                 while (br.readLine().also { line = it } != null) {

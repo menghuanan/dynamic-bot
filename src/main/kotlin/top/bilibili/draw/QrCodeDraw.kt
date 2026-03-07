@@ -1,4 +1,4 @@
-﻿package top.bilibili.draw
+package top.bilibili.draw
 
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType

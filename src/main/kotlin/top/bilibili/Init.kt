@@ -1,4 +1,4 @@
-﻿package top.bilibili
+package top.bilibili
 
 import top.bilibili.BiliConfigManager
 import top.bilibili.core.BiliBiliBot

@@ -5,8 +5,10 @@ import org.slf4j.LoggerFactory
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.utils.ImageCache
 import java.io.File
-import java.io.FileWriter
+import java.io.FileOutputStream
+import java.io.OutputStreamWriter
 import java.io.PrintWriter
+import java.nio.charset.StandardCharsets
 import java.lang.management.ManagementFactory
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -407,7 +409,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
 
         try {
             // 使用 PrintWriter 写入，确保资源正确关闭
-            PrintWriter(FileWriter(logFile, true)).use { writer ->
+            PrintWriter(OutputStreamWriter(FileOutputStream(logFile, true), StandardCharsets.UTF_8)).use { writer ->
                 val timestamp = LocalDateTime.now().format(timeFormatter)
 
                 writer.println("=" .repeat(60))
@@ -488,7 +490,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             try {
                 logFile.createNewFile()
                 // 写入文件头
-                PrintWriter(FileWriter(logFile)).use { writer ->
+                PrintWriter(OutputStreamWriter(FileOutputStream(logFile), StandardCharsets.UTF_8)).use { writer ->
                     writer.println("=" .repeat(60))
                     writer.println("BiliBili 动态推送 Bot - 守护进程监控日志")
                     writer.println("日期: $today")

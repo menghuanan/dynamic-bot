@@ -1,4 +1,4 @@
-﻿package top.bilibili.draw
+package top.bilibili.draw
 
 import org.jetbrains.skia.*
 import org.jetbrains.skia.paragraph.Alignment

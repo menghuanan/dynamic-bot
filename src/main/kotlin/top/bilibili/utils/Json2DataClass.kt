@@ -1,4 +1,4 @@
-﻿package top.bilibili.utils
+package top.bilibili.utils
 
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -39,11 +39,11 @@ suspend fun json2DataClass(url: String, baseClassName: String): String {
             return resJson.jsonObject.decodeJsonObject(baseClassName)
         } catch (e: Exception) {
             if (retryCount >= maxRetries) {
-                jsonLogger.error("璇锋眰鏈€缁堝け璐ワ紝鏃犳硶鐢熸垚 Data Class: ${e.message}", e)
+                jsonLogger.error("请求最终失败，无法生成 Data Class: ${e.message}", e)
                 throw e
             }
             retryCount++
-            jsonLogger.warn("璇锋眰澶辫触锛?绉掑悗閲嶈瘯 (绗?$retryCount 娆?: ${e.message}")
+            jsonLogger.warn("请求失败，3秒后重试 (第$retryCount 次): ${e.message}")
             kotlinx.coroutines.delay(3000)
         }
     }
@@ -94,7 +94,7 @@ private fun JsonObject.decodeJsonObject(objName: String): String {
                     }
                 }
             } catch (e: Exception) {
-                jsonLogger.warn("Json2DataClass 瑙ｆ瀽澶辫触: ${it.key} - ${e.message}", e)
+                jsonLogger.warn("Json2DataClass 解析失败: ${it.key} - ${e.message}", e)
             }
         }
         append(")")

@@ -1,3 +1,9 @@
+[*.{bat,gradle,java,json,kt,kts,md,properties,sh,txt,xml,yaml,yml}]
+charset = utf-8
+
+[{.editorconfig,.gitattributes,.gitignore,Dockerfile,gradlew,LICENSE}]
+charset = utf-8
+
 [*.{kt, kts}]
 max_line_length = 120
 tab_width = 4
