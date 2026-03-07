@@ -102,6 +102,50 @@ tasks.shadowJar {
     exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
 }
 
+val generatedDistributionScriptsDir = layout.buildDirectory.dir("generated/distribution-scripts")
+
+val createDistributionStartScripts = tasks.register("createDistributionStartScripts") {
+    val outputDir = generatedDistributionScriptsDir.get().asFile
+    outputs.dir(outputDir)
+
+    doLast {
+        outputDir.mkdirs()
+
+        outputDir.resolve("start.bat").writeText(
+            """
+            @echo off
+            chcp 65001 >nul
+            cd /d "%~dp0.."
+
+            set JAVA_OPTS=-Xms512m -Xmx2g
+            set JAVA_OPTS=%JAVA_OPTS% -Dfile.encoding=UTF-8
+            set JAVA_OPTS=%JAVA_OPTS% -Duser.timezone=Asia/Shanghai
+            set JAVA_OPTS=%JAVA_OPTS% -Dskiko.renderApi=SOFTWARE
+            set JAVA_OPTS=%JAVA_OPTS% -Dskiko.hardwareAcceleration=false
+
+            java %JAVA_OPTS% -jar lib\dynamic-bot-${version}.jar
+            pause
+            """.trimIndent()
+        )
+
+        outputDir.resolve("start.sh").writeText(
+            """
+            #!/bin/bash
+            cd "${'$'}(dirname "${'$'}0")/.."
+
+            JAVA_OPTS="-Xms512m -Xmx2g"
+            JAVA_OPTS="${'$'}JAVA_OPTS -Dfile.encoding=UTF-8"
+            JAVA_OPTS="${'$'}JAVA_OPTS -Duser.timezone=Asia/Shanghai"
+            JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.renderApi=SOFTWARE"
+            JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.hardwareAcceleration=false"
+
+            java ${'$'}JAVA_OPTS -jar lib/dynamic-bot-${version}.jar
+            """.trimIndent()
+        )
+
+        outputDir.resolve("start.sh").setExecutable(true)
+    }
+}
 // Distribution 配置
 distributions {
     main {
@@ -116,7 +160,7 @@ distributions {
                 into("resources")
                 exclude("logback")
             }
-            from("scripts") {
+            from(createDistributionStartScripts) {
                 into("bin")
                 fileMode = 0b111101101 // 755
             }
@@ -133,47 +177,6 @@ tasks.withType<Zip> {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
-// 创建启动脚本任务
-tasks.register("createStartScripts") {
-    doLast {
-        val scriptsDir = file("scripts")
-        scriptsDir.mkdirs()
-
-        // Windows 启动脚本
-        file("scripts/start.bat").writeText("""
-            @echo off
-            chcp 65001 >nul
-            cd /d "%~dp0.."
-
-            set JAVA_OPTS=-Xms512m -Xmx2g
-            set JAVA_OPTS=%JAVA_OPTS% -Dfile.encoding=UTF-8
-            set JAVA_OPTS=%JAVA_OPTS% -Duser.timezone=Asia/Shanghai
-            set JAVA_OPTS=%JAVA_OPTS% -Dskiko.renderApi=SOFTWARE
-            set JAVA_OPTS=%JAVA_OPTS% -Dskiko.hardwareAcceleration=false
-
-            java %JAVA_OPTS% -jar lib\dynamic-bot-${version}.jar
-            pause
-        """.trimIndent())
-
-        // Linux 启动脚本
-        file("scripts/start.sh").writeText("""
-            #!/bin/bash
-            cd "${'$'}(dirname "${'$'}0")/.."
-
-            JAVA_OPTS="-Xms512m -Xmx2g"
-            JAVA_OPTS="${'$'}JAVA_OPTS -Dfile.encoding=UTF-8"
-            JAVA_OPTS="${'$'}JAVA_OPTS -Duser.timezone=Asia/Shanghai"
-            JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.renderApi=SOFTWARE"
-            JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.hardwareAcceleration=false"
-
-            java ${'$'}JAVA_OPTS -jar lib/dynamic-bot-${version}.jar
-        """.trimIndent())
-
-        // 设置 Linux 脚本可执行权限
-        file("scripts/start.sh").setExecutable(true)
-    }
-}
-
 // 修复 startScripts 和 shadowJar 的依赖关系
 tasks.named("startScripts") {
     dependsOn("shadowJar")
@@ -185,9 +188,9 @@ tasks.named("startShadowScripts") {
 }
 
 tasks.named("distTar") {
-    dependsOn("createStartScripts")
+    dependsOn(createDistributionStartScripts)
 }
 
 tasks.named("distZip") {
-    dependsOn("createStartScripts")
+    dependsOn(createDistributionStartScripts)
 }

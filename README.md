@@ -1,4 +1,4 @@
-# BiliBili 动态推送 Bot v1.6
+# BiliBili 动态推送 Bot v1.6.2
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
@@ -41,42 +41,42 @@
 
 ```
 dynamic-bot/
-├── src/main/kotlin/top/bilibili/      # 源代码目录
-│   └── api/               # B站 API 接口
-│   ├── client/            # HTTP 客户端
-│   ├── config/            # 配置管理
-│   ├── core/              # 核心模块
-│   ├── data/              # 数据模型
-│   ├── draw/              # 图片渲染
-│   ├── napcat/            # NapCat 客户端
-│   ├── service/           # 业务服务
-│   ├── skia/              # Skia 资源管理
-│   ├── tasker/            # 定时任务
-│   ├── utils/             # 工具类
-│   ├── BiliConfig.kt      # 配置文件
-│   ├── BiliData.kt        # 数据文件
-│   ├── SkikoInitializer.kt # Skiko 初始化
-│   └── Main.kt            # 程序入口
+├── src/main/kotlin/top/bilibili/     # Kotlin 源代码
+│   ├── api/                          # B站 API 接口
+│   ├── client/                       # HTTP 客户端
+│   ├── config/                       # NapCat / Bot 配置
+│   ├── connector/                    # 连接器扩展预留目录
+│   ├── core/                         # 核心启动与资源生命周期
+│   ├── data/                         # 数据模型
+│   ├── draw/                         # 图片渲染
+│   ├── napcat/                       # NapCat / OneBot 客户端
+│   ├── service/                      # 业务服务与命令处理
+│   ├── skia/                         # Skia 资源管理
+│   ├── tasker/                       # 定时任务与守护任务
+│   ├── utils/                        # 工具类
+│   ├── BiliConfig.kt                 # 主配置模型
+│   ├── BiliData.kt                   # 运行数据模型
+│   ├── SkikoInitializer.kt           # Skiko 初始化
+│   └── Main.kt                       # 程序入口
 ├── src/main/resources/               # 资源文件
-│   └── font/              # 字体文件
-│   ├── icon/              # 图标文件
-│   ├── image/             # 图片文件
-│   └── logback.xml        # 日志文件
-├── gradle/                # Gradle wrapper
-├── build.gradle.kts       # Gradle 构建脚本
-├── settings.gradle.kts    # Gradle 设置
-├── gradle.properties      # Gradle 属性
-├── gradlew                # Gradle wrapper 脚本（Linux/Mac）
-├── gradlew.bat            # Gradle wrapper 脚本（Windows）
-├── .env.example           # 环境变量示例
-├── .gitignore             # Git 忽略文件
-├── Dockerfile             # Docker 镜像构建文件
-├── docker-compose.yml     # Docker Compose 配置
-├── docker-entrypoint.sh   # Docker 启动脚本
-├── docker-deploy.ps1      # Docker 部署脚本（Windows）
-├── docker-push.ps1        # Docker Hub 推送脚本（Windows）
-├── README.md              # 项目说明
-└── LICENSE                # 许可证
+│   ├── font/                         # 字体文件
+│   ├── icon/                         # 图标文件
+│   ├── image/                        # 帮助图、内置图片
+│   └── logback.xml                   # 日志配置
+├── docs/                             # 补充文档
+├── gradle/                           # Gradle Wrapper
+├── build.gradle.kts                  # Gradle 构建脚本
+├── settings.gradle.kts               # Gradle 设置
+├── gradle.properties                 # Gradle 属性
+├── gradlew                           # Gradle 脚本（Linux/Mac）
+├── gradlew.bat                       # Gradle 脚本（Windows）
+├── Dockerfile                        # Docker 镜像构建文件
+├── docker-compose.yml                # Docker Compose 配置
+├── docker-entrypoint.sh              # Docker 启动脚本
+├── .env.example                      # 环境变量示例
+├── .gitignore                        # Git 忽略文件
+├── README.md                         # 项目说明
+└── LICENSE                           # 许可证
 
 ```
 
@@ -99,22 +99,22 @@ dynamic-bot/
 > **平台支持说明：** 当前版本仅支持 Windows x64 与 Linux x64，暂未适配 macOS。
 ```bash
 # Windows
-.\gradlew.bat build -x test
+.\gradlew.bat shadowJar
 ```
 ```bash
 # Linux
 chmod +x gradlew
-./gradlew build -x test
+./gradlew shadowJar
 ```
 编译完成后,可执行文件位于：
-- `build/libs/dynamic-bot-1.6.jar`
+- `build/libs/dynamic-bot-1.6.2.jar`
 
 ### 2. 运行 Bot
 
 #### 方式一：直接运行 JAR
 
 ```bash
-java -jar build/libs/dynamic-bot-1.6.jar
+java -jar build/libs/dynamic-bot-1.6.2.jar
 ```
 
 #### 方式二：使用 Docker Hub 镜像（推荐）
@@ -147,10 +147,12 @@ config/
 
 data/
 ├── font/                # 字体文件目录
-├── cache/               # 缓存文件目录
-└── image_cache/         # 图片缓存目录
+├── cache/               # 绘图/用户/表情等缓存目录
+├── image_cache/         # 图片缓存目录
+├── exception/           # JSON 解析失败样本目录
+└── cookies.json         # 登录后保存的 Cookie（按需生成）
 
-temp/                    # 临时文件目录（二维码、缓存等）
+temp/                    # 临时文件目录（二维码、帮助图、缓存等）
 
 logs/
 ├── bilibili-bot.log     # 主日志文件
@@ -211,49 +213,94 @@ admin: "管理员QQ号"
 - 支持自定义推送模板
 - 支持直播开播/关播通知
 
-### 3. 管理命令（均需要管理员权限）
+### 3. 管理命令（按权限划分）
+
+`BiliConfig.yml` 中的 `admin` 为超级管理员。群普通管理员需要由超级管理员使用 `/bili admin add <QQ号>` 添加，仅能在对应群使用部分 `/bili` 命令。
 
 #### 基础命令
-- `/check` - 手动触发检查（测试用）
-- `/login` - B站扫码登录
-- `/bili help` - 显示帮助 
+- `/login` 或 `登录` - B站扫码登录（仅超管，群聊/私聊均可）
+- `/check` - 手动触发动态检查（仅超管，仅群聊）
+- `/bili help` - 显示帮助（超管、群普通管理员）
+
+#### 快捷命令（仅超级管理员）
+- `/add <UID>` - 快速订阅当前群聊或当前私聊
+- `/del <UID>` - 快速取消当前群聊或当前私聊中的订阅
+- `/list` - 查看当前群聊或当前私聊的订阅列表
+- `/black <QQ号>` - 快速将用户加入链接解析黑名单（仅群聊）
+- `/unblock <QQ号>` - 快速将用户移出链接解析黑名单（仅群聊）
+- `/black list` - 查看链接解析黑名单（仅群聊）
 
 #### 高级命令（/bili）
 [查看 `/bili` 帮助大图](docs/help.png)
 
   <img src="docs/help.png" width="420" alt="高级命令预览">
 
+以下文字清单以当前代码为准，帮助图片可能未包含最新命令。
+
 <details>
-<summary>查看 /bili 命令帮助</summary>
+<summary>查看完整 /bili 命令清单</summary>
 
-    /bili 命令帮助:
+    顶级命令别名:
+    /bili remove = /bili rm
+    /bili list = /bili ls
+    /bili template = /bili tpl
+    /bili atall = /bili aa
+    /bili config = /bili cfg
+    /bili blacklist = /bili bl
 
-    订阅管理:
-    /bili add <UID|ss|md|ep> <群号> - 添加订阅到指定群
-    /bili remove <UID|ss|md|ep> <群号> - 从指定群移除订阅
-    /bili list - 查看当前群的订阅
-    /bili list <UID|ss|md|ep> - 查看订阅推送到哪些群
+    订阅管理（超管 / 群普通管理员）:
+    /bili add <UID|ss|md|ep> [群号] - 添加订阅；[群号] 仅超管可用
+    /bili remove|rm <UID|ss|md|ep> [群号] - 移除订阅；[群号] 仅超管可用
+    /bili list|ls - 查看当前会话的订阅
+    /bili list|ls <UID|ss|md|ep> - 查看某个订阅推送到哪些群（仅超管）
 
-    分组管理:
-    /bili group create <分组名> - 创建分组
-    /bili group delete <分组名> - 删除分组
-    /bili group add <分组名> <群号> - 将群加入分组
-    /bili group remove <分组名> <群号> - 从分组移除群
-    /bili group list [分组名] - 查看分组信息
-    /bili group subscribe <分组名> <UID|ss|md|ep> - 订阅到分组
-    /bili group unsubscribe <分组名> <UID|ss|md|ep> - 从分组移除订阅
+    分组管理（仅超管）:
     /bili groups - 查看所有分组
+    /bili group create <分组名> - 创建分组
+    /bili group delete|del <分组名> - 删除分组
+    /bili group add <分组名> <群号> - 将群加入分组
+    /bili group remove|rm <分组名> <群号> - 从分组移除群
+    /bili group list|ls [分组名] - 查看全部分组或单个分组详情
+    /bili group subscribe|sub <分组名> <UID|ss|md|ep> - 为分组批量添加订阅
+    /bili group unsubscribe|unsub <分组名> <UID|ss|md|ep> - 为分组批量取消订阅
 
-    过滤器管理（支持黑名单与白名单）:
-    /bili filter add <UID> <type|regex> <模式> <内容> - 添加过滤器
-      type模式: /bili filter add <UID> type <black|white> <动态|转发动态|视频|音乐|专栏|直播>
-      regex模式: /bili filter add <UID> regex <black|white> <正则表达式>
-    /bili filter list <UID> - 查看过滤器
-    /bili filter del <UID> <索引> - 删除过滤器(如 t0, r1)
+    过滤器管理（超管 / 群普通管理员）:
+    /bili filter add <UID> type <black|white> <动态|转发动态|视频|音乐|专栏|直播>
+    /bili filter add <UID> regex <black|white> <正则表达式>
+    /bili filter list|ls <UID> - 查看过滤器
+    /bili filter del|delete|rm <UID> <索引> - 删除过滤器（如 t0, r1）
+    模式还支持: blacklist / whitelist / 黑名单 / 白名单
+
+    模板管理（超管 / 群普通管理员）:
+    /bili template|tpl list|ls <d|l|le> - 查看模板列表
+    /bili template|tpl preview|pv <d|l|le> <模板名> - 发送模板预览
+    /bili template|tpl set <d|l|le> <模板名> [uid] - 绑定当前会话模板，可选限制到单个 UID
+    /bili template|tpl explain|exp <d|l|le> - 查看模板占位符说明
+    类型说明: d=动态, l=开播, le=下播
+
+    At全体管理（超管 / 群普通管理员，功能仅群聊生效）:
+    /bili atall|aa add <类型> <uid> - 添加 @全体 策略
+    /bili atall|aa del|remove|rm <类型> <uid> - 删除 @全体 策略
+    /bili atall|aa list|ls [uid] - 查看 @全体 策略
+    类型支持: 全部/all/a, 全部动态/dynamic/d, 直播/live/l, 视频/video/v, 音乐/music/m, 专栏/article
+
+    配置与主题色（超管 / 群普通管理员，主题色仅超管）:
+    /bili config|cfg [uid] - 查看当前会话配置概览，可选查看指定 UID
+    /bili color <uid|用户名> <HEX颜色> - 设置当前会话内该订阅的主题色（仅超管）
+    /bili config|cfg color <uid|用户名> <HEX颜色> - 通过 config 入口设置主题色（仅超管）
+
+    群普通管理员管理（仅超管）:
+    /bili admin add <QQ号> - 添加本群普通管理员（仅群聊）
+    /bili admin remove|rm <QQ号> - 移除本群普通管理员（仅群聊）
+    /bili admin list|ls - 查看本群普通管理员（仅群聊）
+    /bili admin all - 查看全部群的普通管理员
+
+    链接解析黑名单（仅超管）:
+    /bili blacklist|bl add <QQ号> - 添加到链接解析黑名单
+    /bili blacklist|bl remove|rm|del <QQ号> - 从黑名单移除
+    /bili blacklist|bl list|ls - 查看黑名单列表
 
     其他:
-    /bili color <uid|用户名> <HEX颜色> - 设置订阅主题色（仅超管）
-    /bili config color <uid|用户名> <HEX颜色> - 通过 config 入口设置主题色（仅超管）
     /bili help - 显示此帮助
 </details>
 
@@ -267,16 +314,17 @@ admin: "管理员QQ号"
 napcat:
   host: "127.0.0.1"          # NapCat WebSocket 主机地址
   port: 3001                 # NapCat WebSocket 端口
-  token: ""                  # NapCat WebSocket 访问令牌 （如有）
+  token: ""                  # NapCat WebSocket 访问令牌（如有）
   use_tls: false             # 是否使用 TLS 加密
   send_mode: "file"          # 图片发送模式：file 或 base64
   heartbeat_interval: 30000  # 心跳间隔（毫秒）
   reconnect_interval: 5000   # 重连间隔（毫秒）
   message_format: "array"    # 消息格式：array
-  max_reconnect_attempts: -1 # 最大重连尝试次数（-1表示无限次）
+  max_reconnect_attempts: -1 # 最大重连尝试次数（-1 表示无限次）
   connect_timeout: 10000     # 连接超时（毫秒）
-targets: []                  # 尚未启用
-admins: []                   # 普通管理员组
+targets: []                  # 预留字段，当前版本未启用
+admins: []                   # 群普通管理员配置
+first_run_flag: 0            # 首次运行标记，程序自动维护
 ```
 
 ### BiliData.yml 示例
@@ -495,17 +543,27 @@ docker logs -f dynamic-bot
    - 修改 `config/bot.yml` 中的 host 为 `host.docker.internal`（如果 NapCat 在宿主机）
    - 或保持 `127.0.0.1`（如果 NapCat 也在容器内）
 
-2. **构建镜像**
+2. **先构建可运行 JAR**
+   当前 `Dockerfile` 会直接复制 `build/libs/dynamic-bot-*.jar`，因此需要先执行：
+   ```bash
+   # Windows
+   .\gradlew.bat shadowJar
+
+   # Linux
+   ./gradlew shadowJar
+   ```
+
+3. **构建镜像**
    ```bash
    docker compose build
    ```
 
-3. **启动容器**
+4. **启动容器**
    ```bash
    docker compose up -d
    ```
 
-4. **查看日志**
+5. **查看日志**
    ```bash
    docker compose logs -f
    ```
@@ -514,7 +572,7 @@ docker logs -f dynamic-bot
 
 - **基础镜像**: eclipse-temurin:17-jdk
 - **内存分配器**: jemalloc（5秒自动归还内存）
-- **JVM 参数**: `-Xms64m -Xmx192m -XX:+UseG1GC`
+- **JVM 启动参数**: 默认 `-Xms64m -Xmx160m`，其余 GC/Netty/Skiko 优化参数由 `JAVA_TOOL_OPTIONS` 注入
 - **网络模式**: bridge（默认）
 - **健康检查**: 每60秒检查一次进程状态
 - **日志限制**: 100MB × 5 文件（自动轮转）
@@ -525,36 +583,17 @@ docker logs -f dynamic-bot
 - 如果 NapCat 在宿主机运行，需要在 `config/bot.yml` 中配置 `host: "host.docker.internal"`
 - 如果 NapCat 也在 Docker 中运行，建议使用自定义网络连接两个容器（参考 docker-compose.yml 注释）
 
-### 自动化脚本
-
-Windows 用户可使用自动化脚本简化操作：
-
-**docker-deploy.ps1** - 部署管理脚本
-```powershell
-.\docker-deploy.ps1 build    # 构建镜像
-.\docker-deploy.ps1 start    # 启动容器
-.\docker-deploy.ps1 stop     # 停止容器
-.\docker-deploy.ps1 restart  # 重启容器
-.\docker-deploy.ps1 logs     # 查看日志
-.\docker-deploy.ps1 status   # 查看状态
-.\docker-deploy.ps1 clean    # 清理容器和镜像
-.\docker-deploy.ps1 rebuild  # 完全重新构建
-```
-
-**docker-push.ps1** - Docker Hub 推送脚本
-```powershell
-.\docker-push.ps1 latest     # 推送 latest 标签
-.\docker-push.ps1 v1.4       # 推送指定版本标签
-```
-
 ## 开发说明
 
 ### 技术栈
 - Kotlin 2.0.0
-- Ktor 3.0.3（HTTP 客户端）
+- Ktor 3.0.3（HTTP / WebSocket 客户端）
 - Skiko 0.8.15（图片渲染）
 - kotlinx.serialization 1.6.3（JSON 处理）
 - kotlinx.coroutines 1.8.0（协程）
+- KAML 0.61.0（YAML 配置解析）
+- ZXing 3.5.0（二维码生成）
+- Logback 1.4.14 + SLF4J 2.0.9（日志）
 - OneBot v11 协议（NapCat）
 
 ### 项目特点
@@ -976,7 +1015,7 @@ Windows 用户可使用自动化脚本简化操作：
    在启动时加入--debug ：
 
    ```powershell
-   java -jar dynamic-bot-1.6.jar --debug
+   java -jar dynamic-bot-1.6.2.jar --debug
    ```
 
 1. **Docker 部署启用 Debug**
