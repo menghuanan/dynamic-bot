@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "top.bilibili"
-val releaseVersion = (findProperty("releaseVersion") as String?) ?: "1.6.2"
+val releaseVersion = (findProperty("releaseVersion") as String?) ?: "1.7"
 version = releaseVersion
 
 repositories {
