@@ -10,7 +10,7 @@ services:
         APP_VERSION: auto
 
     # 镜像标签
-    image: dynamic-bot:1.7
+    image: dynamic-bot:1.7.1
 
     # 容器名称
     container_name: dynamic-bot
