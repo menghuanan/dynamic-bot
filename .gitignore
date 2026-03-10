@@ -145,6 +145,7 @@ src/test/resources/output/**
 
 .claude/
 .trae/
+.worktrees/
 
 # Exclude docs markdown files, keep only images
 docs/*.md
