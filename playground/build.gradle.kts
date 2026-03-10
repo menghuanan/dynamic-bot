@@ -1,6 +1,7 @@
 plugins {
     val kotlinVersion = "2.0.0"
     kotlin("jvm") version kotlinVersion
+    kotlin("plugin.serialization") version kotlinVersion
     id("org.jetbrains.kotlin.plugin.compose") version kotlinVersion
     id("org.jetbrains.compose") version "1.6.10"
 }
@@ -20,9 +21,18 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":"))
+    implementation(project(":")) {
+        exclude(group = "org.jetbrains.skiko")
+    }
     implementation(compose.material)
     implementation(compose.desktop.currentOs)
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
+    testImplementation(kotlin("test"))
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 compose.desktop {

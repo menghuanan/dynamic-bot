@@ -1,0 +1,17 @@
+{
+  "id": "live-sample",
+  "label": "Live sample",
+  "kind": "LIVE",
+  "colors": [4478310],
+  "live": {
+    "title": "sample live",
+    "room_id": 20000,
+    "uid": 10086,
+    "uname": "sample-streamer",
+    "face": "https://example.com/face.png",
+    "cover_from_user": "https://example.com/cover.png",
+    "live_time": 100,
+    "live_status": 1,
+    "area_v2_name": "games"
+  }
+}

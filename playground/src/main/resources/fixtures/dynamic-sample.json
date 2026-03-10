@@ -1,0 +1,28 @@
+{
+  "id": "dynamic-sample",
+  "label": "Dynamic sample",
+  "kind": "DYNAMIC",
+  "colors": [13822714],
+  "dynamic": {
+    "type": "DYNAMIC_TYPE_WORD",
+    "basic": {
+      "comment_id_str": "1",
+      "comment_type": 11,
+      "rid_str": "1"
+    },
+    "id_str": "1000",
+    "modules": {
+      "module_author": {
+        "mid": 10086,
+        "name": "sample-up",
+        "face": "https://example.com/face.png"
+      },
+      "module_dynamic": {
+        "desc": {
+          "rich_text_nodes": [],
+          "text": "hello playground"
+        }
+      }
+    }
+  }
+}
