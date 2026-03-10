@@ -1,6 +1,7 @@
 package top.bilibili.draw
 
 import top.bilibili.BiliConfig
+import top.bilibili.BiliConfigManager
 import top.bilibili.ImageConfig
 import top.bilibili.data.BiliImageQuality
 import top.bilibili.data.BiliImageTheme
@@ -91,4 +92,28 @@ object RenderSnapshotFactory {
             else -> BiliImageTheme.theme[themeKey] ?: BiliImageTheme.theme.values.first()
         }
     }
+}
+
+object RenderSnapshotContext {
+    private val snapshotOverride = ThreadLocal<RenderSnapshot?>()
+
+    fun current(): RenderSnapshot {
+        return snapshotOverride.get() ?: RenderSnapshotFactory.fromConfig(BiliConfigManager.config)
+    }
+
+    fun <T> withSnapshot(snapshot: RenderSnapshot, block: () -> T): T {
+        val previous = snapshotOverride.get()
+        snapshotOverride.set(snapshot)
+        return try {
+            block()
+        } finally {
+            snapshotOverride.set(previous)
+        }
+    }
+}
+
+fun currentRenderSnapshot(): RenderSnapshot = RenderSnapshotContext.current()
+
+fun <T> withRenderSnapshot(snapshot: RenderSnapshot, block: () -> T): T {
+    return RenderSnapshotContext.withSnapshot(snapshot, block)
 }

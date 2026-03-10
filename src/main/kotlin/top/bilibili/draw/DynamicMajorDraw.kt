@@ -319,7 +319,7 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, sho
     canvas.drawImageRRect(coverImg, coverRRect)
 
     // 徽章
-    if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
+    if (currentRenderSnapshot().badges.leftEnabled) {
         canvas.drawBadge(
             badge.text, font, theme.subLeftBadge.fontColor, theme.subLeftBadge.bgColor, videoCardRect,
             Position.TOP_LEFT
@@ -335,7 +335,7 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, sho
             Paint().apply { color = Color.makeRGB(badge.bgColor) }
         )
     }
-    if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
+    if (currentRenderSnapshot().badges.rightEnabled) {
         canvas.drawBadge(
             "av$aid  |  $bvid",
             font,
@@ -605,7 +605,7 @@ suspend fun drawPgcCard(
     canvas.drawRectShadowAntiAlias(videoCardRect.inflate(1f), theme.smallCardShadow)
 
     // 绘制徽章
-    if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
+    if (currentRenderSnapshot().badges.leftEnabled) {
         canvas.drawBadge(
             badge,
             font,
@@ -615,7 +615,7 @@ suspend fun drawPgcCard(
             Position.TOP_LEFT
         )
     }
-    if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
+    if (currentRenderSnapshot().badges.rightEnabled) {
         canvas.drawBadge(
             "ep$epid",
             font,
@@ -743,7 +743,7 @@ suspend fun drawLiveSmallCard(
     canvas.drawCard(videoCardRect)
     canvas.drawRectShadowAntiAlias(videoCardRect.inflate(1f), theme.smallCardShadow)
 
-    if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
+    if (currentRenderSnapshot().badges.leftEnabled) {
         canvas.drawBadge(
             lbadge,
             font,
@@ -753,7 +753,7 @@ suspend fun drawLiveSmallCard(
             Position.TOP_LEFT
         )
     }
-    if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
+    if (currentRenderSnapshot().badges.rightEnabled) {
         canvas.drawBadge(
             rbadge,
             font,
@@ -871,7 +871,7 @@ suspend fun drawSmallCard(
     )
 
     // 绘制徽章
-    if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
+    if (currentRenderSnapshot().badges.leftEnabled) {
         canvas.drawBadge(
             lbadge,
             font,
@@ -881,7 +881,7 @@ suspend fun drawSmallCard(
             Position.TOP_LEFT
         )
     }
-    if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
+    if (currentRenderSnapshot().badges.rightEnabled) {
         canvas.drawBadge(
             rbadge,
             font,
@@ -1189,7 +1189,7 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
     }
 
     // 徽章
-    if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
+    if (currentRenderSnapshot().badges.leftEnabled) {
         canvas.drawBadge(
             "专栏", font, theme.subLeftBadge.fontColor, theme.subLeftBadge.bgColor, articleCardRect,
             Position.TOP_LEFT
@@ -1205,7 +1205,7 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
             Paint().apply { color = Color.makeRGB(251, 114, 153) }
         )
     }
-    if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
+    if (currentRenderSnapshot().badges.rightEnabled) {
         canvas.drawBadge(
             "cv$id",
             font,
@@ -1277,13 +1277,13 @@ suspend fun ModuleDynamic.Major.Music.drawGeneral(session: DrawingSession): Imag
     canvas.drawRectShadowAntiAlias(musicCardRect.inflate(1f), theme.smallCardShadow)
 
     // 徽章
-    if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
+    if (currentRenderSnapshot().badges.leftEnabled) {
         canvas.drawBadge(
             "音乐", font, theme.subLeftBadge.fontColor, theme.subLeftBadge.bgColor, musicCardRect,
             Position.TOP_LEFT
         )
     }
-    if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
+    if (currentRenderSnapshot().badges.rightEnabled) {
         canvas.drawBadge(
             "au$musicId",
             font,

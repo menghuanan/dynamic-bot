@@ -6,7 +6,6 @@ import org.jetbrains.skia.paragraph.ParagraphBuilder
 import org.jetbrains.skia.paragraph.ParagraphStyle
 import org.jetbrains.skia.paragraph.TextStyle
 import top.bilibili.core.BiliBiliBot
-import top.bilibili.BiliConfigManager
 import top.bilibili.data.*
 import top.bilibili.data.DynamicType.DYNAMIC_TYPE_FORWARD
 import top.bilibili.data.DynamicType.DYNAMIC_TYPE_NONE
@@ -19,109 +18,74 @@ import top.bilibili.skia.SkiaManager
 
 val logger by BiliBiliBot::logger
 
-val quality: Quality by lazy {
-    val imageConfig = BiliConfigManager.config.imageConfig
-    var quality: Quality?
-    if (BiliImageQuality.customOverload) {
-        quality = BiliImageQuality.customQuality
-        logger.warn("图片分辨率配置已重载")
-    } else {
-        quality = BiliImageQuality.quality[imageConfig.quality]
-        if (quality == null) {
-            logger.error("未找到 ${imageConfig.quality} 的图片分辨率配置")
-            quality = BiliImageQuality.quality.firstNotNullOf { it.value }
-        }
-    }
-    quality.apply {
-        badgeHeight = if (imageConfig.badgeEnable.enable) badgeHeight else 0
-    }
-}
+val quality: Quality
+    get() = currentRenderSnapshot().quality
 
-val theme: Theme by lazy {
-    val imageConfig = BiliConfigManager.config.imageConfig
-    var theme: Theme?
-    if (BiliImageTheme.customOverload) {
-        theme = BiliImageTheme.customTheme
-        logger.warn("图片主题配置已重载")
-    } else {
-        theme = BiliImageTheme.theme[imageConfig.theme]
-        if (theme == null) {
-            logger.error("未找到 ${imageConfig.theme} 的图片主题配置")
-            theme = BiliImageTheme.theme.firstNotNullOf { it.value }
-        }
-    }
-    theme
-}
+val theme: Theme
+    get() = currentRenderSnapshot().theme
 
-val cardRect: Rect by lazy {
-    Rect.makeLTRB(quality.cardMargin.toFloat(), 0f, quality.imageWidth - quality.cardMargin.toFloat(), 0f)
-}
+val cardRect: Rect
+    get() = Rect.makeLTRB(quality.cardMargin.toFloat(), 0f, quality.imageWidth - quality.cardMargin.toFloat(), 0f)
 
-val cardContentRect: Rect by lazy {
-    cardRect.inflate(-1f * quality.cardPadding)
-}
+val cardContentRect: Rect
+    get() = cardRect.inflate(-1f * quality.cardPadding)
 
 val mainTypeface: Typeface
-    get() = FontManager.mainTypeface
+    get() = FontManager.mainTypefaceFor(currentRenderSnapshot())
 
 val font: Font
-    get() = FontManager.font
+    get() = FontManager.fontFor(currentRenderSnapshot())
 
 val emojiTypeface: Typeface?
-    get() = FontManager.emojiTypeface
+    get() = FontManager.emojiTypefaceFor(currentRenderSnapshot())
 
 val emojiFont: Font
-    get() = FontManager.emojiFont
+    get() = FontManager.emojiFontFor(currentRenderSnapshot())
 
 val fansCardFont: Font?
-    get() = FontManager.fansCardFont
+    get() = FontManager.fansCardFontFor(currentRenderSnapshot())
 
-val titleTextStyle by lazy {
-    TextStyle().apply {
+val titleTextStyle: TextStyle
+    get() = TextStyle().apply {
         fontSize = quality.titleFontSize
         color = theme.titleColor
         fontFamilies = arrayOf(mainTypeface.familyName)
     }
-}
 
-val bigTitleTextStyle by lazy {
-    TextStyle().apply {
+val bigTitleTextStyle: TextStyle
+    get() = TextStyle().apply {
         fontSize = quality.titleFontSize + 3
         color = theme.titleColor
         fontStyle = FontStyle.BOLD
         fontFamilies = arrayOf(mainTypeface.familyName)
     }
-}
 
-val descTextStyle by lazy {
-    TextStyle().apply {
+val descTextStyle: TextStyle
+    get() = TextStyle().apply {
         fontSize = quality.descFontSize
         color = theme.descColor
         fontFamilies = arrayOf(mainTypeface.familyName)
     }
-}
 
-val contentTextStyle by lazy {
-    TextStyle().apply {
+val contentTextStyle: TextStyle
+    get() = TextStyle().apply {
         fontSize = quality.contentFontSize
         color = theme.contentColor
         fontFamilies = arrayOf(mainTypeface.familyName)
     }
-}
 
-val footerTextStyle by lazy {
-    TextStyle().apply {
+val footerTextStyle: TextStyle
+    get() = TextStyle().apply {
         fontSize = quality.footerFontSize
         color = theme.footerColor
         fontFamilies = arrayOf(mainTypeface.familyName)
     }
-}
 
-val footerParagraphStyle by lazy {
-    ParagraphStyle().apply {
+val footerParagraphStyle: ParagraphStyle
+    get() = ParagraphStyle().apply {
         maxLinesCount = 2
         ellipsis = "..."
-        alignment = when (BiliConfigManager.config.templateConfig.footer.footerAlign.uppercase()) {
+        alignment = when (currentRenderSnapshot().footerAlign) {
             "LEFT" -> Alignment.LEFT
             "CENTER" -> Alignment.CENTER
             "RIGHT" -> Alignment.RIGHT
@@ -129,24 +93,26 @@ val footerParagraphStyle by lazy {
         }
         textStyle = footerTextStyle
     }
-}
 
-val cardBadgeArc: FloatArray by lazy {
-    val imageConfig = BiliConfigManager.config.imageConfig
-    val left = if (imageConfig.badgeEnable.left) 0f else quality.cardArc
-    val right = if (imageConfig.badgeEnable.right) 0f else quality.cardArc
-    floatArrayOf(left, right, quality.cardArc, quality.cardArc)
-}
+val cardBadgeArc: FloatArray
+    get() {
+        val badges = currentRenderSnapshot().badges
+        val left = if (badges.leftEnabled) 0f else quality.cardArc
+        val right = if (badges.rightEnabled) 0f else quality.cardArc
+        return floatArrayOf(left, right, quality.cardArc, quality.cardArc)
+    }
 
-val linkPaint = Paint().apply {
-    color = theme.linkColor
-    isAntiAlias = true
-}
-val generalPaint = Paint().apply {
-    color = theme.contentColor
-    isAntiAlias = true
-}
+val linkPaint: Paint
+    get() = Paint().apply {
+        color = theme.linkColor
+        isAntiAlias = true
+    }
 
+val generalPaint: Paint
+    get() = Paint().apply {
+        color = theme.contentColor
+        isAntiAlias = true
+    }
 
 suspend fun DynamicItem.makeDrawDynamic(colors: List<Int>): String {
     return SkiaManager.executeDrawing {
@@ -194,7 +160,7 @@ suspend fun DynamicItem.drawDynamic(session: DrawingSession, themeColor: Int, is
 }
 
 fun buildFooter(name: String, uid: Long, id: String, time: String, type: String): String? {
-    val footerTemplate = BiliConfigManager.config.templateConfig.footer.dynamicFooter
+    val footerTemplate = currentRenderSnapshot().dynamicFooterTemplate
     return if (footerTemplate.isNotBlank()) {
         footerTemplate
             .replace("{name}", name)
@@ -217,7 +183,7 @@ fun buildFooter(name: String, uid: Long, id: String, time: String, type: String)
  * @return 组装后的 Image
  */
 fun List<Image>.assembleCard(session: DrawingSession, id: String, footer: String? = null, plusHeight: Int = 0, isForward: Boolean = false, tag: String? = null, closeInputImages: Boolean = false): Image {
-    val imageConfig = BiliConfigManager.config.imageConfig
+    val badges = currentRenderSnapshot().badges
 
     // 过滤无效的 Image，使用安全访问方法
     val validImages = this.filter { it.isValid() && it.safeWidth() > 0 && it.safeHeight() > 0 }
@@ -266,7 +232,7 @@ fun List<Image>.assembleCard(session: DrawingSession, id: String, footer: String
             canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
         }
 
-        if (imageConfig.badgeEnable.left) {
+        if (badges.leftEnabled) {
             val svg = loadSVG("icon/${if (isForward) "FORWARD" else "BILIBILI_LOGO"}.svg")
             try {
                 val badgeImage = svg?.makeImage(session, quality.contentFontSize, quality.contentFontSize)
@@ -285,7 +251,7 @@ fun List<Image>.assembleCard(session: DrawingSession, id: String, footer: String
                 }
             }
         }
-        if (imageConfig.badgeEnable.right) {
+        if (badges.rightEnabled) {
             canvas.drawBadge(id, font, theme.mainRightBadge.fontColor, theme.mainRightBadge.bgColor, rrect, TOP_RIGHT)
         }
 

@@ -4,7 +4,6 @@ import org.jetbrains.skia.*
 import org.jetbrains.skia.paragraph.Alignment
 import org.jetbrains.skia.paragraph.ParagraphBuilder
 import org.jetbrains.skia.paragraph.ParagraphStyle
-import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.data.LiveInfo
 import top.bilibili.utils.*
@@ -34,7 +33,7 @@ suspend fun LiveInfo.drawLive(session: DrawingSession, qrCodeColor: Int): Image 
 
     val height = (avatar.height + quality.contentSpace + coverImg.height * cardRect.width / coverImg.width).toInt()
 
-    val footerTemplate = BiliConfigManager.config.templateConfig.footer.liveFooter
+    val footerTemplate = currentRenderSnapshot().liveFooterTemplate
     val footerParagraph = if (footerTemplate.isNotBlank()) {
         val footer = footerTemplate
             .replace("{name}", uname)
@@ -65,7 +64,7 @@ suspend fun LiveInfo.drawLive(session: DrawingSession, qrCodeColor: Int): Image 
 
     canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
 
-    if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
+    if (currentRenderSnapshot().badges.leftEnabled) {
         val svg = loadSVG("icon/LIVE.svg")
         try {
             if (svg != null) {
@@ -88,7 +87,7 @@ suspend fun LiveInfo.drawLive(session: DrawingSession, qrCodeColor: Int): Image 
             }
         }
     }
-    if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
+    if (currentRenderSnapshot().badges.rightEnabled) {
         canvas.drawBadge(liveRoomId.toString(), font, Color.WHITE, Color.makeRGB(72, 199, 240), rrect, Position.TOP_RIGHT)
     }
 
@@ -143,7 +142,7 @@ suspend fun LiveInfo.drawAvatar(session: DrawingSession, qrCodeColor: Int): Imag
     }
 
     val w = cardContentRect.width - quality.pendantSize -
-        if (BiliConfigManager.config.imageConfig.cardOrnament == "QrCode" ) quality.ornamentHeight else 0f
+        if (currentRenderSnapshot().cardOrnament == "QrCode") quality.ornamentHeight else 0f
 
     val titleParagraph =
         ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(liveTitle).build()
@@ -181,7 +180,7 @@ suspend fun LiveInfo.drawAvatar(session: DrawingSession, qrCodeColor: Int): Imag
 }
 
 fun Canvas.drawLiveOrnament(session: DrawingSession, link: String?, qrCodeColor: Int?, label: String?) {
-    when (BiliConfigManager.config.imageConfig.cardOrnament) {
+    when (currentRenderSnapshot().cardOrnament) {
         "QrCode" -> {
             val qrCodeImg = qrCode(session, link!!, quality.ornamentHeight.toInt(), qrCodeColor!!)
             val y = ((quality.faceSize - qrCodeImg.height + quality.contentSpace) / 2)

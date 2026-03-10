@@ -466,7 +466,7 @@ fun hsb2rgb(h: Float, s: Float, v: Float): IntArray {
 }
 
 fun generateLinearGradient(colors: List<Int>): IntArray {
-    val colorGenerator = BiliConfigManager.config.imageConfig.colorGenerator
+    val colorGenerator = currentRenderSnapshot().colorGenerator
     return if (colors.size == 1) {
         val hsb = rgb2hsb(Color.getR(colors[0]), Color.getG(colors[0]), Color.getB(colors[0]))
         if (colorGenerator.lockSB) {

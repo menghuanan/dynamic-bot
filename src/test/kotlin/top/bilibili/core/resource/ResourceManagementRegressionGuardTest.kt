@@ -268,5 +268,52 @@ class ResourceManagementRegressionGuardTest {
             "imgApi should return empty fallback when base url is invalid",
         )
     }
-}
 
+    @Test
+    fun `draw hot paths should resolve render settings via snapshot`() {
+        val dynamicDraw = read("src/main/kotlin/top/bilibili/draw/DynamicDraw.kt")
+        val dynamicMajor = read("src/main/kotlin/top/bilibili/draw/DynamicMajorDraw.kt")
+        val dynamicModule = read("src/main/kotlin/top/bilibili/draw/DynamicModuleDraw.kt")
+        val liveDraw = read("src/main/kotlin/top/bilibili/draw/LiveDraw.kt")
+        val general = read("src/main/kotlin/top/bilibili/draw/General.kt")
+        val fontManager = read("src/main/kotlin/top/bilibili/draw/FontManager.kt")
+        val snapshot = read("src/main/kotlin/top/bilibili/draw/RenderSnapshot.kt")
+
+        assertTrue(
+            snapshot.contains("object RenderSnapshotFactory"),
+            "draw rendering should provide a shared snapshot factory",
+        )
+        assertFalse(
+            dynamicDraw.contains("BiliConfigManager.config.imageConfig"),
+            "DynamicDraw should read image settings from RenderSnapshot instead of global config",
+        )
+        assertFalse(
+            dynamicDraw.contains("BiliConfigManager.config.templateConfig.footer"),
+            "DynamicDraw footer settings should come from RenderSnapshot",
+        )
+        assertFalse(
+            dynamicMajor.contains("BiliConfigManager.config.imageConfig"),
+            "DynamicMajorDraw should read badge settings from RenderSnapshot",
+        )
+        assertFalse(
+            dynamicModule.contains("BiliConfigManager.config.imageConfig"),
+            "DynamicModuleDraw should read ornament settings from RenderSnapshot",
+        )
+        assertFalse(
+            liveDraw.contains("BiliConfigManager.config.imageConfig"),
+            "LiveDraw should read image settings from RenderSnapshot",
+        )
+        assertFalse(
+            liveDraw.contains("BiliConfigManager.config.templateConfig.footer"),
+            "LiveDraw footer settings should come from RenderSnapshot",
+        )
+        assertFalse(
+            general.contains("BiliConfigManager.config.imageConfig.colorGenerator"),
+            "General color helpers should read color generator settings from RenderSnapshot",
+        )
+        assertFalse(
+            fontManager.contains("BiliConfigManager.config.imageConfig"),
+            "FontManager should not read font settings directly from global config during draw",
+        )
+    }
+}

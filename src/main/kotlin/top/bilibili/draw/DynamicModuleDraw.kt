@@ -635,7 +635,7 @@ suspend fun Canvas.drawOrnament(
     qrCodeColor: Int?
 ) {
 
-    when (BiliConfigManager.config.imageConfig.cardOrnament) {
+    when (currentRenderSnapshot().cardOrnament) {
         "FanCard" -> {
             if (decorate != null) {
                 getOrDownloadImage(decorate.cardUrl, CacheType.USER)?.let {fanImg ->
