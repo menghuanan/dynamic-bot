@@ -17,6 +17,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import kotlinx.coroutines.launch
 import top.bilibili.BiliConfig
 import top.bilibili.FooterConfig
@@ -25,12 +28,10 @@ import top.bilibili.TemplateConfig
 import top.bilibili.draw.PreviewRendererFacade
 import top.bilibili.draw.RenderSnapshotFactory
 import top.bilibili.draw.RenderSnapshotOverrides
+import top.bilibili.playground.PlaygroundBootstrap
 import top.bilibili.playground.fixture.FixtureLoader
 import top.bilibili.playground.fixture.PlaygroundFixture
 import top.bilibili.playground.state.PlaygroundState
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 
 @Composable
 fun PlaygroundApp() {
@@ -38,58 +39,146 @@ fun PlaygroundApp() {
     val scope = rememberCoroutineScope()
     var state by remember { mutableStateOf(PlaygroundState()) }
 
-    LaunchedEffect(Unit) {
-        runCatching { FixtureLoader.loadDefaults() }
-            .onSuccess { fixtures ->
-                state = state.copy(
-                    fixtures = fixtures,
-                    selectedFixtureId = fixtures.firstOrNull()?.id.orEmpty(),
-                    lastError = null,
+    suspend fun renderFromState(baseState: PlaygroundState): PlaygroundState {
+        val fixture = FixtureLoader.decode(baseState.fixtureJson)
+        val snapshot = buildSnapshot(baseState)
+        val result = facade.render(fixture.toPreviewRequest(snapshot))
+        return baseState.copy(
+            selectedFixtureId = fixture.id,
+            fixtureFilePath = baseState.fixtureFilePath.ifBlank { defaultFixturePath(fixture.id) },
+            isRendering = false,
+            lastResult = result,
+            lastError = null,
+        )
+    }
+
+    fun selectFixture(currentState: PlaygroundState, fixture: PlaygroundFixture): PlaygroundState {
+        return currentState.copy(
+            selectedFixtureId = fixture.id,
+            fixtureJson = FixtureLoader.encode(fixture),
+            fixtureFilePath = defaultFixturePath(fixture.id),
+            lastError = null,
+        )
+    }
+
+    fun upsertFixture(fixtures: List<PlaygroundFixture>, fixture: PlaygroundFixture): List<PlaygroundFixture> {
+        val index = fixtures.indexOfFirst { it.id == fixture.id }
+        return if (index == -1) fixtures + fixture else fixtures.toMutableList().also { it[index] = fixture }
+    }
+
+    fun renderAsync(nextState: PlaygroundState) {
+        scope.launch {
+            val renderingState = nextState.copy(isRendering = true, lastError = null)
+            state = renderingState
+            runCatching {
+                renderFromState(renderingState)
+            }.onSuccess { renderedState ->
+                state = renderedState
+            }.onFailure { error ->
+                state = renderingState.copy(
+                    isRendering = false,
+                    lastError = error.message ?: error::class.simpleName,
                 )
             }
-            .onFailure { error ->
-                state = state.copy(lastError = error.message)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        state = state.copy(isRendering = true, lastError = null)
+        runCatching {
+            PlaygroundBootstrap.ensureInitialized()
+            FixtureLoader.loadDefaults()
+        }.onSuccess { fixtures ->
+            val firstFixture = fixtures.firstOrNull()
+            val seededState = if (firstFixture != null) {
+                selectFixture(state.copy(fixtures = fixtures, isRendering = true), firstFixture)
+            } else {
+                state.copy(fixtures = fixtures, isRendering = false)
             }
+            state = seededState
+            if (seededState.fixtureJson.isBlank()) {
+                state = seededState.copy(isRendering = false)
+                return@onSuccess
+            }
+            runCatching {
+                renderFromState(seededState)
+            }.onSuccess { renderedState ->
+                state = renderedState
+            }.onFailure { error ->
+                state = seededState.copy(
+                    isRendering = false,
+                    lastError = error.message ?: error::class.simpleName,
+                )
+            }
+        }.onFailure { error ->
+            state = state.copy(
+                isRendering = false,
+                lastError = error.message ?: error::class.simpleName,
+            )
+        }
     }
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
+                modifier = Modifier.fillMaxSize().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 ControlsPane(
                     state = state,
                     onStateChange = { state = it },
-                    onRender = {
-                        val fixture = selectedFixture(state) ?: return@ControlsPane
-                        scope.launch {
-                            state = state.copy(isRendering = true, lastError = null)
-                            runCatching {
-                                val snapshot = buildSnapshot(state)
-                                val result = facade.render(fixture.toPreviewRequest(snapshot))
-                                state.copy(isRendering = false, lastResult = result, lastError = null)
-                            }.onSuccess {
-                                state = it
-                            }.onFailure { error ->
-                                state = state.copy(isRendering = false, lastError = error.message)
-                            }
+                    onFixtureSelected = { fixture -> renderAsync(selectFixture(state, fixture)) },
+                    onRender = { renderAsync(state) },
+                    onLoadFixtureFile = {
+                        val pathText = state.fixtureFilePath.ifBlank { return@ControlsPane }
+                        runCatching {
+                            val path = Path.of(pathText)
+                            val fixture = FixtureLoader.loadPath(path)
+                            path to fixture
+                        }.onSuccess { (path, fixture) ->
+                            renderAsync(
+                                state.copy(
+                                    fixtures = upsertFixture(state.fixtures, fixture),
+                                    selectedFixtureId = fixture.id,
+                                    fixtureJson = FixtureLoader.encode(fixture),
+                                    fixtureFilePath = path.toString(),
+                                    lastError = null,
+                                ),
+                            )
+                        }.onFailure { error ->
+                            state = state.copy(lastError = error.message ?: error::class.simpleName)
+                        }
+                    },
+                    onSaveFixtureFile = {
+                        runCatching {
+                            val fixture = FixtureLoader.decode(state.fixtureJson)
+                            val target = Path.of(state.fixtureFilePath.ifBlank { defaultFixturePath(fixture.id) })
+                            FixtureLoader.savePath(target, fixture)
+                            target.toString() to fixture.id
+                        }.onSuccess { (savedPath, fixtureId) ->
+                            state = state.copy(
+                                selectedFixtureId = fixtureId,
+                                fixtureFilePath = savedPath,
+                                lastError = null,
+                            )
+                        }.onFailure { error ->
+                            state = state.copy(lastError = error.message ?: error::class.simpleName)
                         }
                     },
                     onExport = {
-                        val fixture = selectedFixture(state) ?: return@ControlsPane
                         val currentPath = state.lastResult?.outputPath ?: return@ControlsPane
+                        val currentFixtureId = runCatching {
+                            FixtureLoader.decode(state.fixtureJson).id
+                        }.getOrDefault(state.selectedFixtureId.ifBlank { "preview" })
                         runCatching {
-                            val target = Path.of("playground-output", "${fixture.id}.png")
+                            val target = Path.of("playground-output", "$currentFixtureId.png")
                             Files.createDirectories(target.parent)
                             Files.copy(Path.of(currentPath), target, StandardCopyOption.REPLACE_EXISTING)
                             target.toAbsolutePath().toString()
                         }.onSuccess { exportPath ->
                             state = state.copy(lastExportPath = exportPath, lastError = null)
                         }.onFailure { error ->
-                            state = state.copy(lastError = error.message)
+                            state = state.copy(lastError = error.message ?: error::class.simpleName)
                         }
                     },
                 )
@@ -111,10 +200,6 @@ fun PlaygroundApp() {
             }
         }
     }
-}
-
-private fun selectedFixture(state: PlaygroundState): PlaygroundFixture? {
-    return state.fixtures.firstOrNull { it.id == state.selectedFixtureId }
 }
 
 private fun buildSnapshot(state: PlaygroundState) = RenderSnapshotFactory.fromConfig(
@@ -143,3 +228,7 @@ private fun buildSnapshot(state: PlaygroundState) = RenderSnapshotFactory.fromCo
         badgeRightEnabled = state.badgeRightEnabled,
     ),
 )
+
+private fun defaultFixturePath(fixtureId: String): String {
+    return Path.of("playground-fixtures", "$fixtureId.json").toString()
+}

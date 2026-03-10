@@ -6,6 +6,8 @@ import top.bilibili.playground.fixture.PlaygroundFixture
 data class PlaygroundState(
     val fixtures: List<PlaygroundFixture> = emptyList(),
     val selectedFixtureId: String = "",
+    val fixtureJson: String = "",
+    val fixtureFilePath: String = "",
     val selectedQualityKey: String = "1000w",
     val selectedThemeKey: String = "v3",
     val fontFamily: String = "",

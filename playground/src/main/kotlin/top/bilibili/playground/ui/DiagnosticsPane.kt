@@ -20,6 +20,8 @@ fun DiagnosticsPane(
     ) {
         Text("Diagnostics")
         Text("Fixture: ${state.selectedFixtureId.ifBlank { "<none>" }}")
+        Text("Fixture file: ${state.fixtureFilePath.ifBlank { "<none>" }}")
+        Text("JSON chars: ${state.fixtureJson.length}")
         Text("Result: ${state.lastResult?.outputPath ?: "<none>"}")
         Text("Duration: ${state.lastResult?.durationMs ?: 0} ms")
         Text("Export: ${state.lastExportPath ?: "<none>"}")

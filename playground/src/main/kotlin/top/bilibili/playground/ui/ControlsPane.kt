@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,18 +17,22 @@ import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import top.bilibili.playground.fixture.PlaygroundFixture
 import top.bilibili.playground.state.PlaygroundState
 
 @Composable
 fun ControlsPane(
     state: PlaygroundState,
     onStateChange: (PlaygroundState) -> Unit,
+    onFixtureSelected: (PlaygroundFixture) -> Unit,
     onRender: () -> Unit,
+    onLoadFixtureFile: () -> Unit,
+    onSaveFixtureFile: () -> Unit,
     onExport: () -> Unit,
 ) {
     Column(
         modifier = Modifier
-            .width(320.dp)
+            .width(420.dp)
             .fillMaxHeight()
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -36,9 +42,43 @@ fun ControlsPane(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 RadioButton(
                     selected = state.selectedFixtureId == fixture.id,
-                    onClick = { onStateChange(state.copy(selectedFixtureId = fixture.id)) },
+                    onClick = { onFixtureSelected(fixture) },
                 )
                 Text(fixture.label)
+            }
+        }
+
+        Text("Editable Fixture JSON")
+        OutlinedTextField(
+            value = state.fixtureJson,
+            onValueChange = { onStateChange(state.copy(fixtureJson = it)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(360.dp),
+            minLines = 18,
+            maxLines = 24,
+            label = { Text("Fixture JSON") },
+        )
+
+        Text("Fixture file")
+        OutlinedTextField(
+            value = state.fixtureFilePath,
+            onValueChange = { onStateChange(state.copy(fixtureFilePath = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Fixture path") },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = onLoadFixtureFile,
+                enabled = state.fixtureFilePath.isNotBlank() && !state.isRendering,
+            ) {
+                Text("Load fixture file")
+            }
+            Button(
+                onClick = onSaveFixtureFile,
+                enabled = state.fixtureJson.isNotBlank() && !state.isRendering,
+            ) {
+                Text("Save fixture file")
             }
         }
 
@@ -88,7 +128,7 @@ fun ControlsPane(
             Text("Right badge")
         }
 
-        Button(onClick = onRender, enabled = state.selectedFixtureId.isNotBlank() && !state.isRendering) {
+        Button(onClick = onRender, enabled = state.fixtureJson.isNotBlank() && !state.isRendering) {
             Text(if (state.isRendering) "Rendering..." else "Render preview")
         }
         Button(onClick = onExport, enabled = state.lastResult != null) {

@@ -156,3 +156,8 @@ docs/skia资源管理计划/
 /diagnostics
 
 nul
+/playground/config
+/playground/data
+/playground-output
+/playground/playground-output
+/playground/playground-fixtures
