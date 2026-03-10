@@ -101,6 +101,12 @@ object RenderSnapshotContext {
         return snapshotOverride.get() ?: RenderSnapshotFactory.fromConfig(BiliConfigManager.config)
     }
 
+    fun currentOrNull(): RenderSnapshot? = snapshotOverride.get()
+
+    fun set(snapshot: RenderSnapshot?) {
+        snapshotOverride.set(snapshot)
+    }
+
     fun <T> withSnapshot(snapshot: RenderSnapshot, block: () -> T): T {
         val previous = snapshotOverride.get()
         snapshotOverride.set(snapshot)
@@ -114,6 +120,12 @@ object RenderSnapshotContext {
 
 fun currentRenderSnapshot(): RenderSnapshot = RenderSnapshotContext.current()
 
-fun <T> withRenderSnapshot(snapshot: RenderSnapshot, block: () -> T): T {
-    return RenderSnapshotContext.withSnapshot(snapshot, block)
+suspend fun <T> withRenderSnapshot(snapshot: RenderSnapshot, block: suspend () -> T): T {
+    val previous = RenderSnapshotContext.currentOrNull()
+    RenderSnapshotContext.set(snapshot)
+    return try {
+        block()
+    } finally {
+        RenderSnapshotContext.set(previous)
+    }
 }
