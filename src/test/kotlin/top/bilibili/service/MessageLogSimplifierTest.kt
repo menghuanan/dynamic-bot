@@ -48,4 +48,3 @@ class MessageLogSimplifierTest {
         assertTrue(simplified.endsWith("..."))
     }
 }
-
