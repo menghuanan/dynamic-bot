@@ -83,6 +83,10 @@ internal fun resolveDynamicMediaLabel(src: String, width: Int, height: Int): Str
     }
 }
 
+internal fun dynamicMediaLabelTextBaseline(rrect: RRect, textLine: TextLine): Float {
+    return rrect.bottom - (rrect.height - textLine.capHeight) / 2
+}
+
 private fun Canvas.drawDynamicMediaLabel(
     session: DrawingSession,
     label: String,
@@ -104,7 +108,7 @@ private fun Canvas.drawDynamicMediaLabel(
     drawTextLine(
         labelTextLine,
         rrect.left + quality.badgePadding * 2,
-        rrect.bottom - quality.badgePadding,
+        dynamicMediaLabelTextBaseline(rrect, labelTextLine),
         Paint().apply { color = Color.WHITE }
     )
 }
