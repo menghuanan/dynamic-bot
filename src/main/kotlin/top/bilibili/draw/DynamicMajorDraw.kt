@@ -75,6 +75,39 @@ private fun formatPgcEvaluateText(
     return firstSix.joinToString("\n")
 }
 
+internal fun resolveDynamicMediaLabel(src: String, width: Int, height: Int): String? {
+    return when {
+        src.endsWith(".gif") -> "动图"
+        height > width * 2 -> "长图"
+        else -> null
+    }
+}
+
+private fun Canvas.drawDynamicMediaLabel(
+    session: DrawingSession,
+    label: String,
+    dstRect: RRect
+) {
+    val labelFont = session.createFont(font.typeface!!, quality.subTitleFontSize)
+    val labelTextLine = session.createTextLine(label, labelFont)
+    val rrect = RRect.makeXYWH(
+        dstRect.right - labelTextLine.width - quality.badgePadding * 4 - quality.cardPadding / 2,
+        dstRect.bottom - labelTextLine.height - quality.badgePadding - quality.cardPadding / 2,
+        labelTextLine.width + quality.badgePadding * 4,
+        labelTextLine.height + quality.badgePadding / 2,
+        quality.badgeArc
+    )
+    drawRRect(rrect, Paint().apply {
+        color = Color.BLACK
+        alpha = 130
+    })
+    drawTextLine(
+        labelTextLine,
+        rrect.left + quality.badgePadding * 2,
+        rrect.bottom - quality.badgePadding,
+        Paint().apply { color = Color.WHITE }
+    )
+}
 suspend fun ModuleDynamic.Major.makeGeneral(session: DrawingSession, isForward: Boolean = false): Image {
     return when (type) {
         "MAJOR_TYPE_ARCHIVE" -> if (isForward) archive!!.drawSmall(session) else archive!!.drawGeneral(session)
@@ -1023,6 +1056,11 @@ suspend fun ModuleDynamic.Major.Draw.drawGeneral(session: DrawingSession): Image
         })
 
         canvas.drawImageClip(session, img, dstRect)
+
+        val mediaLabel = resolveDynamicMediaLabel(drawItem.src, drawItem.width, drawItem.height)
+        if (mediaLabel != null) {
+            canvas.drawDynamicMediaLabel(session, mediaLabel, dstRect)
+        }
 
         canvas.drawRRect(dstRect, Paint().apply {
             color = theme.drawOutlineColor
