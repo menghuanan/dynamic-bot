@@ -1,4 +1,4 @@
-﻿package top.bilibili.tasker
+package top.bilibili.tasker
 
 import top.bilibili.BiliData
 import top.bilibili.SubData

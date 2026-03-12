@@ -1,4 +1,4 @@
-﻿package top.bilibili.draw
+package top.bilibili.draw
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
