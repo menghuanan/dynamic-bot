@@ -32,6 +32,7 @@ object DynamicMessageTasker : BiliTasker() {
             val dynamicItem = dynamicDetail.item
             logger.info("开始处理动态: ${dynamicItem.modules.moduleAuthor.name} (${dynamicItem.modules.moduleAuthor.mid}) - ${dynamicItem.typeStr}")
             try {
+                syncSubscriptionName(dynamicItem.modules.moduleAuthor.mid, dynamicItem.modules.moduleAuthor.name)
                 val message = dynamicItem.buildMessage(dynamicDetail.contact)
                 logger.info("动态消息构建成功，准备发送到 messageChannel")
                 messageChannel.send(message)
@@ -39,6 +40,13 @@ object DynamicMessageTasker : BiliTasker() {
             } catch (e: Exception) {
                 logger.error("处理动态失败: ${e.message}", e)
             }
+        }
+    }
+
+    internal fun syncSubscriptionName(uid: Long, latestName: String) {
+        val subData = dynamic[uid] ?: return
+        if (subData.name != latestName) {
+            subData.name = latestName
         }
     }
 

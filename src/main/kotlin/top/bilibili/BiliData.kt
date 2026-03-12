@@ -49,7 +49,7 @@ object BiliData {
 
 @Serializable
 data class SubData(
-    val name: String,
+    var name: String,
     var last: Long = 0L,
     var lastLive: Long = 0L,
     val contacts: MutableSet<String> = mutableSetOf(),
