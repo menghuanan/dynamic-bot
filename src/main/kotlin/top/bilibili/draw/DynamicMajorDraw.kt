@@ -1091,7 +1091,7 @@ suspend fun ModuleDynamic.Major.Blocked.drawGeneral(session: DrawingSession): Im
         alignment = Alignment.CENTER
         textStyle = TextStyle().apply {
             fontSize = quality.titleFontSize
-            color = Color.WHITE
+            color = Color.makeRGB("#9499A0")
             fontFamilies = arrayOf(mainTypeface.familyName)
         }
     }
