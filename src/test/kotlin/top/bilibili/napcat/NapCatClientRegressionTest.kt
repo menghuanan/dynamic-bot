@@ -79,4 +79,19 @@ class NapCatClientRegressionTest {
 
         assertEquals("[\u5206\u4eab][\u6233\u4e00\u6233][\u97f3\u4e50]", simplified)
     }
+    @Test
+    fun `outgoing log preview should summarize message segments`() {
+        val client = NapCatClient(NapCatConfig())
+
+        val preview = client.buildOutgoingLogPreview(
+            listOf(
+                MessageSegment.text("hello"),
+                MessageSegment.image("file:///cover.png"),
+                MessageSegment("poke", mapOf("qq" to "1")),
+                MessageSegment("markdown", mapOf("data" to "# title"))
+            )
+        )
+
+        assertEquals("hello[\u56fe\u7247][\u6233\u4e00\u6233][Markdown]", preview)
+    }
 }

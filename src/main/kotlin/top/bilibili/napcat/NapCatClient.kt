@@ -71,7 +71,7 @@ class NapCatClient(
 
     private var session: DefaultClientWebSocketSession? = null
     private val sendChannelCapacity = 200
-    private val sendChannel = Channel<String>(capacity = sendChannelCapacity)  // ✅ P1修复: 从1000降低到200，降低内存占用
+    private val sendChannel = Channel<QueuedOutgoingPayload>(capacity = sendChannelCapacity)  // ✅ P1修复: 从1000降低到200，降低内存占用
     private val sendMode = config.sendMode.lowercase()
     private val maxBase64ImageSizeBytes = 10L * 1024L * 1024L
     private val pendingResponses = ConcurrentHashMap<String, CompletableDeferred<OneBotResponse>>()
@@ -80,6 +80,11 @@ class NapCatClient(
     // ✅ P3修复: 发送队列满载告警标志，避免重复告警
     private var sendQueueFullWarningLogged = false
     private val base64LogRegex = Regex("""base64://[A-Za-z0-9+/=]+""")
+
+    private data class QueuedOutgoingPayload(
+        val rawJson: String,
+        val logPreview: String,
+    )
 
     /** Bot 的 QQ 号 */
     var selfId: Long = 0L
@@ -195,11 +200,11 @@ class NapCatClient(
 
             // 启动发送协程
             val sendJob = launch {
-                for (message in sendChannel) {
+                for (payload in sendChannel) {
                     queuedMessageCount.updateAndGet { count -> if (count > 0) count - 1 else 0 }
                     try {
-                        send(message)
-                        logger.debug("已发送消息: ${simplifyOutgoingMessageForLog(message)}")
+                        send(payload.rawJson)
+                        logger.debug("已发送消息: ${payload.logPreview}")
                     } catch (e: Exception) {
                         logger.error("发送消息失败: ${e.message}", e)
                     }
@@ -309,6 +314,7 @@ class NapCatClient(
         }
 
         return try {
+            var outgoingLogPreview: String? = null
             val paramsJson = buildMap<String, kotlinx.serialization.json.JsonElement> {
                 params.forEach { (key, value) ->
                     put(key, when (value) {
@@ -316,6 +322,7 @@ class NapCatClient(
                         is List<*> -> {
                             val segments = value as List<MessageSegment>
                             val segmentsToSend = prepareSegmentsForSend(segments) ?: return false
+                            outgoingLogPreview = buildOutgoingLogPreview(segmentsToSend)
                             if (config.messageFormat == "string" || config.messageFormat == "cqcode") {
                                 kotlinx.serialization.json.JsonPrimitive(segmentsToSend.toCqCode())
                             } else {
@@ -339,6 +346,7 @@ class NapCatClient(
             val response = sendActionAndAwaitResponse(
                 action = request.action,
                 params = request.params,
+                logPreview = outgoingLogPreview,
                 timeoutMillis = 10_000L
             )
 
@@ -359,6 +367,10 @@ class NapCatClient(
         }
     }
 
+    internal fun buildOutgoingLogPreview(segments: List<MessageSegment>): String {
+        return MessageLogSimplifier.simplifySegments(segments)
+    }
+
     internal fun simplifyOutgoingMessageForLog(rawJson: String): String {
         val masked = base64LogRegex.replace(rawJson) { match ->
             val payload = match.value.removePrefix("base64://")
@@ -376,8 +388,12 @@ class NapCatClient(
         }
     }
 
-    private suspend fun enqueueOutgoingJson(payload: String) {
-        val result = sendChannel.trySend(payload)
+    private suspend fun enqueueOutgoingJson(payload: String, logPreview: String? = null) {
+        val queuedPayload = QueuedOutgoingPayload(
+            rawJson = payload,
+            logPreview = logPreview ?: simplifyOutgoingMessageForLog(payload),
+        )
+        val result = sendChannel.trySend(queuedPayload)
         if (result.isSuccess) {
             queuedMessageCount.incrementAndGet()
             sendQueueFullWarningLogged = false
@@ -389,7 +405,7 @@ class NapCatClient(
             sendQueueFullWarningLogged = true
         }
 
-        sendChannel.send(payload)
+        sendChannel.send(queuedPayload)
         queuedMessageCount.incrementAndGet()
     }
 
@@ -404,6 +420,7 @@ class NapCatClient(
     private suspend fun sendActionAndAwaitResponse(
         action: String,
         params: Map<String, JsonElement> = emptyMap(),
+        logPreview: String? = null,
         timeoutMillis: Long = 5_000L
     ): OneBotResponse? {
         if (!isConnected.get()) {
@@ -417,7 +434,7 @@ class NapCatClient(
 
         return try {
             val request = OneBotAction(action = action, params = params, echo = echo)
-            enqueueOutgoingJson(json.encodeToString(request))
+            enqueueOutgoingJson(json.encodeToString(request), logPreview)
             withTimeoutOrNull(timeoutMillis) { deferred.await() }
         } finally {
             pendingResponses.remove(echo)
