@@ -18,6 +18,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
 import okhttp3.ConnectionPool
 import org.slf4j.LoggerFactory
+import top.bilibili.service.MessageLogSimplifier
 import top.bilibili.config.NapCatConfig
 import java.io.File
 import java.net.URI
@@ -70,7 +71,7 @@ class NapCatClient(
 
     private var session: DefaultClientWebSocketSession? = null
     private val sendChannelCapacity = 200
-    private val sendChannel = Channel<String>(capacity = sendChannelCapacity)  // ✅ P1修复: 从1000降低到200，降低内存占用
+    private val sendChannel = Channel<QueuedOutgoingPayload>(capacity = sendChannelCapacity)  // ✅ P1修复: 从1000降低到200，降低内存占用
     private val sendMode = config.sendMode.lowercase()
     private val maxBase64ImageSizeBytes = 10L * 1024L * 1024L
     private val pendingResponses = ConcurrentHashMap<String, CompletableDeferred<OneBotResponse>>()
@@ -79,6 +80,11 @@ class NapCatClient(
     // ✅ P3修复: 发送队列满载告警标志，避免重复告警
     private var sendQueueFullWarningLogged = false
     private val base64LogRegex = Regex("""base64://[A-Za-z0-9+/=]+""")
+
+    private data class QueuedOutgoingPayload(
+        val rawJson: String,
+        val logPreview: String,
+    )
 
     /** Bot 的 QQ 号 */
     var selfId: Long = 0L
@@ -194,11 +200,11 @@ class NapCatClient(
 
             // 启动发送协程
             val sendJob = launch {
-                for (message in sendChannel) {
+                for (payload in sendChannel) {
                     queuedMessageCount.updateAndGet { count -> if (count > 0) count - 1 else 0 }
                     try {
-                        send(message)
-                        logger.debug("已发送消息: ${simplifyOutgoingMessageForLog(message)}")
+                        send(payload.rawJson)
+                        logger.debug("已发送消息: ${payload.logPreview}")
                     } catch (e: Exception) {
                         logger.error("发送消息失败: ${e.message}", e)
                     }
@@ -238,66 +244,10 @@ class NapCatClient(
     }
 
     /** 简化消息内容用于日志显示 */
-    private fun simplifyMessageForLog(rawMessage: String): String {
-        // 检查是否包含 CQ 码
-        if (!rawMessage.contains("[CQ:")) {
-            // 纯文本消息，直接返回（限制长度）
-            return if (rawMessage.length > 100) {
-                rawMessage.take(100) + "..."
-            } else {
-                rawMessage
-            }
-        }
-
-        // 包含 CQ 码，需要简化
-        val result = StringBuilder()
-
-        // 修复：限制输入长度防止 ReDoS
-        val safeMessage = if (rawMessage.length > 10000) {
-            logger.warn("消息过长 (${rawMessage.length} 字符)，截断处理")
-            rawMessage.take(10000)
-        } else {
-            rawMessage
-        }
-
-        val cqPattern = """\[CQ:([^,\]]+)(?:,[^\]]+)?\]""".toRegex()
-
-        var lastIndex = 0
-        cqPattern.findAll(safeMessage).forEach { match ->
-            // 添加 CQ 码之前的文本
-            if (match.range.first > lastIndex) {
-                result.append(safeMessage.substring(lastIndex, match.range.first))
-            }
-
-            // 简化 CQ 码
-            val cqType = match.groupValues[1]
-            when (cqType) {
-                "image" -> result.append("[图片]")
-                "face" -> result.append("[表情]")
-                "at" -> result.append("[提及]")
-                "reply" -> result.append("[回复]")
-                "video" -> result.append("[视频]")
-                "record" -> result.append("[语音]")
-                "file" -> result.append("[文件]")
-                "json" -> result.append("[JSON消息]")
-                "xml" -> result.append("[XML消息]")
-                else -> result.append("[$cqType]")
-            }
-
-            lastIndex = match.range.last + 1
-        }
-
-        // 添加最后的文本
-        if (lastIndex < safeMessage.length) {
-            result.append(safeMessage.substring(lastIndex))
-        }
-
-        // 限制总长度
-        val simplified = result.toString()
-        return if (simplified.length > 100) {
-            simplified.take(100) + "..."
-        } else {
-            simplified
+    /** Incoming message simplification for logs. */
+    internal fun simplifyIncomingMessageForLog(rawMessage: String): String {
+        return MessageLogSimplifier.simplifyIncomingRaw(rawMessage) { length ->
+            logger.warn("消息过长 ($length 字符)，截断处理")
         }
     }
 
@@ -321,7 +271,7 @@ class NapCatClient(
 
             // 尝试解析为消息事件
             val event = json.decodeFromString<MessageEvent>(text)
-            val simplifiedMessage = simplifyMessageForLog(event.rawMessage)
+            val simplifiedMessage = simplifyIncomingMessageForLog(event.rawMessage)
             logger.debug("成功解析 ${event.messageType} 消息事件 [${event.messageId}] 来自 ${event.userId}: $simplifiedMessage")
             _eventFlow.emit(event)
         } catch (e: Exception) {
@@ -364,6 +314,7 @@ class NapCatClient(
         }
 
         return try {
+            var outgoingLogPreview: String? = null
             val paramsJson = buildMap<String, kotlinx.serialization.json.JsonElement> {
                 params.forEach { (key, value) ->
                     put(key, when (value) {
@@ -371,6 +322,7 @@ class NapCatClient(
                         is List<*> -> {
                             val segments = value as List<MessageSegment>
                             val segmentsToSend = prepareSegmentsForSend(segments) ?: return false
+                            outgoingLogPreview = buildOutgoingLogPreview(segmentsToSend)
                             if (config.messageFormat == "string" || config.messageFormat == "cqcode") {
                                 kotlinx.serialization.json.JsonPrimitive(segmentsToSend.toCqCode())
                             } else {
@@ -394,6 +346,7 @@ class NapCatClient(
             val response = sendActionAndAwaitResponse(
                 action = request.action,
                 params = request.params,
+                logPreview = outgoingLogPreview,
                 timeoutMillis = 10_000L
             )
 
@@ -414,6 +367,10 @@ class NapCatClient(
         }
     }
 
+    internal fun buildOutgoingLogPreview(segments: List<MessageSegment>): String {
+        return MessageLogSimplifier.simplifySegments(segments)
+    }
+
     internal fun simplifyOutgoingMessageForLog(rawJson: String): String {
         val masked = base64LogRegex.replace(rawJson) { match ->
             val payload = match.value.removePrefix("base64://")
@@ -431,8 +388,12 @@ class NapCatClient(
         }
     }
 
-    private suspend fun enqueueOutgoingJson(payload: String) {
-        val result = sendChannel.trySend(payload)
+    private suspend fun enqueueOutgoingJson(payload: String, logPreview: String? = null) {
+        val queuedPayload = QueuedOutgoingPayload(
+            rawJson = payload,
+            logPreview = logPreview ?: simplifyOutgoingMessageForLog(payload),
+        )
+        val result = sendChannel.trySend(queuedPayload)
         if (result.isSuccess) {
             queuedMessageCount.incrementAndGet()
             sendQueueFullWarningLogged = false
@@ -444,7 +405,7 @@ class NapCatClient(
             sendQueueFullWarningLogged = true
         }
 
-        sendChannel.send(payload)
+        sendChannel.send(queuedPayload)
         queuedMessageCount.incrementAndGet()
     }
 
@@ -459,6 +420,7 @@ class NapCatClient(
     private suspend fun sendActionAndAwaitResponse(
         action: String,
         params: Map<String, JsonElement> = emptyMap(),
+        logPreview: String? = null,
         timeoutMillis: Long = 5_000L
     ): OneBotResponse? {
         if (!isConnected.get()) {
@@ -472,7 +434,7 @@ class NapCatClient(
 
         return try {
             val request = OneBotAction(action = action, params = params, echo = echo)
-            enqueueOutgoingJson(json.encodeToString(request))
+            enqueueOutgoingJson(json.encodeToString(request), logPreview)
             withTimeoutOrNull(timeoutMillis) { deferred.await() }
         } finally {
             pendingResponses.remove(echo)

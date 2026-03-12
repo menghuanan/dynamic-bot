@@ -68,4 +68,30 @@ class NapCatClientRegressionTest {
             "full base64 payload should not appear in logs"
         )
     }
+
+    @Test
+    fun `incoming log simplification should use shared placeholder mapping`() {
+        val client = NapCatClient(NapCatConfig())
+
+        val simplified = client.simplifyIncomingMessageForLog(
+            "[CQ:share,url=https://example.com][CQ:poke,qq=1][CQ:music,type=qq,id=1]"
+        )
+
+        assertEquals("[\u5206\u4eab][\u6233\u4e00\u6233][\u97f3\u4e50]", simplified)
+    }
+    @Test
+    fun `outgoing log preview should summarize message segments`() {
+        val client = NapCatClient(NapCatConfig())
+
+        val preview = client.buildOutgoingLogPreview(
+            listOf(
+                MessageSegment.text("hello"),
+                MessageSegment.image("file:///cover.png"),
+                MessageSegment("poke", mapOf("qq" to "1")),
+                MessageSegment("markdown", mapOf("data" to "# title"))
+            )
+        )
+
+        assertEquals("hello[\u56fe\u7247][\u6233\u4e00\u6233][Markdown]", preview)
+    }
 }
