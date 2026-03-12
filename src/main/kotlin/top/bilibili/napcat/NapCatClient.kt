@@ -18,6 +18,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
 import okhttp3.ConnectionPool
 import org.slf4j.LoggerFactory
+import top.bilibili.service.MessageLogSimplifier
 import top.bilibili.config.NapCatConfig
 import java.io.File
 import java.net.URI
@@ -238,66 +239,10 @@ class NapCatClient(
     }
 
     /** 简化消息内容用于日志显示 */
-    private fun simplifyMessageForLog(rawMessage: String): String {
-        // 检查是否包含 CQ 码
-        if (!rawMessage.contains("[CQ:")) {
-            // 纯文本消息，直接返回（限制长度）
-            return if (rawMessage.length > 100) {
-                rawMessage.take(100) + "..."
-            } else {
-                rawMessage
-            }
-        }
-
-        // 包含 CQ 码，需要简化
-        val result = StringBuilder()
-
-        // 修复：限制输入长度防止 ReDoS
-        val safeMessage = if (rawMessage.length > 10000) {
-            logger.warn("消息过长 (${rawMessage.length} 字符)，截断处理")
-            rawMessage.take(10000)
-        } else {
-            rawMessage
-        }
-
-        val cqPattern = """\[CQ:([^,\]]+)(?:,[^\]]+)?\]""".toRegex()
-
-        var lastIndex = 0
-        cqPattern.findAll(safeMessage).forEach { match ->
-            // 添加 CQ 码之前的文本
-            if (match.range.first > lastIndex) {
-                result.append(safeMessage.substring(lastIndex, match.range.first))
-            }
-
-            // 简化 CQ 码
-            val cqType = match.groupValues[1]
-            when (cqType) {
-                "image" -> result.append("[图片]")
-                "face" -> result.append("[表情]")
-                "at" -> result.append("[提及]")
-                "reply" -> result.append("[回复]")
-                "video" -> result.append("[视频]")
-                "record" -> result.append("[语音]")
-                "file" -> result.append("[文件]")
-                "json" -> result.append("[JSON消息]")
-                "xml" -> result.append("[XML消息]")
-                else -> result.append("[$cqType]")
-            }
-
-            lastIndex = match.range.last + 1
-        }
-
-        // 添加最后的文本
-        if (lastIndex < safeMessage.length) {
-            result.append(safeMessage.substring(lastIndex))
-        }
-
-        // 限制总长度
-        val simplified = result.toString()
-        return if (simplified.length > 100) {
-            simplified.take(100) + "..."
-        } else {
-            simplified
+    /** Incoming message simplification for logs. */
+    internal fun simplifyIncomingMessageForLog(rawMessage: String): String {
+        return MessageLogSimplifier.simplifyIncomingRaw(rawMessage) { length ->
+            logger.warn("消息过长 ($length 字符)，截断处理")
         }
     }
 
@@ -321,7 +266,7 @@ class NapCatClient(
 
             // 尝试解析为消息事件
             val event = json.decodeFromString<MessageEvent>(text)
-            val simplifiedMessage = simplifyMessageForLog(event.rawMessage)
+            val simplifiedMessage = simplifyIncomingMessageForLog(event.rawMessage)
             logger.debug("成功解析 ${event.messageType} 消息事件 [${event.messageId}] 来自 ${event.userId}: $simplifiedMessage")
             _eventFlow.emit(event)
         } catch (e: Exception) {
