@@ -45,7 +45,7 @@
 围绕正式发布流程，本次补充了基于 Git 标签的 Docker Hub 自动发布：
 
 - 推送 `v*` 标签后，GitHub Actions 会自动构建并发布对应 Docker 镜像
-- Docker Hub 会同步产出 `vX.Y.Z`、`vX.Y` 和 `latest` 标签
+- Docker Hub 会同步产出 `vX.Y.Z` 和 `latest` 标签
 - GitHub Release 的 JAR 资产与 Docker 镜像版本保持一致
 - Docker 镜像构建会显式选中当前发布版本对应的 JAR，避免依赖“取最新文件”的隐式行为
 
@@ -79,7 +79,7 @@
 - 发送混合消息时，日志预览是否能直观看出消息类型
 
 4. Docker 与版本信息
-- 推送 `v1.7.2` 标签后，Docker Hub 是否生成 `v1.7.2`、`v1.7`、`latest`
+- 推送 `v1.7.2` 标签后，Docker Hub 是否生成 `v1.7.2`、`latest`
 - Docker 部署时是否可以直接使用 `latest`
 - `--help` 帮助输出中的版本号是否与实际构建版本一致
 
