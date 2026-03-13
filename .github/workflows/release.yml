@@ -39,7 +39,28 @@ jobs:
     - name: Build with Gradle
       run: ./gradlew build -PreleaseVersion=${{ env.RELEASE_VERSION }}
 
-    - name: Create Release
+    - name: Resolve Release Body
+      id: release_body
+      shell: bash
+      run: |
+        release_body_path="docs/release/release-${GITHUB_REF_NAME}.md"
+        if [[ -f "${release_body_path}" ]]; then
+          echo "has_custom_body=true" >> "${GITHUB_OUTPUT}"
+          echo "body_path=${release_body_path}" >> "${GITHUB_OUTPUT}"
+        else
+          echo "has_custom_body=false" >> "${GITHUB_OUTPUT}"
+        fi
+
+    - name: Create Release with Custom Notes
+      if: steps.release_body.outputs.has_custom_body == 'true'
+      uses: softprops/action-gh-release@v2
+      with:
+        name: ${{ github.ref_name }}
+        body_path: ${{ steps.release_body.outputs.body_path }}
+        files: build/libs/*.jar
+
+    - name: Create Release with Generated Notes
+      if: steps.release_body.outputs.has_custom_body != 'true'
       uses: softprops/action-gh-release@v2
       with:
         name: ${{ github.ref_name }}
