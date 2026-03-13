@@ -6,6 +6,21 @@ import kotlin.system.exitProcess
 
 private val logger = LoggerFactory.getLogger("Main")
 
+internal fun currentVersionLabel(
+    systemVersion: String? = System.getProperty("app.version"),
+    implementationVersion: String? = BiliConfigManager::class.java.`package`?.implementationVersion,
+): String {
+    val resolvedVersion = sequenceOf(systemVersion, implementationVersion)
+        .firstOrNull { !it.isNullOrBlank() }
+
+    return resolvedVersion?.let(::normalizeVersionLabel) ?: "unknown"
+}
+
+private fun normalizeVersionLabel(version: String): String {
+    val trimmedVersion = version.trim()
+    return if (trimmedVersion.startsWith("v")) trimmedVersion else "v$trimmedVersion"
+}
+
 /**
  * 程序主入口
  */
@@ -28,7 +43,7 @@ fun main(args: Array<String>) {
         // 显示帮助信息
         if (showHelp) {
             println("""
-                BiliBili 动态推送 Bot v1.7.1
+                BiliBili 动态推送 Bot ${currentVersionLabel()}
 
                 用法: java -jar dynamic-bot.jar [选项]
 

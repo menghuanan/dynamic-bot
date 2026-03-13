@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "top.bilibili"
-val releaseVersion = (findProperty("releaseVersion") as String?) ?: "1.7.1"
+val releaseVersion = (findProperty("releaseVersion") as String?) ?: "1.7-SNAPSHOT"
 version = releaseVersion
 
 repositories {
@@ -21,6 +21,7 @@ repositories {
 // 配置主类
 application {
     mainClass.set("top.bilibili.MainKt")
+    applicationDefaultJvmArgs = listOf("-Dapp.version=$releaseVersion")
 }
 
 // Java 版本
@@ -80,6 +81,12 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
+    manifest {
+        attributes("Implementation-Version" to project.version.toString())
+    }
 }
 
 // Shadow JAR 配置 - 打包所有依赖
