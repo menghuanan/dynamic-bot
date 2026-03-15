@@ -247,7 +247,7 @@ object DynamicMessageTasker : BiliTasker() {
                 DynamicService.resolveColor(mid, contact)
             }
             val colors = color.split(";", "；").map { Color.makeRGB(it.trim()) }
-            makeDrawDynamic(colors)
+            makeDrawDynamic(colors, contact, color)
         } else null
     }
 

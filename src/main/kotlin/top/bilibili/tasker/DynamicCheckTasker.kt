@@ -10,6 +10,7 @@ import top.bilibili.core.BiliBiliBot
 import top.bilibili.data.DynamicDetail
 import top.bilibili.data.DynamicList
 import top.bilibili.data.DynamicType
+import top.bilibili.service.PushFanoutService
 import top.bilibili.utils.logger
 import top.bilibili.utils.sendAll
 import top.bilibili.utils.time
@@ -103,7 +104,13 @@ object DynamicCheckTasker : BiliCheckTasker("Dynamic") {
             saveHistory()
         }
 
-        dynamicChannel.sendAll(dynamics.map { DynamicDetail(it) })
+        val details = dynamics.flatMap { item ->
+            PushFanoutService.dynamicDetailsForContacts(
+                item,
+                PushFanoutService.resolveDynamicContacts(item, dynamic, bangumi)
+            )
+        }
+        dynamicChannel.sendAll(details)
     }
 
     /**
@@ -146,7 +153,13 @@ object DynamicCheckTasker : BiliCheckTasker("Dynamic") {
         dynamics.forEach {
             logger.info("dynamic ${it.modules.moduleAuthor.name} - ${it.modules.moduleDynamic.desc?.text?.take(50) ?: "<no-text>"}")
         }
-        dynamicChannel.sendAll(dynamics.map { DynamicDetail(it) })
+        val details = dynamics.flatMap { item ->
+            PushFanoutService.dynamicDetailsForContacts(
+                item,
+                PushFanoutService.resolveDynamicContacts(item, dynamic, bangumi)
+            )
+        }
+        dynamicChannel.sendAll(details)
         return dynamics.size
     }
 

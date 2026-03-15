@@ -8,18 +8,19 @@ import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.data.LiveInfo
 import top.bilibili.utils.*
+import top.bilibili.service.DrawCacheKeyService
 import top.bilibili.skia.DrawingSession
 import top.bilibili.skia.SkiaManager
 import kotlin.math.abs
 
 
-suspend fun LiveInfo.makeDrawLive(colors: List<Int>): String {
+suspend fun LiveInfo.makeDrawLive(colors: List<Int>, subject: String? = null, color: String? = null): String {
     return SkiaManager.executeDrawing {
         val live = this@makeDrawLive.drawLive(this, colors.first())
         val img = makeCardBg(this, live.height, colors) {
             it.drawImage(live, 0f, 0f)
         }
-        cacheImage(img, "$uid/${liveTime.formatTime("yyyyMMddHHmmss")}.png", CacheType.DRAW_LIVE)
+        cacheImage(img, color?.let { DrawCacheKeyService.livePath(uid, liveTime, subject, it) } ?: "$uid/${liveTime.formatTime("yyyyMMddHHmmss")}.png", CacheType.DRAW_LIVE)
         // All resources automatically released when session closes
     }
 }

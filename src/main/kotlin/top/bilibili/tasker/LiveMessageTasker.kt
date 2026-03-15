@@ -58,7 +58,7 @@ object LiveMessageTasker : BiliTasker() {
             logger.info("开始生成直播封面图片...")
             val color = DynamicService.resolveColor(uid, contact)
             val colors = color.split(";", "；").map { Color.makeRGB(it.trim()) }
-            val drawPath = makeDrawLive(colors)
+            val drawPath = makeDrawLive(colors, contact, color)
             logger.info("直播封面图片生成完成: $drawPath")
             drawPath
         } else {

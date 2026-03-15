@@ -12,6 +12,7 @@ import top.bilibili.data.DynamicType.DYNAMIC_TYPE_FORWARD
 import top.bilibili.data.DynamicType.DYNAMIC_TYPE_NONE
 import top.bilibili.draw.Position.*
 import top.bilibili.tasker.DynamicMessageTasker.isUnlocked
+import top.bilibili.service.DrawCacheKeyService
 import top.bilibili.utils.*
 import top.bilibili.skia.DrawingSession
 import top.bilibili.skia.SkiaManager
@@ -148,13 +149,13 @@ val generalPaint = Paint().apply {
 }
 
 
-suspend fun DynamicItem.makeDrawDynamic(colors: List<Int>): String {
+suspend fun DynamicItem.makeDrawDynamic(colors: List<Int>, subject: String? = null, color: String? = null): String {
     return SkiaManager.executeDrawing {
         val dynamic = this@makeDrawDynamic.drawDynamic(this, colors.first(), false)
         val img = makeCardBg(this, dynamic.height, colors) {
             it.drawImage(dynamic, 0f, 0f)
         }
-        cacheImage(img, "$mid/$idStr.png", CacheType.DRAW_DYNAMIC)
+        cacheImage(img, color?.let { DrawCacheKeyService.dynamicPath(mid, idStr ?: "0", subject, it) } ?: "$mid/$idStr.png", CacheType.DRAW_DYNAMIC)
         // All resources automatically released when session closes
     }
 }

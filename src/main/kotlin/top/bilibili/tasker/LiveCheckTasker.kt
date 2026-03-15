@@ -9,6 +9,7 @@ import top.bilibili.api.getLive
 import top.bilibili.api.getLiveStatus
 import top.bilibili.data.LiveDetail
 import top.bilibili.data.LiveInfo
+import top.bilibili.service.PushFanoutService
 import top.bilibili.utils.sendAll
 import top.bilibili.utils.logger
 import java.time.Instant
@@ -99,7 +100,10 @@ object LiveCheckTasker : BiliCheckTasker("Live") {
             logger.debug("更新 lastLive 为: $lastLive")
 
             logger.debug("发送 ${lives.size} 个直播到 liveChannel...")
-            liveChannel.sendAll(lives.map { LiveDetail(it) })
+            val details = lives.flatMap { live ->
+                PushFanoutService.liveDetailsForContacts(live, PushFanoutService.resolveLiveContacts(live.uid, dynamic))
+            }
+            liveChannel.sendAll(details)
             logger.debug("直播已发送到 liveChannel")
 
             if (liveCloseEnable) {
