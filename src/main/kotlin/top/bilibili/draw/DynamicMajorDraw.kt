@@ -486,6 +486,18 @@ suspend fun ModuleDynamic.Major.Pgc.drawSmall(session: DrawingSession): Image {
     )
 }
 
+internal data class PgcCardLayout(
+    val topSafeGap: Float,
+    val cardTop: Float,
+    val surfaceHeight: Int
+)
+
+internal fun computePgcCardLayout(contentHeight: Float): PgcCardLayout {
+    val topSafeGap = quality.cardPadding.toFloat()
+    val cardTop = quality.badgeHeight + topSafeGap
+    val surfaceHeight = (quality.badgeHeight + topSafeGap + contentHeight + quality.cardPadding).toInt()
+    return PgcCardLayout(topSafeGap, cardTop, surfaceHeight)
+}
 suspend fun drawPgcCard(
     session: DrawingSession,
     title: String,
@@ -622,18 +634,18 @@ suspend fun drawPgcCard(
     val contentHeight = maxOf(scaledCoverHeight, textTotalHeight)
 
     // 调整为标准间距，移除过大的垂直内边距
-    val cardHeight = quality.badgeHeight + quality.badgePadding + contentHeight + quality.cardPadding
+    val layout = computePgcCardLayout(contentHeight)
 
     val surface = session.createSurface(
         cardRect.width.toInt(),
-        cardHeight.toInt()
+        layout.surfaceHeight
     )
     val canvas = surface.canvas
 
     // 绘制卡片背景（使用标准起始位置）
     val videoCardRect = RRect.makeComplexXYWH(
         quality.cardPadding.toFloat(),
-        quality.badgeHeight.toFloat() + quality.badgePadding,
+        layout.cardTop,
         cardContentRect.width,
         contentHeight,
         cardBadgeArc
