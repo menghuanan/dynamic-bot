@@ -488,16 +488,35 @@ suspend fun ModuleDynamic.Major.Pgc.drawSmall(session: DrawingSession): Image {
 
 internal data class PgcCardLayout(
     val topSafeGap: Float,
+    val bottomSafeGap: Float,
     val cardTop: Float,
     val surfaceHeight: Int
 )
 
 internal fun computePgcCardLayout(contentHeight: Float): PgcCardLayout {
     val topSafeGap = quality.cardPadding.toFloat()
+    val bottomSafeGap = maxOf(
+        quality.cardPadding.toFloat() - quality.contentSpace.toFloat(),
+        theme.smallCardShadow.offsetY + 1f
+    )
     val cardTop = quality.badgeHeight + topSafeGap
-    val surfaceHeight = (quality.badgeHeight + topSafeGap + contentHeight + quality.cardPadding).toInt()
-    return PgcCardLayout(topSafeGap, cardTop, surfaceHeight)
+    val surfaceHeight = (quality.badgeHeight + topSafeGap + contentHeight + bottomSafeGap).toInt()
+    return PgcCardLayout(topSafeGap, bottomSafeGap, cardTop, surfaceHeight)
 }
+
+internal fun computePgcTextBlockHeight(
+    titleHeight: Float,
+    broadcastHeight: Float,
+    statusHeight: Float,
+    statHeight: Float,
+    evaluateHeight: Float?
+): Float {
+    val halfGap = quality.cardPadding / 2f
+    val statBlockHeight = statHeight + quality.badgePadding.toFloat()
+    val baseHeight = titleHeight + broadcastHeight + statusHeight + statBlockHeight + halfGap * 4f
+    return if (evaluateHeight != null) baseHeight + evaluateHeight else baseHeight
+}
+
 suspend fun drawPgcCard(
     session: DrawingSession,
     title: String,
@@ -629,11 +648,17 @@ suspend fun drawPgcCard(
     } else null
 
     // 计算总高度：封面高度和文本高度的最大值
-    val textTotalHeight = titleParagraph.height + broadcastParagraph.height + statusParagraph.height +
-        statParagraph.height + (evaluateParagraph?.height ?: 0f) + quality.cardPadding * 4  // 行间距
+    val textTotalHeight = computePgcTextBlockHeight(
+        titleParagraph.height,
+        broadcastParagraph.height,
+        statusParagraph.height,
+        statParagraph.height,
+        evaluateParagraph?.height
+    )
     val contentHeight = maxOf(scaledCoverHeight, textTotalHeight)
 
-    // 调整为标准间距，移除过大的垂直内边距
+    // assembleCard(...) adds one trailing contentSpace outside this image.
+    // Compensate inside Pgc so the final composed bottom gap matches the side padding.
     val layout = computePgcCardLayout(contentHeight)
 
     val surface = session.createSurface(
