@@ -1,4 +1,4 @@
-﻿package top.bilibili.service
+package top.bilibili.service
 
 import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager

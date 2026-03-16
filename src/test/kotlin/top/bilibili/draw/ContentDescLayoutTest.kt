@@ -1,4 +1,4 @@
-﻿package top.bilibili.draw
+package top.bilibili.draw
 
 import top.bilibili.data.ModuleDynamic
 import kotlin.test.Test
