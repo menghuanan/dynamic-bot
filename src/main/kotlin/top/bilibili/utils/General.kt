@@ -647,7 +647,7 @@ suspend fun actionNotify(subject: Long?, operator: String, target: String, actio
 }
 
 suspend fun actionNotify(subject: Long?, message: ActionMessage) {
-    if (BiliConfigManager.config.enableConfig.notifyEnable && subject != BiliConfigManager.config.admin) {
+    if (top.bilibili.service.FeatureSwitchService.canSendManagedAdminNotice(subject = subject)) {
         actionNotify(buildString {
             appendLine("操作人: ${message.operator}")
             appendLine("目标: ${message.target}")
@@ -658,6 +658,7 @@ suspend fun actionNotify(subject: Long?, message: ActionMessage) {
 }
 
 suspend fun actionNotify(message: String) {
+    if (!top.bilibili.service.FeatureSwitchService.canSendManagedAdminNotice()) return
     val success = top.bilibili.service.MessageGatewayProvider.require().sendAdminMessage(message)
     if (!success) {
         logger.info("通知消息: $message")

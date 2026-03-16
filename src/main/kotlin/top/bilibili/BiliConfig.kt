@@ -44,6 +44,7 @@ data class BiliConfig(
 data class EnableConfig(
     val debugMode: Boolean = false,
     val drawEnable: Boolean = true,
+    val pushDrawEnable: Boolean = true,
     val notifyEnable: Boolean = true,
     val liveCloseNotifyEnable: Boolean = true,
     val lowSpeedEnable: Boolean = true,
@@ -173,6 +174,7 @@ data class CacheConfig(
 @Serializable
 data class LinkResolveConfig(
     val triggerMode: TriggerMode = TriggerMode.At,
+    val drawEnable: Boolean = true,
     val returnLink: Boolean = false,
 )
 

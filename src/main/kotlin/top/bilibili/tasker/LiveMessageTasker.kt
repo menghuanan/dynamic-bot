@@ -13,6 +13,7 @@ import top.bilibili.draw.makeRGB
 import top.bilibili.utils.formatRelativeTime
 import top.bilibili.utils.logger
 import top.bilibili.service.DynamicService
+import top.bilibili.service.FeatureSwitchService
 import top.bilibili.service.resolveColor
 
 object LiveMessageTasker : BiliTasker() {
@@ -54,7 +55,7 @@ object LiveMessageTasker : BiliTasker() {
     }
 
     suspend fun LiveInfo.makeLive(contact: String? = null): String? {
-        return if (BiliConfigManager.config.enableConfig.drawEnable) {
+        return if (FeatureSwitchService.canRenderPushDraw()) {
             logger.info("开始生成直播封面图片...")
             val color = DynamicService.resolveColor(uid, contact)
             val colors = color.split(";", "；").map { Color.makeRGB(it.trim()) }

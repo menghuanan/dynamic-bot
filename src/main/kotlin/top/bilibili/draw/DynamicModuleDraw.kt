@@ -322,16 +322,15 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(session: DrawingSession): Imag
         textStyle = titleTextStyle
     }
 
-    val traCutLineNode = ModuleDynamic.ContentDesc.RichTextNode(
-        "RICH_TEXT_NODE_TYPE_TEXT",
-        BiliConfigManager.config.translateConfig.cutLine,
-        BiliConfigManager.config.translateConfig.cutLine
+    val tra = trans(text)
+    val nodes = buildContentDescRenderNodes(
+        richTextNodes = richTextNodes,
+        translation = tra,
+        cutLine = BiliConfigManager.config.translateConfig.cutLine,
     )
 
-    val tra = trans(text)
-
     val textParagraph =
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText("$text${traCutLineNode.text}$tra").build()
+        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(buildContentDescMeasureText(nodes)).build()
             .layout(cardContentRect.width)
 
     val textCardHeight = (quality.contentFontSize + quality.lineSpace * 2) * (textParagraph.lineNumber + 2)
@@ -347,16 +346,6 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(session: DrawingSession): Imag
 
     var x = textCardRect.left
     var y = quality.contentFontSize + quality.lineSpace
-
-    val nodes = if (tra != null) {
-        richTextNodes.plus(traCutLineNode).plus(
-            ModuleDynamic.ContentDesc.RichTextNode(
-                "RICH_TEXT_NODE_TYPE_TEXT", tra, tra
-            )
-        )
-    } else {
-        richTextNodes
-    }
 
     val surface = session.createSurface(cardRect.width.toInt(), textCardHeight.toInt())
     val canvas = surface.canvas

@@ -9,6 +9,7 @@ import top.bilibili.BiliConfigManager
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.napcat.MessageEvent
 import top.bilibili.napcat.MessageSegment
+import top.bilibili.service.FeatureSwitchService
 import top.bilibili.service.TriggerMode
 import top.bilibili.service.matchingRegular
 import top.bilibili.utils.ImageCache
@@ -184,7 +185,29 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
             try {
                 // 解析链接并生成图片
                 logger.info("开始解析链接 -> $matchedLink")
-                
+
+                val link = linkInfo.getLink()
+                val standardLink = convertToStandardLink(link, linkInfo)
+                val canDraw = FeatureSwitchService.canRenderLinkResolveDraw()
+
+                if (!canDraw) {
+                    val success = top.bilibili.service.MessageGatewayProvider.require().sendGroupMessage(
+                        groupId,
+                        listOf(MessageSegment.text(standardLink))
+                    )
+
+                    if (success) {
+                        logger.info("链接解析结果已发送到群 $groupId")
+                    } else {
+                        logger.warn("链接解析结果发送失败")
+                    }
+
+                    if (matchedLinks.indexOf(matchedLink to linkInfo) < matchedLinks.size - 1) {
+                        delay(500)
+                    }
+                    continue
+                }
+
                 var imagePath: String? = null
                 var retryCount = 0
                 val maxRetries = 1
@@ -196,7 +219,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
                     } catch (e: Exception) {
                         val msg = e.message ?: ""
                         val isTargetError = msg.contains("CODE: 500") || msg.contains("MISS_OPUS_DETAIL_DATA")
-                        
+
                         if (isTargetError && retryCount < maxRetries) {
                             retryCount++
                             logger.warn("解析链接失败，3秒后重试 ($retryCount/$maxRetries): $msg")
@@ -227,9 +250,6 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
 
                 // 如果配置了 returnLink，在回复中包含链接
                 if (returnLink) {
-                    val link = linkInfo.getLink()
-                    // 将链接转换为标准格式（非短链接）
-                    val standardLink = convertToStandardLink(link, linkInfo)
                     replySegments.add(MessageSegment.text("\n$standardLink"))
                 }
 

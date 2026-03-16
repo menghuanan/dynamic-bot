@@ -173,6 +173,7 @@ enum class LinkType(val regex: List<Regex>) {
     ));
 
     suspend fun drawGeneral(id: String, subject: String? = null): String? {
+        if (!FeatureSwitchService.canRenderLinkResolveDraw()) return null
         return when (this) {
             VideoLink -> {
                 biliClient.getVideoDetail(id)?.run {

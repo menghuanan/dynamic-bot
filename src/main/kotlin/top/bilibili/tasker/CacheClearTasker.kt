@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfigManager
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.utils.ImageCache
+import top.bilibili.utils.actionNotify
 import top.bilibili.utils.cachePath
 import java.nio.file.Path
 import kotlin.io.path.forEachDirectoryEntry
@@ -58,7 +59,7 @@ object CacheClearTasker : BiliTasker() {
             consecutiveFailures++
             if (consecutiveFailures >= FAILURE_THRESHOLD) {
                 logger.warn("缓存清理连续失败 $consecutiveFailures 次，发送管理员告警")
-                top.bilibili.service.MessageGatewayProvider.require().sendAdminMessage(
+                actionNotify(
                     "⚠️ 缓存清理连续失败 $consecutiveFailures 次\n" +
                     "错误: $errorMessage\n" +
                     "请检查磁盘空间和文件权限"

@@ -19,13 +19,14 @@ object TemplateRenderService {
     ): List<MessageSegment> {
         BiliBiliBot.logger.info("开始构建消息段...")
         val segments = mutableListOf<MessageSegment>()
+        val config = runCatching { BiliConfigManager.config }.getOrElse { BiliConfig() }
 
         return try {
             BiliBiliBot.logger.info("获取推送模板...")
             val template = overrideTemplate ?: when (message) {
-                is DynamicMessage -> resolveTemplate(contactStr, message.mid, "dynamic")
-                is LiveMessage -> resolveTemplate(contactStr, message.mid, "live")
-                is LiveCloseMessage -> resolveTemplate(contactStr, message.mid, "liveClose")
+                is DynamicMessage -> resolveTemplate(config, contactStr, message.mid, "dynamic")
+                is LiveMessage -> resolveTemplate(config, contactStr, message.mid, "live")
+                is LiveCloseMessage -> resolveTemplate(config, contactStr, message.mid, "liveClose")
             }
             BiliBiliBot.logger.info("使用模板: $template")
 
@@ -42,8 +43,14 @@ object TemplateRenderService {
                 BiliBiliBot.logger.info("替换后内容: ${content.take(100)}...")
 
                 BiliBiliBot.logger.info("解析内容并提取图片和文本...")
-                parseContent(content, message, segments)
+                parseContent(content, message, segments, config)
                 BiliBiliBot.logger.info("当前消息段数量: ${segments.size}")
+            }
+
+            if (template.contains("{draw}") && !hasMeaningfulSegments(segments)) {
+                buildDrawDisabledFallback(message)?.let { fallback ->
+                    segments.add(MessageSegment.text(fallback))
+                }
             }
 
             BiliBiliBot.logger.info("消息段构建完成，共 ${segments.size} 个")
@@ -54,8 +61,13 @@ object TemplateRenderService {
         }
     }
 
-    private fun resolveTemplate(contactStr: String, mid: Long, type: String): String {
-        val config = runCatching { BiliConfigManager.config }.getOrElse { BiliConfig() }
+    private fun hasMeaningfulSegments(segments: List<MessageSegment>): Boolean {
+        return segments.any { segment ->
+            segment.type == "image" || (segment.type == "text" && !segment.data["text"].orEmpty().isBlank())
+        }
+    }
+
+    private fun resolveTemplate(config: BiliConfig, contactStr: String, mid: Long, type: String): String {
         val data = BiliData
 
         val templateMap = when (type) {
@@ -128,19 +140,18 @@ object TemplateRenderService {
     private suspend fun parseContent(
         content: String,
         message: BiliMessage,
-        segments: MutableList<MessageSegment>
+        segments: MutableList<MessageSegment>,
+        config: BiliConfig,
     ) {
         var currentText = content
 
         if (currentText.contains("{draw}")) {
             val drawPath = message.drawPath
-            if (drawPath != null && BiliConfigManager.config.enableConfig.drawEnable) {
+            if (drawPath != null && FeatureSwitchService.canRenderPushDraw(config)) {
                 val imageUrl = ImageCache.toFileUrl(drawPath)
                 segments.add(MessageSegment.image(imageUrl))
-                currentText = currentText.replace("{draw}", "")
-            } else {
-                currentText = currentText.replace("{draw}", "")
             }
+            currentText = currentText.replace("{draw}", "")
         }
 
         if (currentText.contains("{images}")) {
@@ -159,6 +170,14 @@ object TemplateRenderService {
 
         if (currentText.isNotBlank()) {
             segments.add(MessageSegment.text(currentText.trim()))
+        }
+    }
+
+    private fun buildDrawDisabledFallback(message: BiliMessage): String? {
+        return when (message) {
+            is DynamicMessage -> "${message.name}@${message.type.text}\nhttps://t.bilibili.com/${message.did}"
+            is LiveMessage -> "${message.name}@直播\n${message.link}"
+            is LiveCloseMessage -> null
         }
     }
 }

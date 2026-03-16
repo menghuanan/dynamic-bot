@@ -37,4 +37,33 @@ class TemplateRenderServiceTest {
         assertTrue(mergedText.contains("https://t.bilibili.com/200"))
         assertTrue(mergedText.contains("模板测试内容"))
     }
+    @Test
+    fun `draw-only template should downgrade to text when draw is unavailable`() = runBlocking {
+        val message = DynamicMessage(
+            did = "300",
+            mid = 123456L,
+            name = "模板测试UP",
+            type = DynamicType.DYNAMIC_TYPE_AV,
+            time = "2026-03-16 12:00:00",
+            timestamp = 1773652800,
+            content = "模板测试内容",
+            images = emptyList(),
+            links = emptyList(),
+            drawPath = null,
+            contact = null,
+        )
+
+        val segments = TemplateRenderService.buildSegments(
+            message = message,
+            contactStr = "group:10001",
+            overrideTemplate = "{draw}"
+        )
+
+        val mergedText = segments
+            .filter { it.type == "text" }
+            .joinToString("\n") { it.data["text"].orEmpty() }
+
+        assertTrue(mergedText.contains("模板测试UP"))
+        assertTrue(mergedText.contains("https://t.bilibili.com/300"))
+    }
 }

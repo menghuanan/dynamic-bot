@@ -20,6 +20,7 @@ import top.bilibili.data.DynamicType
 import top.bilibili.napcat.MessageSegment
 import top.bilibili.service.AtAllService
 import top.bilibili.service.TemplateRenderService
+import top.bilibili.utils.actionNotify
 import top.bilibili.utils.parseContactId
 
 /**
@@ -216,7 +217,7 @@ object SendTasker : BiliTasker("SendTasker") {
         atAllPermissionWarnTs[groupId] = now
 
         val notice = "群 $groupId 已配置 At全体(UID: $uid)，但 Bot 无 @全体 权限，已自动降级为普通推送。请将 Bot 设为管理员。"
-        runCatching { top.bilibili.service.MessageGatewayProvider.require().sendAdminMessage(notice) }
+        runCatching { actionNotify(notice) }
             .onFailure { BiliBiliBot.logger.warn("发送 @全体 降级提醒失败: ${it.message}") }
     }
 
@@ -227,7 +228,7 @@ object SendTasker : BiliTasker("SendTasker") {
         atAllPermissionWarnTs[groupId] = now
 
         val notice = "群 $groupId 的 @全体 推送发送失败，已自动降级为普通推送。请检查 Bot 是否具备 @全体 权限或当日次数是否耗尽。"
-        runCatching { top.bilibili.service.MessageGatewayProvider.require().sendAdminMessage(notice) }
+        runCatching { actionNotify(notice) }
             .onFailure { BiliBiliBot.logger.warn("发送 @全体 重试降级提醒失败: ${it.message}") }
     }
 

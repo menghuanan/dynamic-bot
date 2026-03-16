@@ -14,6 +14,7 @@ import top.bilibili.draw.makeRGB
 import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.*
 import top.bilibili.service.DynamicService
+import top.bilibili.service.FeatureSwitchService
 import top.bilibili.service.resolveColor
 
 object DynamicMessageTasker : BiliTasker() {
@@ -120,7 +121,10 @@ object DynamicMessageTasker : BiliTasker() {
     }
 
     suspend fun DynamicItem.dynamicImages(): List<String>? {
-        if(isUnlocked()) {
+        if (isUnlocked()) {
+            if (!FeatureSwitchService.canRenderPushDraw()) {
+                return emptyList()
+            }
             val path = SkiaManager.executeDrawing {
                 val blockedImg = drawBlockedDefault(this)
                 cacheImage(blockedImg, "blocked_default.png", CacheType.IMAGES)
@@ -130,16 +134,20 @@ object DynamicMessageTasker : BiliTasker() {
         }
         return when (type) {
             DYNAMIC_TYPE_FORWARD -> orig?.dynamicImages()
-            DYNAMIC_TYPE_DRAW -> when(modules.moduleDynamic.major?.type){
+            DYNAMIC_TYPE_DRAW -> when (modules.moduleDynamic.major?.type) {
                 "MAJOR_TYPE_DRAW" -> modules.moduleDynamic.major?.draw?.items?.map { it.src }
                 "MAJOR_TYPE_BLOCKED" -> {
-                    val path = modules.moduleDynamic.major.blocked?.let {
-                        SkiaManager.executeDrawing {
-                            val blockedImg = it.drawGeneral(this)
-                            cacheImage(blockedImg, "blocked_$idStr.png", CacheType.IMAGES)
+                    if (!FeatureSwitchService.canRenderPushDraw()) {
+                        listOf()
+                    } else {
+                        val path = modules.moduleDynamic.major.blocked?.let {
+                            SkiaManager.executeDrawing {
+                                val blockedImg = it.drawGeneral(this)
+                                cacheImage(blockedImg, "blocked_$idStr.png", CacheType.IMAGES)
+                            }
                         }
+                        listOfNotNull(path?.let { "cache/$it" })
                     }
-                    listOf("cache/$path")
                 }
                 else -> listOf()
             }
@@ -240,7 +248,7 @@ object DynamicMessageTasker : BiliTasker() {
     }
 
     suspend fun DynamicItem.makeDynamic(contact: String? = null): String? {
-        return if (BiliConfigManager.config.enableConfig.drawEnable) {
+        return if (FeatureSwitchService.canRenderPushDraw()) {
             val color = if (this.type == DYNAMIC_TYPE_PGC) {
                 bangumi[mid]?.color ?: BiliConfigManager.config.imageConfig.defaultColor
             } else {
