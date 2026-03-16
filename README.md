@@ -107,14 +107,14 @@ chmod +x gradlew
 ./gradlew shadowJar
 ```
 编译完成后,可执行文件位于：
-- `build/libs/dynamic-bot-1.7.1.jar`
+- `build/libs/dynamic-bot-1.7-SNAPSHOT.jar`
 
 ### 2. 运行 Bot
 
 #### 方式一：直接运行 JAR
 
 ```bash
-java -jar build/libs/dynamic-bot-1.7.1.jar
+java -jar build/libs/dynamic-bot-1.7-SNAPSHOT.jar
 ```
 
 #### 方式二：使用 Docker Hub 镜像（推荐）
@@ -1058,6 +1058,9 @@ docker logs -f dynamic-bot
     1. 先确保两者可以正常网络通信（检查端口、防火墙、IP 地址）。
     2. 强烈建议将 `config/bot.yml` 中的 `send_mode` 设置为：`send_mode: "base64"`。
        因为 `file` 模式无法跨机器访问本地文件。
+
+- **Q: 为什么bot不解析链接？**
+  - A: 需要修改`BiliConfig.yml`中`triggerMode`字段，修改成`Always`即可实现自动解析链接。
 
 - **Q: 没有更多问题了吗？**
   - A: 目前使用人数不多，暂时没有更多问题了。
