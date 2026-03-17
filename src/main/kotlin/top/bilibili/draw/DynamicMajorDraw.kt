@@ -101,7 +101,7 @@ private fun Canvas.drawDynamicMediaLabel(
         labelTextLine.height + quality.badgePadding / 2,
         quality.badgeArc
     )
-    drawRRect(rrect, Paint().apply {
+    drawRRect(rrect, session.createPaint {
         color = Color.BLACK
         alpha = 130
     })
@@ -109,7 +109,7 @@ private fun Canvas.drawDynamicMediaLabel(
         labelTextLine,
         rrect.left + quality.badgePadding * 2,
         dynamicMediaLabelTextBaseline(rrect, labelTextLine),
-        Paint().apply { color = Color.WHITE }
+        session.createPaint { color = Color.WHITE }
     )
 }
 suspend fun ModuleDynamic.Major.makeGeneral(session: DrawingSession, isForward: Boolean = false): Image {
@@ -232,7 +232,7 @@ suspend fun ModuleDynamic.Major.Common.drawGeneral(session: DrawingSession): Ima
     )
     val canvas = surface.canvas
 
-    canvas.drawCard(commonCardRect)
+    canvas.drawCard(session, commonCardRect)
     canvas.drawRectShadowAntiAlias(commonCardRect.inflate(1f), theme.smallCardShadow)
 
     if (badge.text.isNotBlank()) {
@@ -242,10 +242,10 @@ suspend fun ModuleDynamic.Major.Common.drawGeneral(session: DrawingSession): Ima
             labelTextLine,
             commonCardRect.right - labelTextLine.width - quality.badgePadding * 4 - quality.cardPadding,
             1 + (height - labelTextLine.height) / 2,
-            Paint().apply {
+            session.createPaint {
                 color = Color.makeRGB(badge.color)
             },
-            Paint().apply {
+            session.createPaint {
                 color = Color.makeRGB(badge.bgColor)
             }
         )
@@ -341,7 +341,7 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, sho
     val canvas = surface.canvas
 
     // 绘制卡片背景
-    canvas.drawCard(videoCardRect)
+    canvas.drawCard(session, videoCardRect)
     // 卡片阴影
     canvas.drawRectShadowAntiAlias(videoCardRect.inflate(1f), theme.smallCardShadow)
 
@@ -357,7 +357,7 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, sho
 
     // 徽章
     if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
-        canvas.drawBadge(
+        canvas.drawBadge(session, 
             badge.text, font, theme.subLeftBadge.fontColor, theme.subLeftBadge.bgColor, videoCardRect,
             Position.TOP_LEFT
         )
@@ -368,12 +368,12 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, sho
             labelTextLine,
             videoCardRect.right - labelTextLine.width - quality.badgePadding * 4 - quality.cardPadding * 1.3f,
             videoCardRect.top + quality.cardPadding,
-            Paint().apply { color = Color.makeRGB(badge.color) },
-            Paint().apply { color = Color.makeRGB(badge.bgColor) }
+            session.createPaint { color = Color.makeRGB(badge.color) },
+            session.createPaint { color = Color.makeRGB(badge.bgColor) }
         )
     }
     if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
-        canvas.drawBadge(
+        canvas.drawBadge(session, 
             "av$aid  |  $bvid",
             font,
             theme.subRightBadge.fontColor,
@@ -391,10 +391,10 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, sho
         coverRRect.bottom,
         cardBadgeArc
     )
-    canvas.drawRRect(coverMaskRRect, Paint().apply {
+    canvas.drawRRect(coverMaskRRect, session.createPaint {
         color = Color.BLACK
         alpha = 120
-        shader = Shader.makeLinearGradient(
+        shader = session.createLinearGradient(
             Point(coverMaskRRect.left, coverMaskRRect.bottom),
             Point(coverMaskRRect.left, coverMaskRRect.top),
             intArrayOf(0xFF000000.toInt(), 0x00000000.toInt())
@@ -418,10 +418,10 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, sho
         combinedText,
         textX,
         textY,
-        Paint().apply {
+        session.createPaint {
             color = Color.WHITE
         },
-        Paint().apply {
+        session.createPaint {
             color = Color.BLACK
             alpha = 140
         }
@@ -675,12 +675,12 @@ suspend fun drawPgcCard(
         contentHeight,
         cardBadgeArc
     )
-    canvas.drawCard(videoCardRect)
+    canvas.drawCard(session, videoCardRect)
     canvas.drawRectShadowAntiAlias(videoCardRect.inflate(1f), theme.smallCardShadow)
 
     // 绘制徽章
     if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
-        canvas.drawBadge(
+        canvas.drawBadge(session, 
             badge,
             font,
             theme.subLeftBadge.fontColor,
@@ -690,7 +690,7 @@ suspend fun drawPgcCard(
         )
     }
     if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
-        canvas.drawBadge(
+        canvas.drawBadge(session, 
             "ep$epid",
             font,
             theme.subRightBadge.fontColor,
@@ -736,8 +736,8 @@ suspend fun drawPgcCard(
         quality.badgeArc / 2
     )
     // 绘制渐变背景（蓝色到浅蓝色）
-    canvas.drawRRect(statRRect, Paint().apply {
-        shader = Shader.makeLinearGradient(
+    canvas.drawRRect(statRRect, session.createPaint {
+        shader = session.createLinearGradient(
             Point(statRRect.left, statRRect.top),
             Point(statRRect.right, statRRect.top),
             intArrayOf(
@@ -748,7 +748,7 @@ suspend fun drawPgcCard(
         alpha = 50
     })
     // 绘制边框
-    canvas.drawRRect(statRRect, Paint().apply {
+    canvas.drawRRect(statRRect, session.createPaint {
         color = Color.TRANSPARENT
         mode = PaintMode.STROKE
         strokeWidth = 1f
@@ -814,11 +814,11 @@ suspend fun drawLiveSmallCard(
         cardHeight - (quality.badgeHeight + quality.cardPadding),
         cardBadgeArc
     )
-    canvas.drawCard(videoCardRect)
+    canvas.drawCard(session, videoCardRect)
     canvas.drawRectShadowAntiAlias(videoCardRect.inflate(1f), theme.smallCardShadow)
 
     if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
-        canvas.drawBadge(
+        canvas.drawBadge(session, 
             lbadge,
             font,
             theme.subLeftBadge.fontColor,
@@ -828,7 +828,7 @@ suspend fun drawLiveSmallCard(
         )
     }
     if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
-        canvas.drawBadge(
+        canvas.drawBadge(session, 
             rbadge,
             font,
             theme.subRightBadge.fontColor,
@@ -866,8 +866,8 @@ suspend fun drawLiveSmallCard(
             durationTextLine,
             coverRRect.left + quality.badgePadding * 2,
             coverRRect.bottom - durationTextLine.height - quality.badgePadding * 2,
-            Paint().apply { color = Color.WHITE },
-            Paint().apply {
+            session.createPaint { color = Color.WHITE },
+            session.createPaint {
                 color = Color.BLACK
                 alpha = 130
             }
@@ -938,7 +938,7 @@ suspend fun drawSmallCard(
         cardHeight - (quality.badgeHeight + quality.cardPadding),
         cardBadgeArc
     )
-    canvas.drawCard(videoCardRect)
+    canvas.drawCard(session, videoCardRect)
     canvas.drawRectShadowAntiAlias(
         videoCardRect.inflate(1f),
         theme.smallCardShadow
@@ -946,7 +946,7 @@ suspend fun drawSmallCard(
 
     // 绘制徽章
     if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
-        canvas.drawBadge(
+        canvas.drawBadge(session, 
             lbadge,
             font,
             theme.subLeftBadge.fontColor,
@@ -956,7 +956,7 @@ suspend fun drawSmallCard(
         )
     }
     if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
-        canvas.drawBadge(
+        canvas.drawBadge(session, 
             rbadge,
             font,
             theme.subRightBadge.fontColor,
@@ -1003,8 +1003,8 @@ suspend fun drawSmallCard(
             durationTextLine,
             coverRRect.left + quality.badgePadding * 2,
             coverRRect.bottom - durationTextLine.height - quality.badgePadding * 2,
-            Paint().apply { color = Color.WHITE },
-            Paint().apply {
+            session.createPaint { color = Color.WHITE },
+            session.createPaint {
                 color = Color.BLACK
                 alpha = 130
             }
@@ -1089,7 +1089,7 @@ suspend fun ModuleDynamic.Major.Draw.drawGeneral(session: DrawingSession): Image
 
         val dstRect = RRect.makeXYWH(x, y, drawItemWidth, drawItemHeight, quality.cardArc)
 
-        canvas.drawRRect(dstRect, Paint().apply {
+        canvas.drawRRect(dstRect, session.createPaint {
             color = Color.WHITE
             alpha = 160
             mode = PaintMode.FILL
@@ -1103,7 +1103,7 @@ suspend fun ModuleDynamic.Major.Draw.drawGeneral(session: DrawingSession): Image
             canvas.drawDynamicMediaLabel(session, mediaLabel, dstRect)
         }
 
-        canvas.drawRRect(dstRect, Paint().apply {
+        canvas.drawRRect(dstRect, session.createPaint {
             color = theme.drawOutlineColor
             mode = PaintMode.STROKE
             strokeWidth = quality.drawOutlineWidth
@@ -1224,7 +1224,7 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
     )
     val canvas = surface.canvas
 
-    canvas.drawCard(articleCardRect)
+    canvas.drawCard(session, articleCardRect)
     canvas.drawRectShadowAntiAlias(articleCardRect.inflate(1f), theme.smallCardShadow)
 
     val coverRRect = RRect.makeComplexXYWH(
@@ -1269,7 +1269,7 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
 
     // 徽章
     if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
-        canvas.drawBadge(
+        canvas.drawBadge(session, 
             "专栏", font, theme.subLeftBadge.fontColor, theme.subLeftBadge.bgColor, articleCardRect,
             Position.TOP_LEFT
         )
@@ -1280,12 +1280,12 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
             labelTextLine,
             articleCardRect.right - labelTextLine.width - quality.badgePadding * 4 - quality.cardPadding,
             articleCardRect.top + quality.cardPadding * 0.8f,
-            Paint().apply { color = Color.WHITE },
-            Paint().apply { color = Color.makeRGB(251, 114, 153) }
+            session.createPaint { color = Color.WHITE },
+            session.createPaint { color = Color.makeRGB(251, 114, 153) }
         )
     }
     if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
-        canvas.drawBadge(
+        canvas.drawBadge(session, 
             "cv$id",
             font,
             theme.subRightBadge.fontColor,
@@ -1351,19 +1351,19 @@ suspend fun ModuleDynamic.Major.Music.drawGeneral(session: DrawingSession): Imag
     val canvas = surface.canvas
 
     // 绘制卡片背景
-    canvas.drawCard(musicCardRect)
+    canvas.drawCard(session, musicCardRect)
     // 卡片阴影
     canvas.drawRectShadowAntiAlias(musicCardRect.inflate(1f), theme.smallCardShadow)
 
     // 徽章
     if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
-        canvas.drawBadge(
+        canvas.drawBadge(session, 
             "音乐", font, theme.subLeftBadge.fontColor, theme.subLeftBadge.bgColor, musicCardRect,
             Position.TOP_LEFT
         )
     }
     if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
-        canvas.drawBadge(
+        canvas.drawBadge(session, 
             "au$musicId",
             font,
             theme.subRightBadge.fontColor,

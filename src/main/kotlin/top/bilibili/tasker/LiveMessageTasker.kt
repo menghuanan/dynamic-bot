@@ -14,6 +14,7 @@ import top.bilibili.utils.formatRelativeTime
 import top.bilibili.utils.logger
 import top.bilibili.service.DynamicService
 import top.bilibili.service.FeatureSwitchService
+import top.bilibili.service.parseGradientColors
 import top.bilibili.service.resolveColor
 
 object LiveMessageTasker : BiliTasker() {
@@ -58,7 +59,7 @@ object LiveMessageTasker : BiliTasker() {
         return if (FeatureSwitchService.canRenderPushDraw()) {
             logger.info("开始生成直播封面图片...")
             val color = DynamicService.resolveColor(uid, contact)
-            val colors = color.split(";", "；").map { Color.makeRGB(it.trim()) }
+            val colors = parseGradientColors(color)
             val drawPath = makeDrawLive(colors, contact, color)
             logger.info("直播封面图片生成完成: $drawPath")
             drawPath

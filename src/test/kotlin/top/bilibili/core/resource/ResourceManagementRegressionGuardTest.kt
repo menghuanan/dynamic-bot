@@ -219,30 +219,29 @@ class ResourceManagementRegressionGuardTest {
     }
 
     @Test
-    fun `svg dom instances should be explicitly closed in draw hot paths`() {
+    fun `svg dom hot paths should load through drawing session factories`() {
         val dynamicDraw = read("src/main/kotlin/top/bilibili/draw/DynamicDraw.kt")
         val dynamicModule = read("src/main/kotlin/top/bilibili/draw/DynamicModuleDraw.kt")
         val liveDraw = read("src/main/kotlin/top/bilibili/draw/LiveDraw.kt")
         val qrCodeDraw = read("src/main/kotlin/top/bilibili/draw/QrCodeDraw.kt")
 
         assertTrue(
-            dynamicDraw.contains("svg.close()"),
-            "DynamicDraw should close temporary SVGDOM instances",
+            dynamicDraw.contains("session.createSvg("),
+            "DynamicDraw should load SVGDOM through DrawingSession",
         )
         assertTrue(
-            dynamicModule.contains("svg.close()"),
-            "DynamicModuleDraw should close temporary SVGDOM instances",
+            dynamicModule.contains("session.createSvg("),
+            "DynamicModuleDraw should load SVGDOM through DrawingSession",
         )
         assertTrue(
-            liveDraw.contains("svg.close()"),
-            "LiveDraw should close temporary SVGDOM instances",
+            liveDraw.contains("session.createSvg("),
+            "LiveDraw should load SVGDOM through DrawingSession",
         )
         assertTrue(
-            qrCodeDraw.contains("svg.close()"),
-            "QrCodeDraw should close temporary SVGDOM instances",
+            qrCodeDraw.contains("createSvg("),
+            "QrCodeDraw should load SVGDOM through DrawingSession",
         )
     }
-
     @Test
     fun `general image download path should guard invalid source urls`() {
         val general = read("src/main/kotlin/top/bilibili/utils/General.kt")

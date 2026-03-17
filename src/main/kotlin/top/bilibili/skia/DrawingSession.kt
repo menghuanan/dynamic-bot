@@ -1,29 +1,37 @@
 package top.bilibili.skia
 
-import org.jetbrains.skia.*
+import org.jetbrains.skia.BlendMode
+import org.jetbrains.skia.Canvas
+import org.jetbrains.skia.ColorFilter
+import org.jetbrains.skia.EncodedImageFormat
+import org.jetbrains.skia.Font
+import org.jetbrains.skia.Paint
+import org.jetbrains.skia.Point
+import org.jetbrains.skia.Shader
+import org.jetbrains.skia.Surface
+import org.jetbrains.skia.TextLine
+import org.jetbrains.skia.Typeface
+import org.jetbrains.skia.Image
 import org.jetbrains.skia.paragraph.FontCollection
 import org.jetbrains.skia.paragraph.Paragraph
 import org.jetbrains.skia.paragraph.ParagraphBuilder
 import org.jetbrains.skia.paragraph.ParagraphStyle
+import org.jetbrains.skia.svg.SVGDOM
 import org.slf4j.LoggerFactory
-import java.util.*
+import top.bilibili.draw.loadSVG
 import java.util.Collections
+import java.util.UUID
 
-/**
- * 绘图会话 - 自动追踪和释放 Skia 资源
- */
 class DrawingSession : AutoCloseable {
     private val resources = Collections.synchronizedList(mutableListOf<AutoCloseable>())
     private val sessionId = UUID.randomUUID().toString().take(8)
     private val creationTime = System.currentTimeMillis()
+
     @Volatile
     private var isClosed = false
 
     private val logger = LoggerFactory.getLogger(DrawingSession::class.java)
 
-    /**
-     * 追踪任意 AutoCloseable 对象
-     */
     fun <T : AutoCloseable> T.track(): T {
         if (!isClosed) {
             resources.add(this)
@@ -31,31 +39,21 @@ class DrawingSession : AutoCloseable {
         return this
     }
 
-    /**
-     * 创建 Surface 并自动追踪
-     */
     fun createSurface(width: Int, height: Int): Surface {
-        val surface = Surface.makeRasterN32Premul(width, height)
-        return surface.track()
+        return Surface.makeRasterN32Premul(width, height).track()
     }
 
-    /**
-     * 创建 Image 并自动追踪（从字节数组）
-     */
     fun createImage(bytes: ByteArray): Image {
         val image = Image.makeFromEncoded(bytes)
             ?: throw IllegalArgumentException("Failed to decode image from bytes")
         return image.track()
     }
 
-    /**
-     * 创建 Paragraph 并自动追踪
-     */
     fun createParagraph(
         style: ParagraphStyle,
         fonts: FontCollection,
         width: Float,
-        build: ParagraphBuilder.() -> Unit
+        build: ParagraphBuilder.() -> Unit,
     ): Paragraph {
         val builder = ParagraphBuilder(style, fonts)
         builder.apply(build)
@@ -63,30 +61,39 @@ class DrawingSession : AutoCloseable {
         return paragraph.track()
     }
 
-    /**
-     * 创建 TextLine 并自动追踪
-     */
     fun createTextLine(text: String, font: Font): TextLine {
-        val textLine = TextLine.make(text, font)
-        return textLine.track()
+        return TextLine.make(text, font).track()
     }
 
-    /**
-     * 创建临时 Font 并自动追踪
-     */
     fun createFont(typeface: Typeface, size: Float): Font {
-        val font = Font(typeface, size)
-        return font.track()
+        return Font(typeface, size).track()
     }
 
-    /**
-     * 执行绘图并返回图片数据
-     */
+    fun createPaint(configure: Paint.() -> Unit = {}): Paint {
+        return Paint().apply(configure).track()
+    }
+
+    fun createLinearGradient(start: Point, end: Point, colors: IntArray): Shader {
+        return Shader.makeLinearGradient(start, end, colors).track()
+    }
+
+    fun createSweepGradient(cx: Float, cy: Float, colors: IntArray): Shader {
+        return Shader.makeSweepGradient(cx, cy, colors).track()
+    }
+
+    fun createBlendColorFilter(color: Int, mode: BlendMode): ColorFilter {
+        return ColorFilter.makeBlend(color, mode).track()
+    }
+
+    fun createSvg(path: String): SVGDOM? {
+        return loadSVG(path)?.track()
+    }
+
     inline fun drawToBytes(
         width: Int,
         height: Int,
         format: EncodedImageFormat = EncodedImageFormat.PNG,
-        crossinline draw: Canvas.() -> Unit
+        crossinline draw: Canvas.() -> Unit,
     ): ByteArray {
         val surface = createSurface(width, height)
         surface.canvas.draw()
@@ -100,15 +107,11 @@ class DrawingSession : AutoCloseable {
         }
     }
 
-    /**
-     * 执行绘图并返回 Image（调用者负责关闭）
-     */
     inline fun drawToImage(
         width: Int,
         height: Int,
-        crossinline draw: Canvas.() -> Unit
+        crossinline draw: Canvas.() -> Unit,
     ): Image {
-        // Don't track the surface since we're returning the image untracked
         val surface = Surface.makeRasterN32Premul(width, height)
         try {
             surface.canvas.draw()
@@ -118,9 +121,6 @@ class DrawingSession : AutoCloseable {
         }
     }
 
-    /**
-     * 关闭会话，释放所有资源
-     */
     override fun close() {
         if (isClosed) return
         isClosed = true
@@ -128,10 +128,8 @@ class DrawingSession : AutoCloseable {
         val duration = System.currentTimeMillis() - creationTime
         val resourceCount = resources.size
 
-        // 逆序关闭资源（后创建的先关闭）
         resources.asReversed().forEach { resource ->
             runCatching {
-                // 检查 Skia Managed 资源是否已关闭，避免重复关闭
                 if (resource is org.jetbrains.skia.impl.Managed && resource.isClosed) {
                     return@forEach
                 }

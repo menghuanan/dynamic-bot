@@ -179,7 +179,8 @@ enum class LinkType(val regex: List<Regex>) {
                 biliClient.getVideoDetail(id)?.run {
                     val author = biliClient.userInfo(owner.mid)?.toDrawAuthorData() ?: toDrawAuthorData()
                     val videoData = toDrawData()
-                    val colors = resolveColors(author.mid, subject)
+                    val color = DynamicService.resolveColor(author.mid, subject)
+                    val colors = parseGradientColors(color)
                     val footer = buildFooter(author.name, author.mid, id, pubdate.formatRelativeTime, "视频")
 
                     SkiaManager.executeDrawing {
@@ -188,14 +189,15 @@ enum class LinkType(val regex: List<Regex>) {
                         val imgList = listOf(authorImg, contentImg)
                         val cimg = imgList.assembleCard(this, id, footer, tag = "搜索", closeInputImages = true)
                         val img = makeCardBg(this, cimg.height, colors) { it.drawImage(cimg, 0f, 0f) }
-                        cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
+                        cacheImage(img, DrawCacheKeyService.searchPath(uid = author.mid, entityType = "video", entityId = id, subject = subject, color = color), CacheType.DRAW_SEARCH)
                     }
                 }
             }
             Article -> {
                 biliClient.getArticleDetail("cv$id")?.run {
                     val articleData = toDrawData()
-                    val colors = resolveColors(author.mid, subject)
+                    val color = DynamicService.resolveColor(author.mid, subject)
+                    val colors = parseGradientColors(color)
                     val footer = buildFooter(author.name, author.mid, id, time.formatRelativeTime, "专栏")
 
                     SkiaManager.executeDrawing {
@@ -204,19 +206,20 @@ enum class LinkType(val regex: List<Regex>) {
                         val imgList = listOf(authorImg, contentImg)
                         val cimg = imgList.assembleCard(this, id, footer, tag = "搜索", closeInputImages = true)
                         val img = makeCardBg(this, cimg.height, colors) { it.drawImage(cimg, 0f, 0f) }
-                        cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
+                        cacheImage(img, DrawCacheKeyService.searchPath(uid = author.mid, entityType = "article", entityId = id, subject = subject, color = color), CacheType.DRAW_SEARCH)
                     }
                 }
             }
             Dynamic -> {
                 biliClient.getDynamicDetail(id)?.run {
-                    val colors = resolveColors(modules.moduleAuthor.mid, subject)
+                    val color = DynamicService.resolveColor(modules.moduleAuthor.mid, subject)
+                    val colors = parseGradientColors(color)
                     SkiaManager.executeDrawing {
                         val dynamic = this@run.drawDynamic(this, colors.first())
                         val img = makeCardBg(this, dynamic.height, colors) {
                             it.drawImage(dynamic, 0f, 0f)
                         }
-                        cacheImage(img, "$idStr.png", CacheType.DRAW_SEARCH)
+                        cacheImage(img, DrawCacheKeyService.searchPath(uid = modules.moduleAuthor.mid, entityType = "dynamic", entityId = idStr ?: id, subject = subject, color = color), CacheType.DRAW_SEARCH)
                     }
                 }
             }
@@ -224,7 +227,8 @@ enum class LinkType(val regex: List<Regex>) {
                 val room = biliClient.getLiveDetail(id) ?: return null
                 val author = biliClient.userInfo(room.uid)?.toDrawAuthorData() ?: return null
                 val liveData = room.toDrawData()
-                val colors = resolveColors(room.uid, subject)
+                val color = DynamicService.resolveColor(room.uid, subject)
+                val colors = parseGradientColors(color)
                 val area = if (room.parentAreaName != null && room.areaName != null) {
                     "${room.parentAreaName} · ${room.areaName}"
                 } else {
@@ -255,12 +259,13 @@ enum class LinkType(val regex: List<Regex>) {
                     val imgList = listOf(authorImg, contentImg)
                     val cimg = imgList.assembleCard(this, id, footer, tag = "搜索", closeInputImages = true)
                     val img = makeCardBg(this, cimg.height, colors) { it.drawImage(cimg, 0f, 0f) }
-                    cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
+                    cacheImage(img, DrawCacheKeyService.searchPath(uid = room.uid, entityType = "live", entityId = id, subject = subject, color = color), CacheType.DRAW_SEARCH)
                 }
             }
             User -> {
                 val author = biliClient.userInfo(id.toLong())?.toDrawAuthorData() ?: return null
-                val colors = resolveColors(author.mid, subject)
+                val color = DynamicService.resolveColor(author.mid, subject)
+                val colors = parseGradientColors(color)
                 val footer = buildFooter(author.name, author.mid, id, author.sign ?: "", "用户")
 
                 SkiaManager.executeDrawing {
@@ -268,7 +273,7 @@ enum class LinkType(val regex: List<Regex>) {
                     val imgList = listOf(authorImg)
                     val cimg = imgList.assembleCard(this, id, footer, tag = "搜索", closeInputImages = true)
                     val img = makeCardBg(this, cimg.height, colors) { it.drawImage(cimg, 0f, 0f) }
-                    cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
+                    cacheImage(img, DrawCacheKeyService.searchPath(uid = author.mid, entityType = "user", entityId = id, subject = subject, color = color), CacheType.DRAW_SEARCH)
                 }
             }
             Pgc -> {
@@ -307,13 +312,11 @@ enum class LinkType(val regex: List<Regex>) {
 }
 
 private fun resolveColors(uid: Long, subject: String?): List<Int> {
-    return DynamicService.resolveColor(uid, subject)
-        .split(";", "；").map { Color.makeRGB(it.trim()) }
+    return parseGradientColors(DynamicService.resolveColor(uid, subject))
 }
 
 private fun getDefaultColors(): List<Int> {
-    return BiliConfigManager.config.imageConfig.defaultColor
-        .split(";", "；").map { Color.makeRGB(it.trim()) }
+    return parseGradientColors(BiliConfigManager.config.imageConfig.defaultColor)
 }
 
 //摆烂行为

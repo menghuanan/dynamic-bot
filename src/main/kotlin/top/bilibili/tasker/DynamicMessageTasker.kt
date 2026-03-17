@@ -15,6 +15,7 @@ import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.*
 import top.bilibili.service.DynamicService
 import top.bilibili.service.FeatureSwitchService
+import top.bilibili.service.parseGradientColors
 import top.bilibili.service.resolveColor
 
 object DynamicMessageTasker : BiliTasker() {
@@ -254,7 +255,7 @@ object DynamicMessageTasker : BiliTasker() {
             } else {
                 DynamicService.resolveColor(mid, contact)
             }
-            val colors = color.split(";", "；").map { Color.makeRGB(it.trim()) }
+            val colors = parseGradientColors(color)
             makeDrawDynamic(colors, contact, color)
         } else null
     }

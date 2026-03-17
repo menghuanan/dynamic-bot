@@ -67,33 +67,28 @@ suspend fun LiveInfo.drawLive(session: DrawingSession, qrCodeColor: Int): Image 
     canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
 
     if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
-        val svg = loadSVG("icon/LIVE.svg")
-        try {
-            if (svg != null) {
-                val badgeImage = svg.makeImage(session, quality.contentFontSize, quality.contentFontSize)
-                canvas.drawBadge(
-                    "直播",
-                    font,
-                    theme.mainLeftBadge.fontColor,
-                    theme.mainLeftBadge.bgColor,
-                    rrect,
-                    Position.TOP_LEFT,
-                    badgeImage
-                )
-            } else {
-                logger.warn("未找到 LIVE 图标")
-            }
-        } finally {
-            if (svg != null) {
-                svg.close()
-            }
+        val svg = session.createSvg("icon/LIVE.svg")
+        if (svg != null) {
+            val badgeImage = svg.makeImage(session, quality.contentFontSize, quality.contentFontSize)
+            canvas.drawBadge(
+                session,
+                "直播",
+                font,
+                theme.mainLeftBadge.fontColor,
+                theme.mainLeftBadge.bgColor,
+                rrect,
+                Position.TOP_LEFT,
+                badgeImage
+            )
+        } else {
+            logger.warn("未找到 LIVE 图标")
         }
     }
     if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
-        canvas.drawBadge(liveRoomId.toString(), font, Color.WHITE, Color.makeRGB(72, 199, 240), rrect, Position.TOP_RIGHT)
+        canvas.drawBadge(session, liveRoomId.toString(), font, Color.WHITE, Color.makeRGB(72, 199, 240), rrect, Position.TOP_RIGHT)
     }
 
-    canvas.drawCard(rrect)
+    canvas.drawCard(session, rrect)
 
     var top = quality.cardMargin + quality.badgeHeight.toFloat()
 
@@ -199,7 +194,7 @@ fun Canvas.drawLiveOrnament(session: DrawingSession, link: String?, qrCodeColor:
                 srcFRect,
                 tarFRect,
                 FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
-                Paint(),
+                session.createPaint(),
                 true
             )
         }

@@ -32,7 +32,6 @@ suspend fun loginQrCode(url: String): Image {
 
         val config = MatrixToImageConfig(pointColor.toInt(), bgColor.toInt())
 
-        // 使用 drawToImage 返回未追踪的 Image，调用者负责关闭
         drawToImage(250, 250) {
             val img = Image.makeFromBitmap(MatrixToImageWriter.toBufferedImage(bitMatrix, config).toBitmap())
             try {
@@ -41,46 +40,26 @@ suspend fun loginQrCode(url: String): Image {
                 img.close()
             }
 
-            // 绘制中心圆形背景
-            drawCircle(125f, 125f, 35f, Paint().apply {
+            drawCircle(125f, 125f, 35f, this@executeDrawing.createPaint {
                 color = Color.WHITE
             })
-            drawCircle(125f, 125f, 30f, Paint().apply {
+            drawCircle(125f, 125f, 30f, this@executeDrawing.createPaint {
                 color = Color.makeRGB(2, 181, 218)
             })
 
-            // 尝试加载并绘制 Logo，如果失败则跳过
             try {
-                val svg = loadSVG("icon/BILIBILI_LOGO.svg")
+                val svg = this@executeDrawing.createSvg("icon/BILIBILI_LOGO.svg")
                 if (svg != null) {
-                    try {
-                        // 使用 createImage 创建临时 Image，手动关闭
-                        val surface = Surface.makeRasterN32Premul(40, 40)
-                        try {
-                            svg.setContainerSize(40f, 40f)
-                            svg.render(surface.canvas)
-                            val logoImg = surface.makeImageSnapshot()
-                            try {
-                                drawImage(logoImg, 105f, 105f, Paint().apply {
-                                    colorFilter = ColorFilter.makeBlend(Color.WHITE, BlendMode.SRC_ATOP)
-                                })
-                            } finally {
-                                logoImg.close()
-                            }
-                        } finally {
-                            surface.close()
-                        }
-                    } finally {
-                        svg.close()
-                    }
+                    val logoImg = svg.makeImage(this@executeDrawing, 40f, 40f)
+                    drawImage(logoImg, 105f, 105f, this@executeDrawing.createPaint {
+                        colorFilter = this@executeDrawing.createBlendColorFilter(Color.WHITE, BlendMode.SRC_ATOP)
+                    })
                 } else {
-                    // Logo 不存在，绘制文字 "B"
-                    drawFallbackLogo(this)
+                    drawFallbackLogo(this@executeDrawing, this)
                 }
             } catch (e: Exception) {
-                // 如果加载失败，绘制简单的文字
                 logger.warn("加载二维码中心图标失败: ${e.message}")
-                drawFallbackLogo(this)
+                drawFallbackLogo(this@executeDrawing, this)
             }
         }
     }
@@ -89,21 +68,16 @@ suspend fun loginQrCode(url: String): Image {
 /**
  * 绘制备用 Logo（文字 "B"）
  */
-private fun drawFallbackLogo(canvas: Canvas) {
+private fun drawFallbackLogo(session: DrawingSession, canvas: Canvas) {
     val defaultTypeface = FontMgr.default.matchFamilyStyle("", FontStyle.NORMAL)
         ?: FontMgr.default.matchFamiliesStyle(arrayOf("sans-serif"), FontStyle.NORMAL)
-    val fallbackFont = Font(defaultTypeface, 50f)
-    val textLine = TextLine.make("B", fallbackFont)
-    try {
-        canvas.drawTextLine(textLine, 110f, 140f, Paint().apply {
-            color = Color.WHITE
-        })
-    } finally {
-        textLine.close()
-        fallbackFont.close()
-    }
+        ?: return
+    val fallbackFont = session.createFont(defaultTypeface, 50f)
+    val textLine = session.createTextLine("B", fallbackFont)
+    canvas.drawTextLine(textLine, 110f, 140f, session.createPaint {
+        color = Color.WHITE
+    })
 }
-
 
 fun qrCode(session: DrawingSession, url: String, width: Int, color: Int): Image {
     val qrCodeWriter = QRCodeWriter()

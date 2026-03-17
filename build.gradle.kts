@@ -83,6 +83,19 @@ tasks.test {
     useJUnitPlatform()
 }
 
+val skiaNativeMemoryEvidenceTest by tasks.registering(org.gradle.api.tasks.testing.Test::class) {
+    description = "Runs the Skia native-memory evidence test with JVM native memory tracking enabled"
+    group = "verification"
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching("top.bilibili.core.resource.SkiaNativeMemoryEvidenceTest")
+    }
+    jvmArgs("-XX:NativeMemoryTracking=summary")
+    systemProperty("skia.native.memory.evidence", "true")
+    shouldRunAfter(tasks.test)
+}
 tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
     manifest {
         attributes("Implementation-Version" to project.version.toString())

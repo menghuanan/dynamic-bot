@@ -10,25 +10,30 @@ object DrawCacheKeyService {
     private val liveTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
 
     fun dynamicPath(uid: Long, dynamicId: String, subject: String?, color: String): String {
-        val suffix = scopeHash(subject, color)
-        return "$uid/${dynamicId}_$suffix.png"
+        val scopeDirectory = subjectScopeDirectory(subject)
+        return "$uid/$scopeDirectory/${dynamicId}_${colorHash(color)}.png"
     }
 
     fun livePath(uid: Long, liveTime: Long, subject: String?, color: String): String {
-        val suffix = scopeHash(subject, color)
+        val scopeDirectory = subjectScopeDirectory(subject)
         val timeKey = formatLiveTime(liveTime)
-        return "$uid/${timeKey}_$suffix.png"
+        return "$uid/$scopeDirectory/${timeKey}_${colorHash(color)}.png"
+    }
+
+    fun searchPath(uid: Long, entityType: String, entityId: String, subject: String?, color: String): String {
+        val scopeDirectory = subjectScopeDirectory(subject)
+        val entityHash = md5("$entityType|$entityId").take(10)
+        return "$uid/$scopeDirectory/${entityHash}_${colorHash(color)}.png"
+    }
+
+    internal fun subjectScopeDirectory(subject: String?): String {
+        val normalizedSubject = normalizeSubject(subject)
+        return "scope_${md5(normalizedSubject).take(10)}"
     }
 
     private fun formatLiveTime(epochSecond: Long): String {
         val offset = OffsetDateTime.now().offset
         return LocalDateTime.ofEpochSecond(epochSecond, 0, offset).format(liveTimeFormatter)
-    }
-
-    private fun scopeHash(subject: String?, color: String): String {
-        val normalizedSubject = normalizeSubject(subject)
-        val normalizedColor = normalizeColor(color)
-        return md5("$normalizedSubject|$normalizedColor").take(10)
     }
 
     private fun normalizeSubject(subject: String?): String {
@@ -41,11 +46,11 @@ object DrawCacheKeyService {
     }
 
     private fun normalizeColor(color: String): String {
-        return color
-            .split(";", "；")
-            .map { it.trim().lowercase() }
-            .filter { it.isNotEmpty() }
-            .joinToString(";")
+        return normalizeGradientColorForCache(color)
+    }
+
+    private fun colorHash(color: String): String {
+        return md5(normalizeColor(color)).take(10)
     }
 
     private fun md5(input: String): String {

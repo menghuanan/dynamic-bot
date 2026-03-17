@@ -295,7 +295,7 @@ fun Surface.saveImage(path: String) {
 }
 //fun Surface.saveImage(path: java.nio.file.Path) = path.writeBytes(makeImageSnapshot().encodeToData()!!.bytes)
 
-fun Canvas.drawScaleWidthImage(image: Image, width: Float, x: Float, y: Float, paint: Paint = Paint()) {
+fun Canvas.drawScaleWidthImage(image: Image, width: Float, x: Float, y: Float, paint: Paint? = null) {
     val src = Rect.makeXYWH(0f, 0f, image.width.toFloat(), image.height.toFloat())
     val dst = Rect.makeXYWH(x, y, width, width * image.height / image.width)
     drawImageRect(image, src, dst, FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST), paint, false)
@@ -307,16 +307,17 @@ fun Canvas.drawScaleWidthImageOutline(
     x: Float,
     y: Float,
     isForward: Boolean = false,
-    paint: Paint = Paint()
+    paint: Paint? = null
 ) {
     drawScaleWidthImage(image, width, x, y, paint)
     val dst = Rect.makeXYWH(x, y, width, width * image.height / image.width).toRRect()
-    drawRRect(dst, Paint().apply {
-        color = if (isForward) Color.BLUE else Color.GREEN
-        mode = PaintMode.STROKE
-        strokeWidth = 2f
-        isAntiAlias = true
-    })
+        Paint().use { outlinePaint ->
+        outlinePaint.color = if (isForward) Color.BLUE else Color.GREEN
+        outlinePaint.mode = PaintMode.STROKE
+        outlinePaint.strokeWidth = 2f
+        outlinePaint.isAntiAlias = true
+        drawRRect(dst, outlinePaint)
+    }
 }
 
 fun Rect.toRRect() =

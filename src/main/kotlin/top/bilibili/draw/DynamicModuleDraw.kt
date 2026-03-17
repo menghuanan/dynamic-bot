@@ -141,7 +141,6 @@ suspend fun drawAdditionalCard(
     else
         quality.additionalCardHeight * 0.7f
 
-
     val additionalCardRect = RRect.makeXYWH(
         quality.cardPadding.toFloat(),
         quality.subTitleFontSize + quality.cardPadding + 1f,
@@ -150,78 +149,73 @@ suspend fun drawAdditionalCard(
         quality.cardArc
     )
 
-    val coverImg = if (cover != null) getOrDownloadImage(cover, CacheType.OTHER) else null
+    val coverImg = if (cover != null) with(session) { getOrDownloadImage(cover, CacheType.OTHER)?.track() } else null
+    val surface = session.createSurface(
+        cardRect.width.toInt(),
+        (height + quality.subTitleFontSize + quality.cardPadding * 2f).toInt()
+    )
+    val canvas = surface.canvas
 
-    return try {
-        val surface = session.createSurface(
-            cardRect.width.toInt(),
-            (height + quality.subTitleFontSize + quality.cardPadding * 2f).toInt()
-        )
-        val canvas = surface.canvas
+    canvas.drawCard(session, additionalCardRect)
+    canvas.drawRectShadowAntiAlias(additionalCardRect.inflate(1f), theme.smallCardShadow)
 
-        canvas.drawCard(additionalCardRect)
-        canvas.drawRectShadowAntiAlias(additionalCardRect.inflate(1f), theme.smallCardShadow)
+    val labelFont = session.createFont(font.typeface!!, quality.subTitleFontSize)
+    val labelTextLine = session.createTextLine(label, labelFont)
 
-        val labelFont = with(session) { font.makeWithSize(quality.subTitleFontSize).track() }
-        val labelTextLine = with(session) { TextLine.make(label, labelFont).track() }
+    canvas.drawTextLine(labelTextLine, additionalCardRect.left + 8, quality.subTitleFontSize, session.createPaint {
+        color = theme.subTitleColor
+    })
 
-        canvas.drawTextLine(labelTextLine, additionalCardRect.left + 8, quality.subTitleFontSize, Paint().apply {
-            color = theme.subTitleColor
-        })
+    var x = quality.cardPadding.toFloat()
 
-        var x = quality.cardPadding.toFloat()
-
-        coverImg?.let { img ->
-            val imgRect = RRect.makeXYWH(
-                quality.cardPadding.toFloat(),
-                quality.subTitleFontSize + quality.cardPadding + 1f,
-                quality.additionalCardHeight.toFloat() * img.width / img.height,
-                quality.additionalCardHeight.toFloat(),
-                quality.cardArc
-            ).inflate(-1f) as RRect
-            canvas.drawImageRRect(img, imgRect)
-            x += imgRect.width
-        }
-
-        x += quality.cardPadding
-
-        val titleParagraph = with(session) {
-            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build()
-                .layout(cardContentRect.width - x).track()
-        }
-        paragraphStyle.apply {
-            textStyle = descTextStyle.apply {
-                fontSize = quality.subTitleFontSize * 0.8f
-            }
-        }
-        val desc1Paragraph = with(session) {
-            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc1).build()
-                .layout(cardContentRect.width - x).track()
-        }
-        val desc2Paragraph = desc2?.let {
-            with(session) {
-                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(it).build()
-                    .layout(cardContentRect.width - x).track()
-            }
-        }
-
-        val top = (additionalCardRect.height - (titleParagraph.height * if (desc2 == null) 2 else 3)) / 2
-
-        var y = additionalCardRect.top + top
-        titleParagraph.paint(canvas, x, y)
-
-        y += titleParagraph.height
-        desc1Paragraph.paint(canvas, x, y)
-
-        if (desc2Paragraph != null) {
-            y += titleParagraph.height
-            desc2Paragraph.paint(canvas, x, y)
-        }
-
-        with(session) { surface.makeImageSnapshot().track() }
-    } finally {
-        coverImg?.close()
+    coverImg?.let { img ->
+        val imgRect = RRect.makeXYWH(
+            quality.cardPadding.toFloat(),
+            quality.subTitleFontSize + quality.cardPadding + 1f,
+            quality.additionalCardHeight.toFloat() * img.width / img.height,
+            quality.additionalCardHeight.toFloat(),
+            quality.cardArc
+        ).inflate(-1f) as RRect
+        canvas.drawImageRRect(img, imgRect)
+        x += imgRect.width
     }
+
+    x += quality.cardPadding
+
+    val titleParagraph = with(session) {
+        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build()
+            .layout(cardContentRect.width - x).track()
+    }
+    paragraphStyle.apply {
+        textStyle = descTextStyle.apply {
+            fontSize = quality.subTitleFontSize * 0.8f
+        }
+    }
+    val desc1Paragraph = with(session) {
+        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc1).build()
+            .layout(cardContentRect.width - x).track()
+    }
+    val desc2Paragraph = desc2?.let {
+        with(session) {
+            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(it).build()
+                .layout(cardContentRect.width - x).track()
+        }
+    }
+
+    val top = (additionalCardRect.height - (titleParagraph.height * if (desc2 == null) 2 else 3)) / 2
+
+    var y = additionalCardRect.top + top
+    titleParagraph.paint(canvas, x, y)
+
+    y += titleParagraph.height
+    desc1Paragraph.paint(canvas, x, y)
+
+    if (desc2Paragraph != null) {
+        y += titleParagraph.height
+        desc2Paragraph.paint(canvas, x, y)
+    }
+
+    return with(session) { surface.makeImageSnapshot().track() }
 }
 
 
@@ -242,37 +236,27 @@ suspend fun ModuleDispute.drawGeneral(session: DrawingSession): Image {
     val surface = session.createSurface(cardRect.width.toInt(), textCardHeight.toInt())
     val canvas = surface.canvas
 
-    canvas.drawRRect(textCardRect.toRRect(5f), Paint().apply { color = Color.makeRGB(255, 241, 211) })
+    canvas.drawRRect(textCardRect.toRRect(5f), session.createPaint { color = Color.makeRGB(255, 241, 211) })
 
     var x = quality.cardPadding.toFloat() + 10
     val y = quality.contentFontSize * 0.8f + quality.lineSpace
-    var svg: org.jetbrains.skia.svg.SVGDOM? = null
-    try {
-        svg = loadSVG("icon/DISPUTE.svg")
-        if (svg != null) {
-            val iconSize = quality.contentFontSize
-            val iconImage = svg.makeImage(session, iconSize, iconSize)
-            canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
-            x += iconSize + quality.lineSpace
-        } else {
-            logger.warn("未找到类型为 DISPUTE 的图标")
-        }
-    } catch (e: Exception) {
-        logger.warn("加载 DISPUTE 图标失败: ${e.message}")
-    } finally {
-        if (svg != null) {
-            svg.close()
-        }
+    val svg = session.createSvg("icon/DISPUTE.svg")
+    if (svg != null) {
+        val iconSize = quality.contentFontSize
+        val iconImage = svg.makeImage(session, iconSize, iconSize)
+        canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
+        x += iconSize + quality.lineSpace
+    } else {
+        logger.warn("未找到类型为 DISPUTE 的图标")
     }
 
-    canvas.drawTextArea(disputeTitle, textCardRect, x, y, font, Paint().apply { color = Color.makeRGB(231, 139, 31) })
+    canvas.drawTextArea(disputeTitle, textCardRect, x, y, font, session.createPaint { color = Color.makeRGB(231, 139, 31) })
 
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
 
 suspend fun ModuleDynamic.Topic.drawGeneral(session: DrawingSession): Image {
-
     val lineCount = useTextLine(name, font) { textLine ->
         if (textLine.width / cardContentRect.width > 1) 2 else 1
     }
@@ -291,26 +275,21 @@ suspend fun ModuleDynamic.Topic.drawGeneral(session: DrawingSession): Image {
 
     var x = quality.cardPadding.toFloat()
     val y = quality.contentFontSize * 0.8f + quality.lineSpace
-    var svg: org.jetbrains.skia.svg.SVGDOM? = null
-    try {
-        svg = loadSVG("icon/TOPIC.svg")
-        if (svg != null) {
-            val iconSize = quality.contentFontSize
-            val iconImage = svg.makeImage(session, iconSize, iconSize)
-            canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
-            x += iconSize + quality.lineSpace
-        } else {
-            logger.warn("未找到类型为 TOPIC 的图标")
-        }
-    } catch (e: Exception) {
-        logger.warn("加载 TOPIC 图标失败: ${e.message}")
-    } finally {
-        if (svg != null) {
-            svg.close()
-        }
+    val svg = session.createSvg("icon/TOPIC.svg")
+    if (svg != null) {
+        val iconSize = quality.contentFontSize
+        val iconImage = svg.makeImage(session, iconSize, iconSize)
+        canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
+        x += iconSize + quality.lineSpace
+    } else {
+        logger.warn("未找到类型为 TOPIC 的图标")
     }
 
-    canvas.drawTextArea(topicName, textCardRect, x, y, font, linkPaint)
+    val linkTextPaint = session.createPaint {
+        color = theme.linkColor
+        isAntiAlias = true
+    }
+    canvas.drawTextArea(topicName, textCardRect, x, y, font, linkTextPaint)
 
     return with(session) { surface.makeImageSnapshot().track() }
 }
@@ -334,7 +313,6 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(session: DrawingSession): Imag
             .layout(cardContentRect.width)
 
     val textCardHeight = (quality.contentFontSize + quality.lineSpace * 2) * (textParagraph.lineNumber + 2)
-    // 关闭用于计算高度的 paragraph
     textParagraph.close()
 
     val textCardRect = Rect.makeXYWH(
@@ -349,11 +327,20 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(session: DrawingSession): Imag
 
     val surface = session.createSurface(cardRect.width.toInt(), textCardHeight.toInt())
     val canvas = surface.canvas
+    val generalTextPaint = session.createPaint {
+        color = theme.contentColor
+        isAntiAlias = true
+    }
+    val linkTextPaint = session.createPaint {
+        color = theme.linkColor
+        isAntiAlias = true
+    }
+
     nodes.forEach {
         when (it.type) {
             "RICH_TEXT_NODE_TYPE_TEXT" -> {
                 val text = it.text.replace("\r\n", "\n").replace("\r", "\n")
-                val point = canvas.drawTextArea(text, textCardRect, x, y, font, generalPaint)
+                val point = canvas.drawTextArea(text, textCardRect, x, y, font, generalTextPaint)
                 x = point.x
                 y = point.y
             }
@@ -388,32 +375,23 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(session: DrawingSession): Imag
             "RICH_TEXT_NODE_TYPE_VOTE",
             "RICH_TEXT_NODE_TYPE_LOTTERY",
             "RICH_TEXT_NODE_TYPE_BV" -> {
-                var svg: org.jetbrains.skia.svg.SVGDOM? = null
-                try {
-                    svg = loadSVG("icon/${it.type}.svg")
-                    if (svg != null) {
-                        val iconSize = quality.contentFontSize
-                        val iconImage = svg.makeImage(session, iconSize, iconSize)
-                        canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
-                        x += iconSize
-                    } else {
-                        logger.warn("未找到类型为 ${it.type} 的图标")
-                    }
-                } catch (e: Exception) {
-                    logger.warn("加载 ${it.type} 图标失败: ${e.message}")
-                } finally {
-                    if (svg != null) {
-                        svg.close()
-                    }
+                val svg = session.createSvg("icon/${it.type}.svg")
+                if (svg != null) {
+                    val iconSize = quality.contentFontSize
+                    val iconImage = svg.makeImage(session, iconSize, iconSize)
+                    canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
+                    x += iconSize
+                } else {
+                    logger.warn("未找到类型为 ${it.type} 的图标")
                 }
 
-                val point = canvas.drawTextArea(it.text, textCardRect, x, y, font, linkPaint)
+                val point = canvas.drawTextArea(it.text, textCardRect, x, y, font, linkTextPaint)
                 x = point.x
                 y = point.y
             }
 
             else -> {
-                val point = canvas.drawTextArea(it.text, textCardRect, x, y, font, linkPaint)
+                val point = canvas.drawTextArea(it.text, textCardRect, x, y, font, linkTextPaint)
                 x = point.x
                 y = point.y
             }
@@ -557,11 +535,11 @@ suspend fun ModuleAuthor.drawForward(session: DrawingSession, time: String): Ima
     var x = faceSize + quality.cardPadding * 2.5f
     var y = ((faceSize - quality.nameFontSize) / 2) + quality.nameFontSize + quality.cardPadding
 
-    canvas.drawTextLine(textLineName, x, y, Paint().apply { color = theme.nameColor })
+    canvas.drawTextLine(textLineName, x, y, session.createPaint { color = theme.nameColor })
 
     y -= (quality.nameFontSize - quality.subTitleFontSize) / 2
     x += textLineName.width + quality.cardPadding
-    canvas.drawTextLine(textLineTime, x, y, Paint().apply { color = theme.subTitleColor })
+    canvas.drawTextLine(textLineTime, x, y, session.createPaint { color = theme.subTitleColor })
 
     return with(session) { surface.makeImageSnapshot().track() }
 }
@@ -591,10 +569,10 @@ suspend fun ModuleAuthor.drawGeneral(session: DrawingSession, time: String, link
     val space = (quality.pendantSize - quality.nameFontSize - quality.subTitleFontSize) / 3
     var y = quality.nameFontSize + space * 1.25f
 
-    canvas.drawTextLine(textLineName, x, y, Paint().apply { color = theme.nameColor })
+    canvas.drawTextLine(textLineName, x, y, session.createPaint { color = theme.nameColor })
 
     y += quality.subTitleFontSize + space * 0.5f
-    canvas.drawTextLine(textLineTime, x, y, Paint().apply { color = theme.subTitleColor })
+    canvas.drawTextLine(textLineTime, x, y, session.createPaint { color = theme.subTitleColor })
 
     authorIconBadge?.let {
         val img = getOrDownloadImage(it.renderImg, CacheType.IMAGES)
@@ -663,7 +641,7 @@ suspend fun Canvas.drawOrnament(
                                         textLineFan,
                                         tarFRect.right - textLineFan.width * 2,
                                         tarFRect.bottom - (cardHeight - font.size) / 2,
-                                        Paint().apply { color = Color.makeRGB(decorate.fan!!.color) }
+                                        session.createPaint { color = Color.makeRGB(decorate.fan!!.color) }
                                     )
                                 } finally {
                                     textLineFan.close()
@@ -692,7 +670,7 @@ suspend fun Canvas.drawOrnament(
                 srcFRect,
                 tarFRect,
                 FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
-                Paint(),
+                session.createPaint(),
                 true
             )
         }

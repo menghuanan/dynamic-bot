@@ -139,15 +139,6 @@ val cardBadgeArc: FloatArray by lazy {
     floatArrayOf(left, right, quality.cardArc, quality.cardArc)
 }
 
-val linkPaint = Paint().apply {
-    color = theme.linkColor
-    isAntiAlias = true
-}
-val generalPaint = Paint().apply {
-    color = theme.contentColor
-    isAntiAlias = true
-}
-
 
 suspend fun DynamicItem.makeDrawDynamic(colors: List<Int>, subject: String? = null, color: String? = null): String {
     return SkiaManager.executeDrawing {
@@ -268,29 +259,24 @@ fun List<Image>.assembleCard(session: DrawingSession, id: String, footer: String
         }
 
         if (imageConfig.badgeEnable.left) {
-            val svg = loadSVG("icon/${if (isForward) "FORWARD" else "BILIBILI_LOGO"}.svg")
-            try {
-                val badgeImage = svg?.makeImage(session, quality.contentFontSize, quality.contentFontSize)
-                canvas.drawBadge(
-                    tag ?: if (isForward) "转发动态" else "动态",
-                    font,
-                    theme.mainLeftBadge.fontColor,
-                    theme.mainLeftBadge.bgColor,
-                    rrect,
-                    TOP_LEFT,
-                    badgeImage
-                )
-            } finally {
-                if (svg != null) {
-                    svg.close()
-                }
-            }
+            val svg = session.createSvg("icon/${if (isForward) "FORWARD" else "BILIBILI_LOGO"}.svg")
+            val badgeImage = svg?.makeImage(session, quality.contentFontSize, quality.contentFontSize)
+            canvas.drawBadge(
+                session,
+                tag ?: if (isForward) "转发动态" else "动态",
+                font,
+                theme.mainLeftBadge.fontColor,
+                theme.mainLeftBadge.bgColor,
+                rrect,
+                TOP_LEFT,
+                badgeImage
+            )
         }
         if (imageConfig.badgeEnable.right) {
-            canvas.drawBadge(id, font, theme.mainRightBadge.fontColor, theme.mainRightBadge.bgColor, rrect, TOP_RIGHT)
+            canvas.drawBadge(session, id, font, theme.mainRightBadge.fontColor, theme.mainRightBadge.bgColor, rrect, TOP_RIGHT)
         }
 
-        canvas.drawCard(rrect)
+        canvas.drawCard(session, rrect)
 
         var top = quality.cardMargin + quality.badgeHeight.toFloat()
         for (img in imgList) {
@@ -385,23 +371,26 @@ fun Rect.textVertical(text: TextLine) =
 internal fun labelCardTextBaseline(rrect: RRect, textLine: TextLine): Float =
     Rect.makeXYWH(rrect.left, rrect.top, rrect.width, rrect.height).textVertical(textLine)
 
-fun Canvas.drawCard(rrect: RRect, bgColor: Int = theme.cardBgColor) {
-    drawRRect(rrect, Paint().apply {
+fun Canvas.drawCard(session: DrawingSession, rrect: RRect, bgColor: Int = theme.cardBgColor) {
+    val fillPaint = session.createPaint {
         color = bgColor
         mode = PaintMode.FILL
         isAntiAlias = true
-    })
-    drawRRect(rrect, Paint().apply {
+    }
+    drawRRect(rrect, fillPaint)
+
+    val strokePaint = session.createPaint {
         color = theme.cardOutlineColors.first()
         mode = PaintMode.STROKE
         strokeWidth = quality.cardOutlineWidth
         isAntiAlias = true
-        shader = Shader.makeSweepGradient(
-            rrect.left + rrect.width / 2,
-            rrect.top + rrect.height / 2,
-            theme.cardOutlineColors
-        )
-    })
+    }
+    strokePaint.shader = session.createSweepGradient(
+        rrect.left + rrect.width / 2,
+        rrect.top + rrect.height / 2,
+        theme.cardOutlineColors
+    )
+    drawRRect(rrect, strokePaint)
 }
 
 fun makeCardBg(session: DrawingSession, height: Int, colors: List<Int>, block: (Canvas) -> Unit): Image {
@@ -409,13 +398,14 @@ fun makeCardBg(session: DrawingSession, height: Int, colors: List<Int>, block: (
     val surface = session.createSurface(imageRect.width.toInt(), height)
     val canvas = surface.canvas
 
-    canvas.drawRect(imageRect, Paint().apply {
-        shader = Shader.makeLinearGradient(
+    val paint = session.createPaint {
+        shader = session.createLinearGradient(
             Point(imageRect.left, imageRect.top),
             Point(imageRect.right, imageRect.bottom),
             generateLinearGradient(colors)
         )
-    })
+    }
+    canvas.drawRect(imageRect, paint)
     block(canvas)
 
     return with(session) {
@@ -450,7 +440,7 @@ suspend fun Canvas.drawAvatar(
             tarFaceRect.left + tarFaceRect.width / 2,
             tarFaceRect.top + tarFaceRect.width / 2,
             tarFaceRect.width / 2 + quality.noPendantFaceInflate / 2,
-            Paint().apply { color = theme.faceOutlineColor })
+            session.createPaint { color = theme.faceOutlineColor })
     }
 
     faceImg?.let {
@@ -491,26 +481,22 @@ suspend fun Canvas.drawAvatar(
     }
 
     if (verifyIcon != "") {
-        val svg = loadSVG("icon/$verifyIcon.svg")
-        try {
-            if (svg != null) {
-                val size = if (hasPendant) verifyIconSize - quality.noPendantFaceInflate / 2 else verifyIconSize
-                val verifyImg = svg.makeImage(session, size, size)
-                drawImage(
-                    verifyImg,
-                    tarFaceRect.right - size,
-                    tarFaceRect.bottom - size
-                )
-            }
-        } finally {
-            if (svg != null) {
-                svg.close()
-            }
+        val svg = session.createSvg("icon/$verifyIcon.svg")
+        if (svg != null) {
+            val size = if (hasPendant) verifyIconSize - quality.noPendantFaceInflate / 2 else verifyIconSize
+            val verifyImg = svg.makeImage(session, size, size)
+            drawImage(
+                verifyImg,
+                tarFaceRect.right - size,
+                tarFaceRect.bottom - size
+            )
         }
     }
+
 }
 
 fun Canvas.drawBadge(
+    session: DrawingSession,
     text: String,
     font: Font,
     fontColor: Int,
@@ -519,54 +505,47 @@ fun Canvas.drawBadge(
     position: Position,
     icon: Image? = null
 ) {
+    val textLine = session.createTextLine(text, font)
+    val badgeWidth = textLine.width + quality.badgePadding * 8 + (icon?.width ?: 0)
 
-    val textLine = TextLine.make(text, font)
+    val rrect = when (position) {
+        TOP_LEFT -> RRect.makeXYWH(
+            cardRect.left, cardRect.top - quality.badgeHeight, badgeWidth,
+            quality.badgeHeight.toFloat(), quality.badgeArc, quality.badgeArc, 0f, 0f
+        )
 
-    try {
-        val badgeWidth = textLine.width + quality.badgePadding * 8 + (icon?.width ?: 0)
+        TOP_RIGHT -> RRect.makeXYWH(
+            cardRect.right - badgeWidth, cardRect.top - quality.badgeHeight, badgeWidth,
+            quality.badgeHeight.toFloat(), quality.badgeArc, quality.badgeArc, 0f, 0f
+        )
 
-        val rrect = when (position) {
-            TOP_LEFT -> RRect.makeXYWH(
-                cardRect.left, cardRect.top - quality.badgeHeight, badgeWidth,
-                quality.badgeHeight.toFloat(), quality.badgeArc, quality.badgeArc, 0f, 0f
-            )
+        BOTTOM_LEFT -> RRect.makeXYWH(
+            cardRect.left, cardRect.bottom + quality.badgeHeight, badgeWidth,
+            quality.badgeHeight.toFloat(), 0f, 0f, quality.badgeArc, quality.badgeArc
+        )
 
-            TOP_RIGHT -> RRect.makeXYWH(
-                cardRect.right - badgeWidth, cardRect.top - quality.badgeHeight, badgeWidth,
-                quality.badgeHeight.toFloat(), quality.badgeArc, quality.badgeArc, 0f, 0f
-            )
-
-            BOTTOM_LEFT -> RRect.makeXYWH(
-                cardRect.left, cardRect.bottom + quality.badgeHeight, badgeWidth,
-                quality.badgeHeight.toFloat(), 0f, 0f, quality.badgeArc, quality.badgeArc
-            )
-
-            BOTTOM_RIGHT -> RRect.makeXYWH(
-                cardRect.right - badgeWidth, cardRect.bottom + quality.badgeHeight, badgeWidth,
-                quality.badgeHeight.toFloat(), 0f, 0f, quality.badgeArc, quality.badgeArc
-            )
-        }
-
-        drawRectShadowAntiAlias(rrect.inflate(1f), theme.smallCardShadow)
-
-        drawCard(rrect, bgColor)
-
-        var x = rrect.left + quality.badgePadding * 4
-        if (icon != null) {
-            x -= quality.badgePadding
-            drawImage(icon, x, rrect.top + (quality.badgeHeight - icon.height) / 2)
-            x += icon.width + quality.badgePadding * 2
-        }
-
-        drawTextLine(
-            textLine,
-            x,
-            rrect.bottom - (quality.badgeHeight - textLine.capHeight) / 2,
-            Paint().apply { color = fontColor })
-    } finally {
-        textLine.close()
+        BOTTOM_RIGHT -> RRect.makeXYWH(
+            cardRect.right - badgeWidth, cardRect.bottom + quality.badgeHeight, badgeWidth,
+            quality.badgeHeight.toFloat(), 0f, 0f, quality.badgeArc, quality.badgeArc
+        )
     }
 
+    drawRectShadowAntiAlias(rrect.inflate(1f), theme.smallCardShadow)
+    drawCard(session, rrect, bgColor)
+
+    var x = rrect.left + quality.badgePadding * 4
+    if (icon != null) {
+        x -= quality.badgePadding
+        drawImage(icon, x, rrect.top + (quality.badgeHeight - icon.height) / 2)
+        x += icon.width + quality.badgePadding * 2
+    }
+
+    drawTextLine(
+        textLine,
+        x,
+        rrect.bottom - (quality.badgeHeight - textLine.capHeight) / 2,
+        session.createPaint { color = fontColor }
+    )
 }
 
 fun Canvas.drawLabelCard(
