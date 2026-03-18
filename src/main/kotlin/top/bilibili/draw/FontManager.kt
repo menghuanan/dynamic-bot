@@ -105,7 +105,7 @@ object FontManager : AutoCloseable {
                     f
                 }
             } else {
-                FontUtils.matchFamily(mainFont).matchStyle(FontStyle.NORMAL)!!
+                FontUtils.matchFamilyStyle(mainFont, FontStyle.NORMAL)!!
             }
         } catch (e: Exception) {
             logger.warn("加载主字体 $mainFont 失败, 尝试加载默认字体")
@@ -115,7 +115,7 @@ object FontManager : AutoCloseable {
 
     private fun loadEmojiTypeface(): Typeface? {
         return try {
-            FontUtils.matchFamily("Noto Color Emoji")?.matchStyle(FontStyle.NORMAL)
+            FontUtils.matchFamilyStyle("Noto Color Emoji", FontStyle.NORMAL)
         } catch (e: Exception) {
             logger.warn("无法加载 Emoji 字体: ${e.message}")
             null
@@ -145,7 +145,7 @@ object FontManager : AutoCloseable {
         )
         defaultList.forEach {
             try {
-                val f = FontUtils.matchFamily(it).matchStyle(FontStyle.NORMAL)!!
+                val f = FontUtils.matchFamilyStyle(it, FontStyle.NORMAL)!!
                 logger.info("加载默认字体 $it 成功")
                 return f
             } catch (e: Exception) {

@@ -41,11 +41,22 @@ object FontUtils {
 
 
     fun matchFamily(familyName: String): FontStyleSet {
-        val fa = fontProvider.matchFamily(familyName)
-        if (fa.count() != 0) {
-            return fa
-        } else {
-            return fontMgr.matchFamily(familyName)
+        val providerFamily = fontProvider.matchFamily(familyName)
+        if (providerFamily.count() != 0) {
+            return providerFamily
+        }
+        providerFamily.close()
+        return fontMgr.matchFamily(familyName)
+    }
+
+    fun matchFamilyStyle(familyName: String, style: FontStyle): Typeface? {
+        fontProvider.matchFamily(familyName).use { providerFamily ->
+            if (providerFamily.count() != 0) {
+                return providerFamily.matchStyle(style)
+            }
+        }
+        return fontMgr.matchFamily(familyName).use { systemFamily ->
+            systemFamily.matchStyle(style)
         }
     }
 

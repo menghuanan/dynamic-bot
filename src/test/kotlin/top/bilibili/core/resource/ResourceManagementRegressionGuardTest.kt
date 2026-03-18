@@ -149,6 +149,29 @@ class ResourceManagementRegressionGuardTest {
     }
 
     @Test
+    fun `font family style lookup should not leak temporary font style sets`() {
+        val fontUtils = read("src/main/kotlin/top/bilibili/utils/FontUtils.kt")
+        val fontManager = read("src/main/kotlin/top/bilibili/draw/FontManager.kt")
+
+        assertTrue(
+            fontUtils.contains("fun matchFamilyStyle("),
+            "FontUtils should provide a Typeface-returning helper that owns FontStyleSet cleanup",
+        )
+        assertTrue(
+            fontUtils.contains("fontProvider.matchFamily(familyName).use"),
+            "FontUtils should close provider FontStyleSet via use",
+        )
+        assertTrue(
+            fontUtils.contains("fontMgr.matchFamily(familyName).use"),
+            "FontUtils should close system FontStyleSet via use",
+        )
+        assertFalse(
+            Regex("""FontUtils\.matchFamily\([^)]*\)\??\.matchStyle\(""").containsMatchIn(fontManager),
+            "FontManager should not directly hold FontStyleSet when resolving Typeface",
+        )
+    }
+
+    @Test
     fun `load fonts should be idempotent and only load font extensions`() {
         val init = read("src/main/kotlin/top/bilibili/Init.kt")
 
