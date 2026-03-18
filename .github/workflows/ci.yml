@@ -28,10 +28,80 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
 
-    - name: Build with Gradle
+    - name: Environment Diagnostics
       run: |
         chmod +x gradlew
-        ./gradlew build
+        mkdir -p diagnostics/ci
+        {
+          echo "date=$(date --iso-8601=seconds)"
+          echo "runner_os=$RUNNER_OS"
+          echo "runner_arch=$RUNNER_ARCH"
+          echo "github_ref=$GITHUB_REF"
+          echo "github_sha=$GITHUB_SHA"
+          echo ""
+          echo "## java -version"
+          java -version
+          echo ""
+          echo "## gradle --version"
+          ./gradlew --version
+          echo ""
+          echo "## uname -a"
+          uname -a
+          echo ""
+          echo "## df -h"
+          df -h
+          echo ""
+          echo "## free -h"
+          free -h || true
+        } 2>&1 | tee diagnostics/ci/environment.log
+
+    - name: Compile with Gradle
+      id: gradle_compile
+      run: |
+        set -o pipefail
+        ./gradlew compileKotlin compileTestKotlin --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/ci/compile.log
+
+    - name: Test with Gradle
+      id: gradle_test
+      run: |
+        set -o pipefail
+        ./gradlew test --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/ci/test.log
+
+    - name: Package with Gradle
+      id: gradle_package
+      run: |
+        set -o pipefail
+        ./gradlew assemble --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/ci/package.log
+
+    - name: Publish CI Summary
+      if: always()
+      run: |
+        {
+          echo "## CI Build and Check"
+          echo ""
+          echo "- Event: $GITHUB_EVENT_NAME"
+          echo "- Ref: $GITHUB_REF"
+          echo "- SHA: $GITHUB_SHA"
+          echo "- Compile step: ${{ steps.gradle_compile.outcome }}"
+          echo "- Test step: ${{ steps.gradle_test.outcome }}"
+          echo "- Package step: ${{ steps.gradle_package.outcome }}"
+          echo ""
+          echo "### Diagnostic files"
+          find diagnostics/ci build/reports build/test-results -type f 2>/dev/null | sed 's#^#- #'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload CI Diagnostics
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ci-diagnostics
+        path: |
+          diagnostics/ci/**
+          build/reports/**
+          build/test-results/**
+          build/tmp/**
+        retention-days: 7
+        if-no-files-found: warn
 
     - name: Upload Build Artifact
       if: success()
