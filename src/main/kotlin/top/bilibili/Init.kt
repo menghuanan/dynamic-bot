@@ -11,7 +11,7 @@ import top.bilibili.utils.FontUtils.loadTypeface
 import top.bilibili.utils.biliClient
 import top.bilibili.utils.decode
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.io.path.createDirectory
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.forEachDirectoryEntry
 import kotlin.io.path.name
@@ -81,7 +81,7 @@ suspend fun loadFonts() {
 
     try {
         fontFolderPath.apply {
-            if (!exists()) createDirectory()
+            if (!exists()) createDirectories()
 
 
             // 从 data/font 目录加载字体
