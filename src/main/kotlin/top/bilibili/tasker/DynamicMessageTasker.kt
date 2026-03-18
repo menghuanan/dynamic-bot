@@ -16,7 +16,7 @@ import top.bilibili.utils.*
 import top.bilibili.service.DynamicService
 import top.bilibili.service.FeatureSwitchService
 import top.bilibili.service.parseGradientColors
-import top.bilibili.service.resolveColor
+import top.bilibili.service.resolveGradientPalette
 
 object DynamicMessageTasker : BiliTasker() {
 
@@ -250,13 +250,14 @@ object DynamicMessageTasker : BiliTasker() {
 
     suspend fun DynamicItem.makeDynamic(contact: String? = null): String? {
         return if (FeatureSwitchService.canRenderPushDraw()) {
-            val color = if (this.type == DYNAMIC_TYPE_PGC) {
-                bangumi[mid]?.color ?: BiliConfigManager.config.imageConfig.defaultColor
+            if (this.type == DYNAMIC_TYPE_PGC) {
+                val color = bangumi[mid]?.color ?: BiliConfigManager.config.imageConfig.defaultColor
+                val colors = parseGradientColors(color)
+                makeDrawDynamic(colors, contact, color)
             } else {
-                DynamicService.resolveColor(mid, contact)
+                val palette = resolveGradientPalette(mid, contact)
+                makeDrawDynamic(palette.themeColor, palette.backgroundColors, contact, palette.source.color)
             }
-            val colors = parseGradientColors(color)
-            makeDrawDynamic(colors, contact, color)
         } else null
     }
 

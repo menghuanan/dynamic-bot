@@ -22,7 +22,9 @@ fun normalizeGradientColorInput(color: String): String? {
 }
 
 fun normalizeGradientColorForCache(color: String): String {
-    return sanitizeGradientColor(color) ?: ""
+    return normalizeSubjectScopedGradientColor(color, NormalizationContext.USER_COMMAND)?.normalizedColor
+        ?: sanitizeGradientColor(color)
+        ?: ""
 }
 
 fun sanitizeGradientColor(color: String): String? {
@@ -30,7 +32,7 @@ fun sanitizeGradientColor(color: String): String? {
         .filter { it.isNotEmpty() }
         .filter { gradientHexColorRegex.matches(it) }
         .take(MAX_GRADIENT_COLOR_STOPS)
-    return segments.takeIf { it.isNotEmpty() }?.joinToString(";")
+    return segments.takeIf { it.isNotEmpty() }?.joinToString(";") { it.lowercase() }
 }
 
 fun parseGradientColors(color: String, fallback: String = defaultGradientColor()): List<Int> {
@@ -41,6 +43,10 @@ fun parseGradientColors(color: String, fallback: String = defaultGradientColor()
 }
 
 private fun defaultGradientColor(): String {
+    return defaultGradientColorValue()
+}
+
+internal fun defaultGradientColorValue(): String {
     return runCatching { BiliConfigManager.config.imageConfig.defaultColor }
         .getOrElse { BiliConfig().imageConfig.defaultColor }
 }

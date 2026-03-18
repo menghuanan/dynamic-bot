@@ -151,16 +151,16 @@ class CommandRegressionGuardTest {
             "dynamic message build should pass contact into draw generation"
         )
         assertTrue(
-            dynamicTasker.contains("DynamicService.resolveColor("),
-            "dynamic draw path should resolve color with subject awareness"
+            dynamicTasker.contains("resolveGradientPalette(mid, contact)"),
+            "dynamic draw path should resolve subject-aware gradient palette"
         )
         assertTrue(
             liveTasker.contains("makeLive(contact)"),
             "live message build should pass contact into draw generation"
         )
         assertTrue(
-            liveTasker.contains("DynamicService.resolveColor(uid, contact)"),
-            "live draw path should resolve color with subject awareness"
+            liveTasker.contains("resolveGradientPalette(uid, contact)"),
+            "live draw path should resolve subject-aware gradient palette"
         )
     }
 

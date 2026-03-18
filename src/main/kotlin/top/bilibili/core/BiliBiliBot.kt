@@ -19,6 +19,7 @@ import top.bilibili.service.StartupDataInitService
 import top.bilibili.service.TaskBootstrapService
 import top.bilibili.service.closeServiceClient
 import top.bilibili.utils.ImageCache
+import top.bilibili.utils.actionNotify
 import top.bilibili.tasker.BiliCheckTasker
 import top.bilibili.tasker.BiliTasker
 import top.bilibili.core.resource.LambdaResourcePartition
@@ -253,6 +254,13 @@ object BiliBiliBot : CoroutineScope {
 
             // 4. 启动 NapCat 客户端
             napCat.start()
+            launch {
+                delay(1000)
+                BiliConfigManager.consumePendingSubjectColorMigrationNotice()?.let { notice ->
+                    runCatching { actionNotify(notice) }
+                        .onFailure { logger.warn("Failed to send subject color migration summary", it) }
+                }
+            }
             registerResourcePartitions()
 
             // 5. 初始化 B站数据（✅ 添加超时保护）

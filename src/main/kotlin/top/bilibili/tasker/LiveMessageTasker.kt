@@ -14,8 +14,7 @@ import top.bilibili.utils.formatRelativeTime
 import top.bilibili.utils.logger
 import top.bilibili.service.DynamicService
 import top.bilibili.service.FeatureSwitchService
-import top.bilibili.service.parseGradientColors
-import top.bilibili.service.resolveColor
+import top.bilibili.service.resolveGradientPalette
 
 object LiveMessageTasker : BiliTasker() {
     override var interval: Int = 0
@@ -58,9 +57,8 @@ object LiveMessageTasker : BiliTasker() {
     suspend fun LiveInfo.makeLive(contact: String? = null): String? {
         return if (FeatureSwitchService.canRenderPushDraw()) {
             logger.info("开始生成直播封面图片...")
-            val color = DynamicService.resolveColor(uid, contact)
-            val colors = parseGradientColors(color)
-            val drawPath = makeDrawLive(colors, contact, color)
+            val palette = resolveGradientPalette(uid, contact)
+            val drawPath = makeDrawLive(palette.themeColor, palette.backgroundColors, contact, palette.source.color)
             logger.info("直播封面图片生成完成: $drawPath")
             drawPath
         } else {

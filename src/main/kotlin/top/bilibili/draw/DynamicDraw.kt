@@ -141,9 +141,13 @@ val cardBadgeArc: FloatArray by lazy {
 
 
 suspend fun DynamicItem.makeDrawDynamic(colors: List<Int>, subject: String? = null, color: String? = null): String {
+    return makeDrawDynamic(colors.first(), generateLinearGradient(colors), subject, color)
+}
+
+suspend fun DynamicItem.makeDrawDynamic(themeColor: Int, backgroundColors: IntArray, subject: String? = null, color: String? = null): String {
     return SkiaManager.executeDrawing {
-        val dynamic = this@makeDrawDynamic.drawDynamic(this, colors.first(), false)
-        val img = makeCardBg(this, dynamic.height, colors) {
+        val dynamic = this@makeDrawDynamic.drawDynamic(this, themeColor, false)
+        val img = makeCardBg(this, dynamic.height, backgroundColors) {
             it.drawImage(dynamic, 0f, 0f)
         }
         cacheImage(img, color?.let { DrawCacheKeyService.dynamicPath(mid, idStr ?: "0", subject, it) } ?: "$mid/$idStr.png", CacheType.DRAW_DYNAMIC)
@@ -394,6 +398,10 @@ fun Canvas.drawCard(session: DrawingSession, rrect: RRect, bgColor: Int = theme.
 }
 
 fun makeCardBg(session: DrawingSession, height: Int, colors: List<Int>, block: (Canvas) -> Unit): Image {
+    return makeCardBg(session, height, generateLinearGradient(colors), block)
+}
+
+fun makeCardBg(session: DrawingSession, height: Int, gradientColors: IntArray, block: (Canvas) -> Unit): Image {
     val imageRect = Rect.makeXYWH(0f, 0f, quality.imageWidth.toFloat(), height.toFloat())
     val surface = session.createSurface(imageRect.width.toInt(), height)
     val canvas = surface.canvas
@@ -402,7 +410,7 @@ fun makeCardBg(session: DrawingSession, height: Int, colors: List<Int>, block: (
         shader = session.createLinearGradient(
             Point(imageRect.left, imageRect.top),
             Point(imageRect.right, imageRect.bottom),
-            generateLinearGradient(colors)
+            gradientColors
         )
     }
     canvas.drawRect(imageRect, paint)

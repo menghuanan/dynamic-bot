@@ -4,7 +4,7 @@ import top.bilibili.BiliConfigManager
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.napcat.MessageSegment
 import top.bilibili.utils.actionNotify
-import top.bilibili.utils.matchUser
+import top.bilibili.utils.findLocalIdOrName
 
 object SettingsCommandService {
     suspend fun handleAtAll(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
@@ -114,10 +114,18 @@ object SettingsCommandService {
 
     private suspend fun applyColorChange(contactId: Long, isGroup: Boolean, userArg: String, colorArg: String) {
         val subject = if (isGroup) "group:$contactId" else "private:$contactId"
-        val result = matchUser(userArg) { uid ->
-            DynamicService.setColor(uid, subject, colorArg)
-        } ?: "未匹配到用户哦"
-        if (result == "设置完成") {
+        val matches = findLocalIdOrName(userArg)
+        val result = when {
+            matches.isEmpty() -> ColorBindingResult.failure("未匹配到用户哦")
+            matches.size > 1 -> ColorBindingResult.failure(buildString {
+                appendLine("有多个匹配项：")
+                matches.forEach {
+                    appendLine("${BiliConfigManager.data.dynamic[it.first]?.name}: ${it.second}")
+                }
+            })
+            else -> DynamicService.setColor(matches.first().first, subject, colorArg)
+        }
+        if (result.success) {
             val saved = BiliConfigManager.saveData()
             if (!saved) {
                 val failureMessage = "设置成功，但持久化失败，请联系管理员检查日志"
@@ -126,7 +134,7 @@ object SettingsCommandService {
                 return
             }
         }
-        send(contactId, isGroup, result)
+        send(contactId, isGroup, result.message)
     }
 
     private fun parseUidArg(raw: String?): Long? {

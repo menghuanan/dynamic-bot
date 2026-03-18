@@ -1,4 +1,4 @@
-﻿package top.bilibili.service
+package top.bilibili.service
 
 import kotlinx.coroutines.runBlocking
 import top.bilibili.BiliData
@@ -22,14 +22,22 @@ class ColorGradientSafetyTest {
             "#222222",
             "#333333",
             "#444444",
-            "#555555"
+            "#555555",
         ).joinToString(";")
 
-        val result = DynamicService.setColor(123L, "group:10001", excessiveGradient)
+        val result: Any = DynamicService.setColor(123L, "group:10001", excessiveGradient)
 
         assertTrue(
-            result.contains("4"),
-            "gradient stop count above the supported safety limit should be rejected before persisting"
+            result.readProperty<String>("message").contains("4"),
+            "gradient stop count above the supported safety limit should be rejected before persisting",
         )
+    }
+
+    private fun <T> Any.readProperty(name: String): T {
+        val getterName = "get" + name.replaceFirstChar { it.uppercase() }
+        val getter = this.javaClass.methods.firstOrNull { it.name == getterName && it.parameterCount == 0 }
+        requireNotNull(getter) { "missing property: $name on ${this.javaClass.simpleName}" }
+        @Suppress("UNCHECKED_CAST")
+        return getter.invoke(this) as T
     }
 }
