@@ -1,6 +1,7 @@
 package top.bilibili.api
 
 import io.ktor.client.request.*
+import top.bilibili.client.ApiRequestTrace
 import top.bilibili.client.BiliClient
 import top.bilibili.data.*
 
@@ -9,8 +10,15 @@ import top.bilibili.data.*
  * @param page 分页 (每页20左右)
  * @param type 动态类型 video: 视频  pgc: 番剧  article: 专栏
  */
-suspend fun BiliClient.getNewDynamic(page: Int = 1, type: String = "all"): DynamicList? {
-    return getData(NEW_DYNAMIC) {
+suspend fun BiliClient.getNewDynamic(
+    page: Int = 1,
+    type: String = "all",
+    source: String = "unknown"
+): DynamicList? {
+    return getData(
+        NEW_DYNAMIC,
+        trace = ApiRequestTrace(source = source, api = "NEW_DYNAMIC", url = NEW_DYNAMIC)
+    ) {
         parameter("timezone_offset", "-480")
         parameter("type", type)
         parameter("page", page)

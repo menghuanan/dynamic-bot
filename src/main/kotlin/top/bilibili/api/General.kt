@@ -3,6 +3,7 @@ package top.bilibili.api
 import io.ktor.client.call.*
 import io.ktor.client.request.*
 import io.ktor.http.*
+import top.bilibili.client.ApiRequestTrace
 import top.bilibili.client.BiliClient
 import top.bilibili.data.BiliResult
 import top.bilibili.data.ShortLinkData
@@ -16,9 +17,10 @@ private var isLogin = true
 
 internal suspend inline fun <reified T> BiliClient.getData(
     url: String,
+    trace: ApiRequestTrace = ApiRequestTrace(source = "unknown", api = url, url = url),
     crossinline block: HttpRequestBuilder.() -> Unit = {}
 ): T? {
-    val res = get<BiliResult>(url, block)
+    val res = get<BiliResult>(url, trace, block)
 
     return if (res.code == -101) {
         if (isLogin) actionNotify("账号登录失效，请使用 /login 重新登录")
@@ -33,6 +35,7 @@ internal suspend inline fun <reified T> BiliClient.getData(
 }
 internal suspend inline fun <reified T> BiliClient.getDataWithWbi(
     url: String,
+    trace: ApiRequestTrace = ApiRequestTrace(source = "unknown", api = url, url = url),
     crossinline block: HttpRequestBuilder.() -> Unit = {}
 ): T? {
     val builder = HttpRequestBuilder()
@@ -40,7 +43,7 @@ internal suspend inline fun <reified T> BiliClient.getDataWithWbi(
     val params = builder.url.parameters.build().formUrlEncode()
     val wts = System.currentTimeMillis() / 1000
     val wrid = "$params&wts=$wts${getVerifyString()}".md5()
-    return getData(url) {
+    return getData(url, trace) {
         block()
         parameter("w_rid", wrid)
         parameter("wts", wts)

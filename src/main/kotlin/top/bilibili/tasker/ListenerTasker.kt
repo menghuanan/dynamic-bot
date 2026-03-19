@@ -21,6 +21,7 @@ import top.bilibili.utils.logger
  */
 object ListenerTasker : BiliTasker("ListenerTasker") {
     override var interval: Int = -1
+    override val wrapMainInBusinessLifecycle = false
 
     private val triggerMode get() = BiliConfigManager.config.linkResolveConfig.triggerMode
     private val returnLink get() = BiliConfigManager.config.linkResolveConfig.returnLink

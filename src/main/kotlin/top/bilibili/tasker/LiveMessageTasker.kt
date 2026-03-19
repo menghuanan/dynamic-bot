@@ -18,13 +18,15 @@ import top.bilibili.service.resolveGradientPalette
 
 object LiveMessageTasker : BiliTasker() {
     override var interval: Int = 0
+    override val wrapMainInBusinessLifecycle = false
 
     private val liveChannel by BiliBiliBot::liveChannel
     private val messageChannel by BiliBiliBot::messageChannel
 
     override suspend fun main() {
         val liveDetail = liveChannel.receive()
-        withTimeout(180004) {
+        runBusinessOperation("process-message") {
+            withTimeout(180004) {
             val liveInfo = liveDetail.item
             logger.info("开始处理直播: ${liveInfo.uname} (${liveInfo.uid}) - ${liveInfo.title}")
             try {
@@ -34,6 +36,7 @@ object LiveMessageTasker : BiliTasker() {
                 logger.info("直播消息已发送到 messageChannel")
             } catch (e: Exception) {
                 logger.error("处理直播失败: ${e.message}", e)
+            }
             }
         }
     }

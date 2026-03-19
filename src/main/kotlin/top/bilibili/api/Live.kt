@@ -1,6 +1,7 @@
 package top.bilibili.api
 
 import io.ktor.client.request.*
+import top.bilibili.client.ApiRequestTrace
 import top.bilibili.client.BiliClient
 import top.bilibili.data.LiveInfo
 import top.bilibili.data.LiveList
@@ -10,15 +11,28 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
-suspend fun BiliClient.getLive(page: Int = 1, pageSize: Int = 20): LiveList? {
-    return getData(LIVE_LIST) {
+suspend fun BiliClient.getLive(
+    page: Int = 1,
+    pageSize: Int = 20,
+    source: String = "unknown"
+): LiveList? {
+    return getData(
+        LIVE_LIST,
+        trace = ApiRequestTrace(source = source, api = "LIVE_LIST", url = LIVE_LIST)
+    ) {
         parameter("page", page)
         parameter("page_size", pageSize)
     }
 }
 
-suspend fun BiliClient.getLiveStatus(uids: List<Long>): Map<Long, LiveInfo>? {
-    val raw = getData<JsonElement>(LIVE_STATUS_BATCH) {
+suspend fun BiliClient.getLiveStatus(
+    uids: List<Long>,
+    source: String = "unknown"
+): Map<Long, LiveInfo>? {
+    val raw = getData<JsonElement>(
+        LIVE_STATUS_BATCH,
+        trace = ApiRequestTrace(source = source, api = "LIVE_STATUS_BATCH", url = LIVE_STATUS_BATCH)
+    ) {
         for (uid in uids) {
             parameter("uids[]", uid)
         }

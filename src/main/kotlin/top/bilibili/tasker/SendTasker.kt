@@ -30,6 +30,7 @@ import top.bilibili.utils.parseContactId
 object SendTasker : BiliTasker("SendTasker") {
     override var interval: Int = 1
     override val unitTime: Long = 500
+    override val wrapMainInBusinessLifecycle = false
     private const val AT_ALL_WARN_INTERVAL_MS = 60 * 60 * 1000L
 
     private val messageQueue = Channel<Pair<ContactId, List<MessageSegment>>>(100)
@@ -108,7 +109,7 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     /**
-     * 鍙戦€佹秷鎭埌鎵€鏈夎闃呰€?
+     * 发送消息到所有订阅者
      */
     private suspend fun sendToSubscribers(message: BiliMessage) {
         val dynamicMessage = message as? DynamicMessage

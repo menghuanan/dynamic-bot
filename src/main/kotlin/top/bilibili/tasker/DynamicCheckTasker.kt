@@ -61,7 +61,7 @@ object DynamicCheckTasker : BiliCheckTasker("Dynamic") {
             return@withTimeout
         }
 
-        val dynamicList = client.getNewDynamic()
+        val dynamicList = client.getNewDynamic(source = "DynamicCheckTasker.poll")
         if (dynamicList == null) {
             logger.warn("failed to fetch dynamic list")
             return@withTimeout
@@ -118,7 +118,7 @@ object DynamicCheckTasker : BiliCheckTasker("Dynamic") {
      */
     suspend fun executeManualCheck(): Int = withTimeout(180001) {
         logger.info("$taskerName manual check triggered")
-        val dynamicList = client.getNewDynamic()
+        val dynamicList = client.getNewDynamic(source = "DynamicCheckTasker.manual-check")
         return@withTimeout handleManualCheckResult(dynamicList, "manual-check")
     }
 

@@ -12,7 +12,7 @@ import top.bilibili.utils.decode
 internal suspend inline fun <reified T> BiliClient.pgcGet(
     url: String,
     crossinline block: HttpRequestBuilder.() -> Unit = {}
-): T? = get<PgcResult>(url, block).result?.decode()
+): T? = get<PgcResult>(url, block = block).result?.decode()
 
 
 suspend fun BiliClient.followPgc(ssid: Long): PgcFollow? {

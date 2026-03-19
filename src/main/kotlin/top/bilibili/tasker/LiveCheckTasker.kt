@@ -43,7 +43,7 @@ object LiveCheckTasker : BiliCheckTasker("Live") {
         val allLiveRooms = mutableMapOf<Long, LiveInfo>()
 
         // 1. 获取账号关注列表中的直播（保留原有功能）
-        val followedLiveList = client.getLive()
+        val followedLiveList = client.getLive(source = "LiveCheckTasker.followed-live-list")
         if (followedLiveList != null) {
             logger.debug("✅ 从关注列表获取到 ${followedLiveList.rooms.size} 个直播间")
             followedLiveList.rooms.forEach { room ->
@@ -56,7 +56,10 @@ object LiveCheckTasker : BiliCheckTasker("Live") {
 
         // 2. 查询订阅列表中 UP 主的直播状态（新增功能）
         if (followingUsers.isNotEmpty()) {
-            val subscribedLiveStatus = client.getLiveStatus(followingUsers)
+            val subscribedLiveStatus = client.getLiveStatus(
+                uids = followingUsers,
+                source = "LiveCheckTasker.subscribed-live-status"
+            )
             if (subscribedLiveStatus != null) {
                 val liveCount = subscribedLiveStatus.values.count { it.liveStatus == 1 }
                 logger.debug("✅ 从订阅列表查询到 ${liveCount} 个正在直播的UP主（共查询 ${followingUsers.size} 个）")

@@ -21,6 +21,7 @@ import top.bilibili.service.resolveGradientPalette
 object DynamicMessageTasker : BiliTasker() {
 
     override var interval: Int = 0
+    override val wrapMainInBusinessLifecycle = false
 
     private val dynamicChannel by BiliBiliBot::dynamicChannel
     private val messageChannel by BiliBiliBot::messageChannel
@@ -30,7 +31,8 @@ object DynamicMessageTasker : BiliTasker() {
 
     override suspend fun main() {
         val dynamicDetail = dynamicChannel.receive()
-        withTimeout(180002) {
+        runBusinessOperation("process-message") {
+            withTimeout(180002) {
             val dynamicItem = dynamicDetail.item
             logger.info("开始处理动态: ${dynamicItem.modules.moduleAuthor.name} (${dynamicItem.modules.moduleAuthor.mid}) - ${dynamicItem.typeStr}")
             try {
@@ -41,6 +43,7 @@ object DynamicMessageTasker : BiliTasker() {
                 logger.info("动态消息已发送到 messageChannel")
             } catch (e: Exception) {
                 logger.error("处理动态失败: ${e.message}", e)
+            }
             }
         }
     }
