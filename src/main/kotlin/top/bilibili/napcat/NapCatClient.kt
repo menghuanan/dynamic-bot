@@ -64,6 +64,7 @@ class NapCatClient(
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val isConnected = AtomicBoolean(false)
+    private val stopping = AtomicBoolean(false)
     private val reconnectAttempts = AtomicInteger(0)
 
     private val _eventFlow = MutableSharedFlow<MessageEvent>(replay = 0, extraBufferCapacity = 100)
@@ -99,6 +100,7 @@ class NapCatClient(
 
     /** 启动客户端 */
     fun start() {
+        stopping.set(false)
         logger.info("正在启动 NapCat WebSocket 客户端...")
         logger.info("目标地址: ${config.getWebSocketUrl()}")
         scope.launch {
@@ -108,11 +110,22 @@ class NapCatClient(
 
     /** 停止客户端 */
     fun stop() {
+        if (!stopping.compareAndSet(false, true)) {
+            logger.info("NapCat WebSocket 客户端已在停止中")
+            return
+        }
+        stopping.set(true)
         logger.info("正在停止 NapCat WebSocket 客户端...")
 
         // 标记为未连接状态
         isConnected.set(false)
-        failPendingResponses("NapCat client stopped")
+        runBlocking {
+            try {
+                session?.close(CloseReason(CloseReason.Codes.NORMAL, "客户端停止"))
+            } catch (e: Exception) {
+                logger.warn("关闭 WebSocket 会话失败", e)
+            }
+        }
 
         // 关闭发送通道（触发发送协程退出）
         sendChannel.close()
@@ -126,13 +139,7 @@ class NapCatClient(
         }
 
         // 关闭 WebSocket 会话
-        runBlocking {
-            try {
-                session?.close(CloseReason(CloseReason.Codes.NORMAL, "Client stopped"))
-            } catch (e: Exception) {
-                logger.warn("关闭 WebSocket 会话失败", e)
-            }
-        }
+        failPendingResponses("NapCat 客户端已停止")
 
         // 关闭 HTTP 客户端
         client.close()
@@ -142,7 +149,7 @@ class NapCatClient(
 
     /** 连接循环（支持自动重连） */
     private suspend fun connectLoop() {
-        while (scope.isActive) {
+        while (scope.isActive && !stopping.get()) {
             try {
                 if (config.maxReconnectAttempts != -1 &&
                     reconnectAttempts.get() >= config.maxReconnectAttempts
@@ -153,7 +160,17 @@ class NapCatClient(
 
                 connect()
 
+            } catch (e: CancellationException) {
+                if (stopping.get() || !scope.isActive) {
+                    logger.info("停机期间停止 NapCat 重连循环")
+                    break
+                }
+                throw e
             } catch (e: Exception) {
+                if (stopping.get()) {
+                    logger.info("停机期间停止 NapCat 重连循环")
+                    break
+                }
                 logger.error("WebSocket 连接失败: ${e.message}")
                 reconnectAttempts.incrementAndGet()
 
@@ -194,7 +211,11 @@ class NapCatClient(
                         logger.info("Bot QQ 号: $selfId")
                     }
                 } catch (e: Exception) {
-                    logger.error("获取登录信息失败: ${e.message}", e)
+                    if (stopping.get() || e is CancellationException) {
+                        logger.info("停机期间忽略登录信息获取结果: ${e.message}")
+                    } else {
+                        logger.error("获取登录信息失败: ${e.message}", e)
+                    }
                 }
             }
 
@@ -205,7 +226,17 @@ class NapCatClient(
                     try {
                         send(payload.rawJson)
                         logger.debug("已发送消息: ${payload.logPreview}")
+                    } catch (e: CancellationException) {
+                        if (stopping.get() || !scope.isActive) {
+                            logger.info("停机期间停止 NapCat 发送循环")
+                            break
+                        }
+                        throw e
                     } catch (e: Exception) {
+                        if (stopping.get()) {
+                            logger.info("停机期间停止 NapCat 发送循环: ${e.message}")
+                            break
+                        }
                         logger.error("发送消息失败: ${e.message}", e)
                     }
                 }
@@ -222,7 +253,11 @@ class NapCatClient(
                         }
 
                         is Frame.Close -> {
-                            logger.warn("WebSocket 连接被关闭: ${frame.readReason()}")
+                            if (stopping.get()) {
+                                logger.info("停机期间 WebSocket 连接已关闭: ${frame.readReason()}")
+                            } else {
+                                logger.warn("WebSocket 连接被关闭: ${frame.readReason()}")
+                            }
                             break
                         }
 
@@ -231,13 +266,23 @@ class NapCatClient(
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                if (stopping.get() || !scope.isActive) {
+                    logger.info("停机期间停止 NapCat 接收循环")
+                } else {
+                    throw e
+                }
             } catch (e: Exception) {
-                logger.error("接收消息时发生错误: ${e.message}", e)
+                if (stopping.get()) {
+                    logger.info("停机期间停止 NapCat 接收循环: ${e.message}")
+                } else {
+                    logger.error("接收消息时发生错误: ${e.message}", e)
+                }
             } finally {
                 isConnected.set(false)
                 sendJob.cancel()
                 session = null
-                failPendingResponses("WebSocket disconnected")
+                failPendingResponses(if (stopping.get()) "NapCat 客户端已停止" else "WebSocket 已断开")
                 logger.info("WebSocket 连接已断开")
             }
         }
@@ -309,7 +354,11 @@ class NapCatClient(
     /** 通用发送消息方法 */
     private suspend fun sendMessage(action: String, params: Map<String, Any>): Boolean {
         if (!isConnected.get()) {
-            logger.warn("WebSocket 未连接，无法发送消息")
+            if (stopping.get()) {
+                logger.info("停机期间跳过发送消息: action=$action")
+            } else {
+                logger.warn("WebSocket 未连接，无法发送消息")
+            }
             return false
         }
 
@@ -362,7 +411,11 @@ class NapCatClient(
             logger.debug("消息发送成功: action=$action")
             true
         } catch (e: Exception) {
-            logger.error("发送消息失败: ${e.message}", e)
+            if (stopping.get() || e is CancellationException) {
+                logger.info("停机期间忽略发送消息结果: action=$action, reason=${e.message}")
+            } else {
+                logger.error("发送消息失败: ${e.message}", e)
+            }
             false
         }
     }
@@ -424,7 +477,11 @@ class NapCatClient(
         timeoutMillis: Long = 5_000L
     ): OneBotResponse? {
         if (!isConnected.get()) {
-            logger.warn("WebSocket 未连接，无法请求 action=$action")
+            if (stopping.get()) {
+                logger.info("停机期间跳过请求: action=$action")
+            } else {
+                logger.warn("WebSocket 未连接，无法请求 action=$action")
+            }
             return null
         }
 
@@ -588,7 +645,11 @@ class NapCatClient(
     /** 获取登录信息（Bot QQ 号） */
     private suspend fun getLoginInfo(): Long? {
         if (!isConnected.get()) {
-            logger.warn("WebSocket 未连接，无法获取登录信息")
+            if (stopping.get()) {
+                logger.info("停机期间跳过获取登录信息请求")
+            } else {
+                logger.warn("WebSocket 未连接，无法获取登录信息")
+            }
             return null
         }
 
@@ -610,7 +671,11 @@ class NapCatClient(
             val selfIdPrimitive = data["user_id"] as? JsonPrimitive ?: return null
             selfIdPrimitive.content.toLongOrNull()
         } catch (e: Exception) {
-            logger.error("获取登录信息失败: ${e.message}", e)
+            if (stopping.get() || e is CancellationException) {
+                logger.info("停机期间忽略获取登录信息失败: ${e.message}")
+            } else {
+                logger.error("获取登录信息失败: ${e.message}", e)
+            }
             null
         }
     }

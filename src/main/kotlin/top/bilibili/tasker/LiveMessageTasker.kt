@@ -1,5 +1,6 @@
 package top.bilibili.tasker
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeout
 import org.jetbrains.skia.Color
 import top.bilibili.core.BiliBiliBot
@@ -24,7 +25,8 @@ object LiveMessageTasker : BiliTasker() {
     private val messageChannel by BiliBiliBot::messageChannel
 
     override suspend fun main() {
-        val liveDetail = liveChannel.receive()
+        val liveDetail = liveChannel.receiveCatching().getOrNull()
+            ?: throw CancellationException("直播通道已关闭")
         runBusinessOperation("process-message") {
             withTimeout(180004) {
             val liveInfo = liveDetail.item

@@ -84,6 +84,46 @@ class ResourceManagementRegressionGuardTest {
     }
 
     @Test
+    fun `shutdown lifecycle should use explicit stopping state and phased resource shutdown`() {
+        val bot = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
+        val supervisor = read("src/main/kotlin/top/bilibili/core/resource/ResourceSupervisor.kt")
+        val tasker = read("src/main/kotlin/top/bilibili/tasker/BiliTasker.kt")
+
+        assertTrue(bot.contains("enum class BotLifecycleState"), "Bot should expose explicit lifecycle states")
+        assertTrue(bot.contains("fun isStopping()"), "Bot should expose read-only stopping state")
+        assertTrue(bot.contains("ShutdownPhase.WORKERS"), "Bot shutdown should place taskers in WORKERS phase")
+        assertTrue(bot.contains("ShutdownPhase.CHANNELS"), "Bot shutdown should stop channels after workers")
+        assertTrue(supervisor.contains("enum class ShutdownPhase"), "ResourceSupervisor should define shutdown phases")
+        assertTrue(supervisor.contains("phaseReports"), "ResourceSupervisor stop report should include per-phase summary")
+        assertTrue(
+            tasker.contains("ClosedReceiveChannelException") && tasker.contains("ClosedSendChannelException"),
+            "BiliTasker should treat closed channel shutdown paths as normal termination",
+        )
+    }
+
+    @Test
+    fun `main shutdown hook should stop bot directly without helper thread`() {
+        val main = read("src/main/kotlin/top/bilibili/Main.kt")
+
+        assertTrue(main.contains("BiliBiliBot.stop()"), "shutdown hook should call bot stop directly")
+        assertFalse(main.contains("val shutdownThread = Thread"), "shutdown hook should not spin an extra helper thread")
+    }
+
+    @Test
+    fun `docker entrypoint should preserve java exit code after wait`() {
+        val entrypoint = read("docker-entrypoint.sh")
+
+        assertTrue(
+            entrypoint.contains("exit \"${'$'}EXIT_CODE\"") || entrypoint.contains("exit ${'$'}EXIT_CODE"),
+            "entrypoint should exit with the Java process status",
+        )
+        assertFalse(
+            Regex("""wait "${'$'}JAVA_PID".*cleanup""", setOf(RegexOption.DOT_MATCHES_ALL)).containsMatchIn(entrypoint),
+            "entrypoint should not unconditionally route normal Java exits through cleanup",
+        )
+    }
+
+    @Test
     fun `log clear tasker should include daemon logs cleanup`() {
         val tasker = read("src/main/kotlin/top/bilibili/tasker/LogClearTasker.kt")
 

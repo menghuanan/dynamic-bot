@@ -1,15 +1,30 @@
 package top.bilibili.core
 
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfigManager
 import top.bilibili.config.ConfigManager
-import top.bilibili.napcat.MessageSegment
-import top.bilibili.napcat.NapCatClient
+import top.bilibili.core.resource.LambdaResourcePartition
+import top.bilibili.core.resource.ResourceStopReport
+import top.bilibili.core.resource.ResourceStrictness
+import top.bilibili.core.resource.ResourceSupervisor
+import top.bilibili.core.resource.ShutdownPhase
 import top.bilibili.data.BiliCookie
+import top.bilibili.data.BiliMessage
 import top.bilibili.data.DynamicDetail
 import top.bilibili.data.LiveDetail
-import top.bilibili.data.BiliMessage
+import top.bilibili.napcat.MessageSegment
+import top.bilibili.napcat.NapCatClient
 import top.bilibili.service.CacheMaintenanceService
 import top.bilibili.service.FirstRunService
 import top.bilibili.service.MessageEventDispatchService
@@ -18,74 +33,62 @@ import top.bilibili.service.NapCatMessageGateway
 import top.bilibili.service.StartupDataInitService
 import top.bilibili.service.TaskBootstrapService
 import top.bilibili.service.closeServiceClient
-import top.bilibili.utils.ImageCache
-import top.bilibili.utils.actionNotify
 import top.bilibili.tasker.BiliCheckTasker
 import top.bilibili.tasker.BiliTasker
-import top.bilibili.core.resource.LambdaResourcePartition
-import top.bilibili.core.resource.ResourceSupervisor
-import top.bilibili.core.resource.ResourceStrictness
-import kotlinx.coroutines.channels.Channel
+import top.bilibili.utils.ImageCache
+import top.bilibili.utils.actionNotify
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
 import kotlin.io.path.Path
 
-/**
- * BiliBili 动态推送 Bot 核心类
- * 替代原来的 BiliBiliBot 插件对象
- */
+enum class BotLifecycleState {
+    STARTING,
+    RUNNING,
+    STOPPING,
+    STOPPED,
+}
+
 object BiliBiliBot : CoroutineScope {
     val logger = LoggerFactory.getLogger(BiliBiliBot::class.java)
+
     private var job: Job? = SupervisorJob()
     override val coroutineContext: CoroutineContext
         get() = Dispatchers.Default + (job ?: SupervisorJob().also { job = it })
 
-    // ✅ 运行状态标志
     private val isRunning = AtomicBoolean(false)
+    private val lifecycleState = AtomicReference(BotLifecycleState.STOPPED)
     private var startTime: Long = 0L
 
-    /** 数据文件夹 */
     val dataFolder = File("data")
     val dataFolderPath: Path = Path("data")
 
-    /** 临时文件目录 */
     val tempPath: Path = Path("temp").also { path ->
         if (!path.toFile().exists()) {
             path.toFile().mkdirs()
         }
     }
 
-    /** B站 Cookie */
     var cookie = BiliCookie()
 
-    /** NapCat WebSocket 客户端 */
     lateinit var napCat: NapCatClient
         private set
 
-    /** Bot 配置 */
     lateinit var config: top.bilibili.config.BotConfig
         private set
 
-    /** ✅ 事件收集协程的显式引用 */
     private var eventCollectorJob: Job? = null
     private val resourceSupervisor = ResourceSupervisor()
 
-    /**
-     * 检查 NapCat 客户端是否已初始化
-     */
     fun isNapCatInitialized(): Boolean = ::napCat.isInitialized
 
-    /**
-     * 检查配置是否已加载
-     */
     fun isConfigInitialized(): Boolean = ::config.isInitialized
 
-    /**
-     * 安全获取 NapCat 客户端，未初始化时抛出有意义的异常
-     */
+    fun isStopping(): Boolean = lifecycleState.get() == BotLifecycleState.STOPPING
+
     fun requireNapCat(): NapCatClient {
         require(::napCat.isInitialized) {
             "NapCat 客户端尚未初始化，请先完成启动。"
@@ -93,9 +96,6 @@ object BiliBiliBot : CoroutineScope {
         return napCat
     }
 
-    /**
-     * 安全获取配置，未初始化时抛出有意义的异常
-     */
     fun requireConfig(): top.bilibili.config.BotConfig {
         require(::config.isInitialized) {
             "配置尚未加载。"
@@ -103,47 +103,26 @@ object BiliBiliBot : CoroutineScope {
         return config
     }
 
-    /** B站用户 UID */
     var uid: Long = 0L
-
-    /** B站关注分组 ID */
     var tagid: Int = 0
-
-    /** 命令行参数：Debug模式 */
     private var commandLineDebugMode: Boolean? = null
 
-    /** 数据 Channel */
     val dynamicChannel = Channel<DynamicDetail>(20)
     val liveChannel = Channel<LiveDetail>(20)
     val messageChannel = Channel<BiliMessage>(20)
-    // ✅ P2修复: 删除未使用的 missChannel
     val liveUsers = mutableMapOf<Long, Long>()
 
-    /**
-     * 获取资源文件流
-     * @deprecated 使用 useResourceAsStream 或 getResourceBytes 替代，以确保资源正确关闭
-     */
     @Deprecated("使用 useResourceAsStream 或 getResourceBytes 替代", ReplaceWith("useResourceAsStream(path) { it.readBytes() }"))
     fun getResourceAsStream(path: String): InputStream? {
-        // 使用 classLoader 加载资源，确保从 classpath 根目录开始查找
         val resourcePath = if (path.startsWith("/")) path.substring(1) else path
         return this::class.java.classLoader.getResourceAsStream(resourcePath)
     }
 
-    /**
-     * ✅ 安全地使用资源文件流
-     * @param path 资源路径
-     * @param block 使用流的操作
-     * @return 操作结果，如果资源不存在则返回 null
-     */
     inline fun <T> useResourceAsStream(path: String, block: (InputStream) -> T): T? {
         val resourcePath = if (path.startsWith("/")) path.substring(1) else path
         return this::class.java.classLoader.getResourceAsStream(resourcePath)?.use(block)
     }
 
-    /**
-     * ✅ 读取资源文件为字节数组
-     */
     fun getResourceBytes(path: String): ByteArray? {
         val resourcePath = if (path.startsWith("/")) path.substring(1) else path
         return this::class.java.classLoader.getResourceAsStream(resourcePath)?.use {
@@ -151,226 +130,198 @@ object BiliBiliBot : CoroutineScope {
         }
     }
 
-    /** 启动 Bot */
     fun start(enableDebug: Boolean? = null) {
-        // ✅ 重复启动保护
         if (!isRunning.compareAndSet(false, true)) {
             logger.warn("Bot 已在运行中，忽略重复启动请求")
             return
         }
 
+        lifecycleState.set(BotLifecycleState.STARTING)
         startTime = System.currentTimeMillis()
 
-        // 保存命令行参数
         if (enableDebug != null) {
             commandLineDebugMode = enableDebug
         }
 
-        // 先加载配置以确定日志级别
         try {
             BiliConfigManager.init()
-            // 根据配置或命令行参数设置日志级别（命令行参数优先）
             val debugMode = commandLineDebugMode ?: BiliConfigManager.config.enableConfig.debugMode
             if (debugMode) {
                 System.setProperty("APP_LOG_LEVEL", "DEBUG")
                 ch.qos.logback.classic.LoggerContext::class.java.cast(
-                    org.slf4j.LoggerFactory.getILoggerFactory()
+                    org.slf4j.LoggerFactory.getILoggerFactory(),
                 ).let { context ->
                     context.getLogger("top.bilibili").level = ch.qos.logback.classic.Level.DEBUG
                     context.getLogger("ROOT").level = ch.qos.logback.classic.Level.DEBUG
                 }
-                val source = if (commandLineDebugMode == true) "命令行参数" else "配置文件"
-                logger.debug("调试模式已启用（来源：$source）")
+                val source = if (commandLineDebugMode == true) "命令行" else "配置文件"
+                logger.debug("已从${source}启用调试模式")
             }
         } catch (e: Exception) {
-            logger.error("加载配置失败: ${e.message}")
+            logger.error("初始化配置失败: ${e.message}", e)
             isRunning.set(false)
+            lifecycleState.set(BotLifecycleState.STOPPED)
             return
         }
 
         logger.info("========================================")
-        logger.info("  欢迎使用 BiliBili 动态推送 Bot")
+        logger.info("  欢迎使用 BiliBili Dynamic Bot")
         logger.info("========================================")
 
         try {
             resourceSupervisor.reset()
 
-            // 0. 创建必要的目录
-            logger.info("正在初始化目录结构...")
+            logger.info("正在初始化必要目录...")
             listOf("config", "data", "temp", "logs").forEach { dir ->
                 File(dir).apply {
                     if (!exists()) {
                         mkdirs()
-                        logger.debug("创建目录: $dir")
+                        logger.debug("已创建目录: $dir")
                     }
                 }
             }
 
-            // 1. 加载配置（已在前面加载）
-            logger.info("正在加载配置...")
+            logger.info("正在加载 Bot 配置...")
             ConfigManager.init()
             config = ConfigManager.botConfig
             top.bilibili.data.BiliImageTheme.reload()
             top.bilibili.data.BiliImageQuality.reload()
 
-            // 清理所有缓存（启动时）
             if (BiliConfigManager.config.enableConfig.cacheClearEnable) {
-                logger.info("正在清理所有缓存...")
+                logger.info("正在清理启动缓存...")
                 CacheMaintenanceService.clearAllCache()
             }
 
             if (!config.napcat.validate()) {
                 logger.error("NapCat 配置无效，请检查 config/bot.yml")
                 isRunning.set(false)
+                lifecycleState.set(BotLifecycleState.STOPPED)
                 return
             }
 
-            // 2. 初始化 NapCat 客户端
             logger.info("正在初始化 NapCat 客户端...")
             napCat = NapCatClient(config.napcat)
             MessageGatewayProvider.register(
                 NapCatMessageGateway(
                     napCatProvider = { requireNapCat() },
                     adminIdProvider = { BiliConfigManager.config.admin },
-                    logger = logger
-                )
+                    logger = logger,
+                ),
             )
 
-            // 3. 订阅消息事件（✅ 显式管理协程）
             eventCollectorJob = launch {
                 napCat.eventFlow.collect { event ->
                     try {
-                        // ✅ 单个事件处理最多 5 秒
-                        withTimeout(5000) {
+                        withTimeout(5_000) {
                             MessageEventDispatchService.handleMessageEvent(event)
                         }
-                    } catch (e: TimeoutCancellationException) {
-                        logger.warn("处理事件超时: ${event.messageType}")
+                    } catch (_: TimeoutCancellationException) {
+                        logger.warn("消息事件处理超时: ${event.messageType}")
                     } catch (e: Exception) {
-                        logger.error("处理事件失败", e)
+                        if (isStopping()) {
+                            logger.debug("停机期间忽略事件分发异常: ${e.message}")
+                        } else {
+                            logger.error("分发消息事件失败", e)
+                        }
                     }
                 }
             }
 
-            // 4. 启动 NapCat 客户端
             napCat.start()
             launch {
-                delay(1000)
+                delay(1_000)
                 BiliConfigManager.consumePendingSubjectColorMigrationNotice()?.let { notice ->
                     runCatching { actionNotify(notice) }
                         .onFailure { logger.warn("Failed to send subject color migration summary", it) }
                 }
             }
+
             registerResourcePartitions()
 
-            // 5. 初始化 B站数据（✅ 添加超时保护）
             launch {
                 try {
-                    withTimeout(60000) {  // 60 秒超时
-                        delay(3000) // 等待 WebSocket 连接
+                    withTimeout(60_000) {
+                        delay(3_000)
                         StartupDataInitService.initBiliData()
                     }
-                } catch (e: TimeoutCancellationException) {
-                    logger.error("初始化数据超时")
-                    stop()  // 超时则停止 Bot
+                } catch (_: TimeoutCancellationException) {
+                    logger.error("启动数据初始化超时")
+                    stop("startup-data-timeout")
                 }
             }
 
-            // 6. 启动任务（✅ 添加超时保护）
             launch {
                 try {
-                    withTimeout(30000) {  // 30 秒超时
-                        delay(5000) // 等待初始化完成
+                    withTimeout(30_000) {
+                        delay(5_000)
                         TaskBootstrapService.startTasks()
-
-                        // 首次运行检查
-                        delay(1000)
+                        delay(1_000)
                         FirstRunService.checkFirstRun(config)
                     }
-                } catch (e: TimeoutCancellationException) {
-                    logger.error("启动任务超时")
+                } catch (_: TimeoutCancellationException) {
+                    logger.error("任务启动超时")
                 }
             }
 
+            lifecycleState.set(BotLifecycleState.RUNNING)
             logger.info("Bot 启动成功")
-
         } catch (e: Exception) {
             logger.error("Bot 启动失败: ${e.message}", e)
-            isRunning.set(false)
-            stop()
+            stop("startup-failure")
         }
     }
 
-    /** 停止 Bot */
-    fun stop() {
-        if (!isRunning.compareAndSet(true, false)) {
-            logger.warn("Bot 未在运行，忽略停止请求")
+    fun stop(reason: String = "shutdown-request") {
+        val currentState = lifecycleState.get()
+        if (currentState == BotLifecycleState.STOPPING || currentState == BotLifecycleState.STOPPED) {
+            logger.info("当前生命周期状态为 $currentState，忽略停止请求")
             return
         }
 
-        logger.info("正在停止 Bot...")
+        if (!isRunning.compareAndSet(true, false) && currentState != BotLifecycleState.STARTING) {
+            logger.warn("Bot 未运行，忽略停止请求")
+            lifecycleState.compareAndSet(BotLifecycleState.STARTING, BotLifecycleState.STOPPED)
+            return
+        }
+
+        lifecycleState.set(BotLifecycleState.STOPPING)
+        logger.info("正在停止 Bot，原因=$reason")
+
+        var report: ResourceStopReport? = null
+        var usedFallback = false
 
         try {
-            val report = runCatching {
+            report = runCatching {
                 runBlocking { resourceSupervisor.stopAll() }
             }.onFailure {
-                logger.error("统一资源总管停止失败，进入分区兜底释放: ${it.message}", it)
+                logger.error("资源总管停止失败: ${it.message}", it)
             }.getOrNull()
 
-            if (report != null) {
-                if (report.totalPartitions == 0) {
-                    logger.warn("统一资源总管未注册分区，进入兜底释放")
-                    runBlocking { fallbackStopResources() }
-                } else if (!report.success) {
-                    logger.warn(
-                        "统一资源总管停止存在失败: total=${report.totalPartitions}, failed=${report.failedPartitions}, failures=${report.failures}"
-                    )
-                    runBlocking { fallbackStopResources() }
-                } else {
-                    logger.info("统一资源总管已完成全部分区释放")
-                }
-            } else {
+            if (report == null || report.totalPartitions == 0 || !report.success) {
+                usedFallback = true
                 runBlocking { fallbackStopResources() }
             }
 
-            // 8. 保存配置和数据
             if (::config.isInitialized) {
-                BiliConfigManager.saveAll()
+                runCatching { BiliConfigManager.saveAll() }
+                    .onFailure { logger.warn("停机时保存配置失败: ${it.message}", it) }
             }
-
-            // 9. 等待协程完成（带超时）
-            runBlocking {
-                try {
-                    withTimeout(10000) { // 10 秒超时
-                        job?.cancelAndJoin()
-                        logger.info("所有协程已正常结束")
-                    }
-                } catch (e: TimeoutCancellationException) {
-                    logger.warn("等待协程结束超时，强制取消")
-                    job?.cancel()
-                }
-            }
-
-            job = null
-
-            logger.info("Bot 已停止")
         } catch (e: Exception) {
-            logger.error("停止 Bot 时发生错误: ${e.message}", e)
+            logger.error("停机过程中发生未预期异常: ${e.message}", e)
+        } finally {
+            lifecycleState.set(BotLifecycleState.STOPPED)
+            logShutdownSummary(reason, report, usedFallback)
+            logger.info("Bot 已停止")
         }
     }
 
-    /**
-     * 检查 Bot 是否正常运行
-     */
     fun isHealthy(): Boolean {
-        return isRunning.get() &&
-               job?.isActive == true &&
-               ::napCat.isInitialized
+        return lifecycleState.get() == BotLifecycleState.RUNNING &&
+            isRunning.get() &&
+            job?.isActive == true &&
+            ::napCat.isInitialized
     }
 
-    /**
-     * 获取运行时长（秒）
-     */
     fun getUptimeSeconds(): Long {
         return if (isRunning.get()) {
             (System.currentTimeMillis() - startTime) / 1000
@@ -379,12 +330,10 @@ object BiliBiliBot : CoroutineScope {
         }
     }
 
-    /** 发送群消息 */
     suspend fun sendGroupMessage(groupId: Long, message: List<MessageSegment>): Boolean {
         return MessageGatewayProvider.require().sendGroupMessage(groupId, message)
     }
 
-    /** 发送私聊消息 */
     suspend fun sendPrivateMessage(userId: Long, message: List<MessageSegment>): Boolean {
         return MessageGatewayProvider.require().sendPrivateMessage(userId, message)
     }
@@ -393,7 +342,6 @@ object BiliBiliBot : CoroutineScope {
         return MessageGatewayProvider.require().sendAdminMessage(message)
     }
 
-    /** 发送消息到指定联系人 */
     suspend fun sendMessage(contact: ContactId, message: List<MessageSegment>): Boolean {
         return MessageGatewayProvider.require().sendMessage(contact, message)
     }
@@ -406,20 +354,20 @@ object BiliBiliBot : CoroutineScope {
                 id = "scope-job",
                 owns = listOf("BiliBiliBot.job"),
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
+                shutdownPhase = ShutdownPhase.ROOT_SCOPE,
                 stopAction = {
                     try {
                         withTimeout(10_000) {
                             job?.cancelAndJoin()
-                            logger.info("所有协程已正常结束")
                         }
                     } catch (_: TimeoutCancellationException) {
-                        logger.warn("等待协程结束超时，强制取消")
+                        logger.warn("等待根协程作用域停止超时")
                         job?.cancel()
                     } finally {
                         job = null
                     }
                 },
-            )
+            ),
         )
 
         resourceSupervisor.register(
@@ -427,11 +375,12 @@ object BiliBiliBot : CoroutineScope {
                 id = "skia-manager",
                 owns = listOf("SkiaManager", "FontManager"),
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
+                shutdownPhase = ShutdownPhase.DEPENDENCIES,
                 stopAction = {
                     top.bilibili.skia.SkiaManager.shutdown()
-                    logger.info("Skia 管理器已关闭")
+                    logger.info("Skia 管理器已停止")
                 },
-            )
+            ),
         )
 
         resourceSupervisor.register(
@@ -439,11 +388,12 @@ object BiliBiliBot : CoroutineScope {
                 id = "bili-client",
                 owns = listOf("biliClient"),
                 strictness = ResourceStrictness.STRICT,
+                shutdownPhase = ShutdownPhase.DEPENDENCIES,
                 stopAction = {
                     top.bilibili.utils.biliClient.close()
-                    logger.info("B站客户端已关闭")
+                    logger.info("共享 biliClient 已停止")
                 },
-            )
+            ),
         )
 
         resourceSupervisor.register(
@@ -451,11 +401,12 @@ object BiliBiliBot : CoroutineScope {
                 id = "service-bili-client",
                 owns = listOf("service.client"),
                 strictness = ResourceStrictness.STRICT,
+                shutdownPhase = ShutdownPhase.DEPENDENCIES,
                 stopAction = {
                     closeServiceClient()
-                    logger.info("Service 共享 B站客户端已关闭")
+                    logger.info("服务共享客户端已停止")
                 },
-            )
+            ),
         )
 
         resourceSupervisor.register(
@@ -463,11 +414,12 @@ object BiliBiliBot : CoroutineScope {
                 id = "check-tasker-bili-client",
                 owns = listOf("BiliCheckTasker.client"),
                 strictness = ResourceStrictness.STRICT,
+                shutdownPhase = ShutdownPhase.DEPENDENCIES,
                 stopAction = {
                     BiliCheckTasker.closeSharedClient()
-                    logger.info("检查任务共享 B站客户端已关闭")
+                    logger.info("BiliCheckTasker 共享客户端已停止")
                 },
-            )
+            ),
         )
 
         resourceSupervisor.register(
@@ -475,10 +427,12 @@ object BiliBiliBot : CoroutineScope {
                 id = "image-cache",
                 owns = listOf("ImageCache"),
                 strictness = ResourceStrictness.STRICT,
+                shutdownPhase = ShutdownPhase.DEPENDENCIES,
                 stopAction = {
                     ImageCache.close()
+                    logger.info("图片缓存已停止")
                 },
-            )
+            ),
         )
 
         resourceSupervisor.register(
@@ -486,10 +440,14 @@ object BiliBiliBot : CoroutineScope {
                 id = "taskers",
                 owns = listOf("BiliTasker.*"),
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
+                shutdownPhase = ShutdownPhase.WORKERS,
                 stopAction = {
-                    BiliTasker.cancelAll()
+                    val report = BiliTasker.cancelAll(timeoutMs = 10_000)
+                    if (!report.success) {
+                        error("taskers failed to stop: ${report.failures}")
+                    }
                 },
-            )
+            ),
         )
 
         resourceSupervisor.register(
@@ -497,13 +455,14 @@ object BiliBiliBot : CoroutineScope {
                 id = "gateway-napcat",
                 owns = listOf("NapCatClient", "MessageGatewayProvider"),
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
+                shutdownPhase = ShutdownPhase.INGRESS,
                 stopAction = {
                     if (::napCat.isInitialized) {
                         napCat.stop()
                     }
                     MessageGatewayProvider.unregister()
                 },
-            )
+            ),
         )
 
         resourceSupervisor.register(
@@ -511,11 +470,12 @@ object BiliBiliBot : CoroutineScope {
                 id = "event-collector",
                 owns = listOf("eventCollectorJob"),
                 strictness = ResourceStrictness.STRICT,
+                shutdownPhase = ShutdownPhase.INGRESS,
                 stopAction = {
                     eventCollectorJob?.cancelAndJoin()
                     eventCollectorJob = null
                 },
-            )
+            ),
         )
 
         resourceSupervisor.register(
@@ -523,87 +483,96 @@ object BiliBiliBot : CoroutineScope {
                 id = "channels",
                 owns = listOf("dynamicChannel", "liveChannel", "messageChannel"),
                 strictness = ResourceStrictness.STRICT,
+                shutdownPhase = ShutdownPhase.CHANNELS,
                 stopAction = {
                     dynamicChannel.close()
                     liveChannel.close()
                     messageChannel.close()
-                    logger.debug("所有 Channel 已关闭")
+                    logger.debug("所有消息通道已关闭")
                 },
-            )
+            ),
         )
     }
 
     private suspend fun fallbackStopResources() {
-        runCatching {
-            dynamicChannel.close()
-            liveChannel.close()
-            messageChannel.close()
-            logger.debug("兜底释放: 所有 Channel 已关闭")
-        }.onFailure {
-            logger.warn("兜底释放: 关闭 Channel 失败: ${it.message}", it)
-        }
-
-        runCatching {
-            eventCollectorJob?.cancelAndJoin()
-            eventCollectorJob = null
-        }.onFailure {
-            logger.warn("兜底释放: 停止事件收集器失败: ${it.message}", it)
-        }
-
         runCatching {
             if (::napCat.isInitialized) {
                 napCat.stop()
             }
             MessageGatewayProvider.unregister()
         }.onFailure {
-            logger.warn("兜底释放: 停止网关/NapCat失败: ${it.message}", it)
+            logger.warn("兜底停止入口资源失败: ${it.message}", it)
         }
 
-        runCatching { BiliTasker.cancelAll() }
-            .onFailure { logger.warn("兜底释放: 停止任务失败: ${it.message}", it) }
+        runCatching {
+            eventCollectorJob?.cancelAndJoin()
+            eventCollectorJob = null
+        }.onFailure {
+            logger.warn("兜底停止事件收集器失败: ${it.message}", it)
+        }
+
+        runCatching {
+            val report = BiliTasker.cancelAll(timeoutMs = 10_000)
+            if (!report.success) {
+                logger.warn("兜底停止任务器存在失败项: ${report.failures}")
+            }
+        }.onFailure {
+            logger.warn("兜底停止任务器失败: ${it.message}", it)
+        }
+
+        runCatching {
+            dynamicChannel.close()
+            liveChannel.close()
+            messageChannel.close()
+        }.onFailure {
+            logger.warn("兜底关闭通道失败: ${it.message}", it)
+        }
 
         runCatching { ImageCache.close() }
-            .onFailure { logger.warn("兜底释放: 关闭 ImageCache 失败: ${it.message}", it) }
+            .onFailure { logger.warn("兜底关闭图片缓存失败: ${it.message}", it) }
 
-        runCatching {
-            top.bilibili.utils.biliClient.close()
-            logger.info("兜底释放: B站客户端已关闭")
-        }.onFailure {
-            logger.warn("兜底释放: 关闭 BiliClient 失败: ${it.message}", it)
-        }
+        runCatching { top.bilibili.utils.biliClient.close() }
+            .onFailure { logger.warn("兜底关闭 biliClient 失败: ${it.message}", it) }
 
-        runCatching {
-            closeServiceClient()
-            logger.info("兜底释放: Service 共享 B站客户端已关闭")
-        }.onFailure {
-            logger.warn("兜底释放: 关闭 Service 共享 BiliClient 失败: ${it.message}", it)
-        }
+        runCatching { closeServiceClient() }
+            .onFailure { logger.warn("兜底关闭服务共享客户端失败: ${it.message}", it) }
 
-        runCatching {
-            BiliCheckTasker.closeSharedClient()
-            logger.info("兜底释放: 检查任务共享 B站客户端已关闭")
-        }.onFailure {
-            logger.warn("兜底释放: 关闭检查任务共享 BiliClient 失败: ${it.message}", it)
-        }
+        runCatching { BiliCheckTasker.closeSharedClient() }
+            .onFailure { logger.warn("兜底关闭 BiliCheckTasker 客户端失败: ${it.message}", it) }
 
-        runCatching {
-            top.bilibili.skia.SkiaManager.shutdown()
-            logger.info("兜底释放: Skia 管理器已关闭")
-        }.onFailure {
-            logger.warn("兜底释放: 关闭 SkiaManager 失败: ${it.message}", it)
-        }
+        runCatching { top.bilibili.skia.SkiaManager.shutdown() }
+            .onFailure { logger.warn("兜底关闭 Skia 失败: ${it.message}", it) }
 
         runCatching {
             withTimeout(10_000) {
                 job?.cancelAndJoin()
-                logger.info("兜底释放: 所有协程已正常结束")
             }
         }.onFailure {
-            logger.warn("兜底释放: 等待协程结束失败，强制取消: ${it.message}", it)
+            logger.warn("兜底停止根协程作用域失败: ${it.message}", it)
             job?.cancel()
         }
         job = null
     }
+
+    private fun logShutdownSummary(
+        reason: String,
+        report: ResourceStopReport?,
+        usedFallback: Boolean,
+    ) {
+        if (report == null) {
+            logger.warn("停机摘要: 原因=$reason，资源总管报告缺失，是否使用兜底=$usedFallback")
+            return
+        }
+
+        val phaseSummary = report.phaseReports.joinToString(separator = "; ") { phase ->
+            "${phase.phase}:${phase.stoppedPartitions}/${phase.totalPartitions} in ${phase.durationMs}ms"
+        }
+        val message =
+            "停机摘要: 原因=$reason，成功=${report.success}，总分区=${report.totalPartitions}，失败分区=${report.failedPartitions}，是否使用兜底=$usedFallback，阶段=[$phaseSummary]，失败详情=${report.failures}"
+        if (report.success && !usedFallback) {
+            logger.info(message)
+        } else {
+            logger.warn(message)
+        }
+    }
 }
-
-

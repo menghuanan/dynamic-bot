@@ -1,5 +1,6 @@
 package top.bilibili.tasker
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeout
 import org.jetbrains.skia.Color
 import top.bilibili.core.BiliBiliBot
@@ -30,7 +31,8 @@ object DynamicMessageTasker : BiliTasker() {
     private val bangumi by BiliData::bangumi
 
     override suspend fun main() {
-        val dynamicDetail = dynamicChannel.receive()
+        val dynamicDetail = dynamicChannel.receiveCatching().getOrNull()
+            ?: throw CancellationException("动态通道已关闭")
         runBusinessOperation("process-message") {
             withTimeout(180002) {
             val dynamicItem = dynamicDetail.item

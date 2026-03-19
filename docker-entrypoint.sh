@@ -105,5 +105,16 @@ JAVA_PID=$!
 wait "$JAVA_PID"
 EXIT_CODE=$?
 
-log_warn "Java exited (code: $EXIT_CODE)"
-cleanup
+if [ -n "${XVFB_PID:-}" ]; then
+    log "Stopping Xvfb (PID: $XVFB_PID)..."
+    kill -TERM "$XVFB_PID" 2>/dev/null || true
+    wait "$XVFB_PID" 2>/dev/null || true
+fi
+
+if [ "$EXIT_CODE" -eq 0 ]; then
+    log "Java exited cleanly"
+else
+    log_warn "Java exited (code: $EXIT_CODE)"
+fi
+
+exit "$EXIT_CODE"

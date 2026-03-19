@@ -65,6 +65,10 @@ object SendTasker : BiliTasker("SendTasker") {
      */
     private suspend fun processMessageQueue() {
         for ((contact, segments) in messageQueue) {
+            if (BiliBiliBot.isStopping()) {
+                BiliBiliBot.logger.info("停机期间停止 SendTasker 队列处理协程")
+                return
+            }
             try {
                 val gateway = top.bilibili.service.MessageGatewayProvider.require()
                 var success = gateway.sendMessage(contact, segments)
@@ -88,7 +92,17 @@ object SendTasker : BiliTasker("SendTasker") {
 
                 // 鍙戦€侀棿闅?
                 delay(BiliConfigManager.config.pushConfig.pushInterval)
+            } catch (e: CancellationException) {
+                if (BiliBiliBot.isStopping()) {
+                    BiliBiliBot.logger.info("停机期间取消 SendTasker 队列处理协程")
+                    return
+                }
+                throw e
             } catch (e: Exception) {
+                if (BiliBiliBot.isStopping()) {
+                    BiliBiliBot.logger.info("停机期间丢弃队列消息: ${e.message}")
+                    return
+                }
                 BiliBiliBot.logger.error("发送消息时出错: ${e.message}", e)
             }
         }
@@ -99,10 +113,24 @@ object SendTasker : BiliTasker("SendTasker") {
      */
     private suspend fun processMessages() {
         for (message in BiliBiliBot.messageChannel) {
+            if (BiliBiliBot.isStopping()) {
+                BiliBiliBot.logger.info("停机期间停止 SendTasker 消息分发协程")
+                return
+            }
             try {
                 BiliBiliBot.logger.info("从 messageChannel 接收到消息: ${message.name} (${message.mid})")
                 sendToSubscribers(message)
+            } catch (e: CancellationException) {
+                if (BiliBiliBot.isStopping()) {
+                    BiliBiliBot.logger.info("停机期间取消 SendTasker 消息分发协程")
+                    return
+                }
+                throw e
             } catch (e: Exception) {
+                if (BiliBiliBot.isStopping()) {
+                    BiliBiliBot.logger.info("停机期间丢弃待处理消息: ${e.message}")
+                    return
+                }
                 BiliBiliBot.logger.error("处理消息失败: ${e.message}", e)
             }
         }

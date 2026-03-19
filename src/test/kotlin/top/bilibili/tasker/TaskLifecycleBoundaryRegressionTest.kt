@@ -33,11 +33,13 @@ class TaskLifecycleBoundaryRegressionTest {
         val live = read("src/main/kotlin/top/bilibili/tasker/LiveMessageTasker.kt")
 
         assertTrue(dynamic.contains("override val wrapMainInBusinessLifecycle = false"))
-        assertTrue(dynamic.contains("val dynamicDetail = dynamicChannel.receive()"))
+        assertTrue(dynamic.contains("dynamicChannel.receiveCatching().getOrNull()"))
+        assertTrue(dynamic.contains("CancellationException(\"动态通道已关闭\")"))
         assertTrue(dynamic.contains("runBusinessOperation("))
 
         assertTrue(live.contains("override val wrapMainInBusinessLifecycle = false"))
-        assertTrue(live.contains("val liveDetail = liveChannel.receive()"))
+        assertTrue(live.contains("liveChannel.receiveCatching().getOrNull()"))
+        assertTrue(live.contains("CancellationException(\"直播通道已关闭\")"))
         assertTrue(live.contains("runBusinessOperation("))
     }
 }

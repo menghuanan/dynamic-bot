@@ -64,6 +64,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
 
     override suspend fun main() {
         if (!isActive) return
+        if (BiliBiliBot.isStopping()) return
 
         logger.debug("开始系统健康检查...")
 

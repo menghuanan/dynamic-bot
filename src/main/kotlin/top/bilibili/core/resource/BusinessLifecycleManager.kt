@@ -4,6 +4,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import top.bilibili.core.BiliBiliBot
 import java.io.Closeable
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
@@ -48,7 +49,7 @@ class BusinessLifecycleSession(
         }
 
         if (failures > 0) {
-            logger.warn("业务生命周期清理完成（含失败）: owner=$owner, operation=$operation, failed=$failures")
+            logger.warn("业务生命周期清理完成，但存在失败项: owner=$owner, operation=$operation, failed=$failures")
         }
     }
 }
@@ -68,6 +69,7 @@ object BusinessLifecycleManager {
         val session = BusinessLifecycleSession(owner = owner, operation = operation, logger = logger)
         activeSessions.incrementAndGet()
         val startedAt = System.currentTimeMillis()
+
         try {
             return if (strictness.businessHardTimeoutMs == null) {
                 session.block()
@@ -78,19 +80,20 @@ object BusinessLifecycleManager {
             }
         } catch (e: TimeoutCancellationException) {
             logger.warn(
-                "业务生命周期执行超时: owner=$owner, operation=$operation, strictness=$strictness, timeout=${strictness.businessHardTimeoutMs}ms"
+                "业务生命周期执行超时: owner=$owner, operation=$operation, strictness=$strictness, timeout=${strictness.businessHardTimeoutMs}ms",
             )
             throw e
         } finally {
             runCatching { session.close() }
                 .onFailure {
-                    logger.error("业务生命周期会话关闭异常: owner=$owner, operation=$operation, err=${it.message}", it)
+                    logger.error("关闭业务生命周期会话失败: owner=$owner, operation=$operation, err=${it.message}", it)
                 }
+
             val active = activeSessions.decrementAndGet()
             val duration = System.currentTimeMillis() - startedAt
-            if (duration > strictness.businessWarnThresholdMs) {
+            if (duration > strictness.businessWarnThresholdMs && !BiliBiliBot.isStopping()) {
                 logger.warn(
-                    "资源会话耗时过长: owner=$owner, operation=$operation, strictness=$strictness, duration=${duration}ms, activeSessions=$active"
+                    "资源会话运行时间过长: owner=$owner, operation=$operation, strictness=$strictness, duration=${duration}ms, activeSessions=$active",
                 )
             }
         }

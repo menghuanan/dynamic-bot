@@ -3,12 +3,17 @@ package top.bilibili.napcat
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.Json
 import top.bilibili.config.NapCatConfig
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class NapCatClientRegressionTest {
+    private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
+
     @Test
     fun `isSendQueueFull should not enqueue probe payload`() {
         val client = NapCatClient(NapCatConfig())
@@ -93,5 +98,27 @@ class NapCatClientRegressionTest {
         )
 
         assertEquals("hello[\u56fe\u7247][\u6233\u4e00\u6233][Markdown]", preview)
+    }
+
+    @Test
+    fun `stop should close websocket before cancelling scope and suppress shutdown cancellation noise`() {
+        val source = read("src/main/kotlin/top/bilibili/napcat/NapCatClient.kt")
+
+        assertTrue(
+            source.contains("private val stopping = AtomicBoolean(false)"),
+            "NapCatClient should track explicit stopping state",
+        )
+        assertTrue(
+            source.contains("stopping.set(true)"),
+            "NapCatClient.stop should mark the client as stopping before shutdown actions",
+        )
+        assertTrue(
+            source.indexOf("session?.close") in 0 until source.indexOf("cancelAndJoin"),
+            "WebSocket session should close before scope cancellation to reduce shutdown noise",
+        )
+        assertTrue(
+            source.contains("if (stopping.get())"),
+            "receive/connect loops should suppress expected cancellation noise during shutdown",
+        )
     }
 }

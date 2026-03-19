@@ -8,6 +8,74 @@ import kotlin.test.assertTrue
 
 class ResourceSupervisorTest {
     @Test
+    fun `stopAll should honor shutdown phases before reverse registration order`() = runBlocking {
+        val supervisor = ResourceSupervisor()
+        val trace = mutableListOf<String>()
+
+        supervisor.register(
+            LambdaResourcePartition(
+                id = "dependencies",
+                shutdownPhase = ShutdownPhase.DEPENDENCIES,
+                stopAction = { trace += "dependencies" },
+            )
+        )
+        supervisor.register(
+            LambdaResourcePartition(
+                id = "worker-a",
+                shutdownPhase = ShutdownPhase.WORKERS,
+                stopAction = { trace += "worker-a" },
+            )
+        )
+        supervisor.register(
+            LambdaResourcePartition(
+                id = "channels",
+                shutdownPhase = ShutdownPhase.CHANNELS,
+                stopAction = { trace += "channels" },
+            )
+        )
+        supervisor.register(
+            LambdaResourcePartition(
+                id = "worker-b",
+                shutdownPhase = ShutdownPhase.WORKERS,
+                stopAction = { trace += "worker-b" },
+            )
+        )
+        supervisor.register(
+            LambdaResourcePartition(
+                id = "ingress",
+                shutdownPhase = ShutdownPhase.INGRESS,
+                stopAction = { trace += "ingress" },
+            )
+        )
+        supervisor.register(
+            LambdaResourcePartition(
+                id = "root",
+                shutdownPhase = ShutdownPhase.ROOT_SCOPE,
+                stopAction = { trace += "root" },
+            )
+        )
+
+        val report = supervisor.stopAll()
+
+        assertTrue(report.success)
+        assertEquals(
+            listOf("ingress", "worker-b", "worker-a", "channels", "dependencies", "root"),
+            trace,
+            "stop should honor phase ordering and reverse registration inside each phase",
+        )
+        assertEquals(
+            listOf(
+                ShutdownPhase.INGRESS,
+                ShutdownPhase.WORKERS,
+                ShutdownPhase.CHANNELS,
+                ShutdownPhase.DEPENDENCIES,
+                ShutdownPhase.ROOT_SCOPE,
+            ),
+            report.phaseReports.map { it.phase },
+        )
+    }
+
+    @Test
     fun `stopAll should continue when one partition fails`() = runBlocking {
         val supervisor = ResourceSupervisor()
         val trace = mutableListOf<String>()
