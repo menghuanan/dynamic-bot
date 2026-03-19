@@ -1,5 +1,6 @@
 package top.bilibili.utils.translate
 
+import kotlinx.serialization.decodeFromString
 import top.bilibili.BiliConfigManager
 import top.bilibili.utils.json
 import top.bilibili.utils.logger
@@ -55,7 +56,7 @@ fun trans(text: String): String? {
                         logger.error("翻译数据获取失败")
                         return null
                     }
-                    val transResult = resMsg.let { json.decodeFromString(TransResult.serializer(), it) }
+                    val transResult = resMsg.let { json.decodeFromString<TransResult>(it) }
                     if (transResult.errorCode != null) {
                         logger.error("翻译错误 code: ${transResult.errorCode}  msg: ${transResult.errorMsg}")
                         return null

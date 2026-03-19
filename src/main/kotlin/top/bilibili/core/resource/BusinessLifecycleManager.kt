@@ -71,10 +71,11 @@ object BusinessLifecycleManager {
         val startedAt = System.currentTimeMillis()
 
         try {
-            return if (strictness.businessHardTimeoutMs == null) {
+            val hardTimeoutMs = strictness.businessHardTimeoutMs
+            return if (hardTimeoutMs == null) {
                 session.block()
             } else {
-                withTimeout(strictness.businessHardTimeoutMs) {
+                withTimeout(hardTimeoutMs) {
                     session.block()
                 }
             }

@@ -375,10 +375,7 @@ class NapCatClient(
                             if (config.messageFormat == "string" || config.messageFormat == "cqcode") {
                                 kotlinx.serialization.json.JsonPrimitive(segmentsToSend.toCqCode())
                             } else {
-                                json.encodeToJsonElement(
-                                    kotlinx.serialization.builtins.ListSerializer(MessageSegment.serializer()),
-                                    segmentsToSend
-                                )
+                                json.encodeToJsonElement(segmentsToSend)
                             }
                         }
                         else -> kotlinx.serialization.json.JsonPrimitive(value.toString())

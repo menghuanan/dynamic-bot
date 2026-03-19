@@ -1,6 +1,7 @@
 package top.bilibili
 
 import com.charleskorn.kaml.Yaml
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import org.slf4j.LoggerFactory
 import top.bilibili.service.ColorBindingMigrationSummary
@@ -64,7 +65,7 @@ object BiliConfigManager {
         return try {
             if (configFile.exists()) {
                 val content = configFile.readText()
-                yaml.decodeFromString(BiliConfig.serializer(), content)
+                yaml.decodeFromString<BiliConfig>(content)
             } else {
                 logger.info("配置文件不存在，创建默认配置")
                 val defaultConfig = BiliConfig()
@@ -104,7 +105,7 @@ object BiliConfigManager {
                 }
 
                 // 使用包装类进行反序列化
-                val loadedWrapper = yaml.decodeFromString(BiliDataWrapper.serializer(), content)
+                val loadedWrapper = yaml.decodeFromString<BiliDataWrapper>(content)
 
                 // 应用到 BiliData 全局单例
                 BiliDataWrapper.applyTo(loadedWrapper, BiliData)
@@ -171,7 +172,7 @@ object BiliConfigManager {
      */
     fun saveConfig(configToSave: BiliConfig = config) {
         try {
-            val yamlContent = yaml.encodeToString(BiliConfig.serializer(), configToSave)
+            val yamlContent = yaml.encodeToString(configToSave)
             configFile.writeText(yamlContent)
             logger.debug("配置已保存")
         } catch (e: Exception) {
@@ -192,7 +193,7 @@ object BiliConfigManager {
 
             // 使用包装类进行序列化
             val wrapper = BiliDataWrapper.from(dataToSave)
-            val yamlContent = yaml.encodeToString(BiliDataWrapper.serializer(), wrapper)
+            val yamlContent = yaml.encodeToString(wrapper)
 
             // 修复安全漏洞：不再输出可能包含敏感信息的 YAML 内容
             logger.debug("配置数据已序列化，大小: ${yamlContent.length} 字符")

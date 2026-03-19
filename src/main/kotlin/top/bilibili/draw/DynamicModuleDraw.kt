@@ -17,7 +17,6 @@ import top.bilibili.utils.FontUtils
 import top.bilibili.utils.formatTime
 import top.bilibili.utils.getOrDownloadImage
 import top.bilibili.utils.translate.trans
-import java.util.stream.Collectors
 import kotlin.math.abs
 import kotlin.math.ceil
 
@@ -415,6 +414,30 @@ sealed class RichText(
     ) : RichText(value)
 }
 
+internal fun String.toCodePointStrings(): List<String> {
+    val codePoints = ArrayList<String>(length)
+    var index = 0
+
+    while (index < length) {
+        val codePoint = codePointAt(index)
+        codePoints += String(Character.toChars(codePoint))
+        index += Character.charCount(codePoint)
+    }
+
+    return codePoints
+}
+
+internal fun String.toEmojiCodePointKey(): String {
+    return buildList {
+        var index = 0
+        while (index < length) {
+            val codePoint = codePointAt(index)
+            add(codePoint.toString(16))
+            index += Character.charCount(codePoint)
+        }
+    }.joinToString("-")
+}
+
 suspend fun Canvas.drawTextArea(text: String, rect: Rect, textX: Float, textY: Float, font: Font, paint: Paint): Point {
     var x = textX
     var y = textY
@@ -437,8 +460,7 @@ suspend fun Canvas.drawTextArea(text: String, rect: Rect, textX: Float, textY: F
     for (node in textNode) {
         when (node) {
             is RichText.Text -> {
-                for (point in node.value.codePoints()) {
-                    val c = String(intArrayOf(point), 0, intArrayOf(point).size)
+                for (c in node.value.toCodePointStrings()) {
                     if (c == "\n") {
                         x = rect.left
                         y += quality.contentFontSize + quality.lineSpace
@@ -471,8 +493,8 @@ suspend fun Canvas.drawTextArea(text: String, rect: Rect, textX: Float, textY: F
                         } finally {
                             tl.close()
                         }
-                }else {
-                    val emoji = node.value.codePoints().mapToObj { it.toString(16) }.collect(Collectors.joining("-"))
+                } else {
+                    val emoji = node.value.toEmojiCodePointKey()
                     val emojiSize = useTextLine("🙂", font) { it.height }
 
                     var emojiImg: Image? = null

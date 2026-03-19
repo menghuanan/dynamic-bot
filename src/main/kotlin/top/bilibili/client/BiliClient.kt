@@ -217,17 +217,18 @@ open class BiliClient : Closeable {
         while (isActive) {
             try {
                 val selectedClientIndex = clientIndex
-                val proxyEnabled = proxys != null && BiliConfigManager.config.enableConfig.proxyEnable
+                val proxies = proxys
                 val client = clients[selectedClientIndex]
-                if (proxyEnabled) {
-                    client.engineConfig.proxy = proxys[proxyIndex]
-                    proxyIndex = (proxyIndex + 1) % proxys.size
+                if (!proxies.isNullOrEmpty() && BiliConfigManager.config.enableConfig.proxyEnable) {
+                    client.engineConfig.proxy = proxies[proxyIndex]
+                    proxyIndex = (proxyIndex + 1) % proxies.size
                 }
                 return@supervisorScope block(client)
             } catch (throwable: Throwable) {
                 if (isActive && (throwable is IOException || throwable is HttpRequestTimeoutException)) {
                     val selectedClientIndex = clientIndex
-                    val proxyEnabled = proxys != null && BiliConfigManager.config.enableConfig.proxyEnable
+                    val proxies = proxys
+                    val proxyEnabled = !proxies.isNullOrEmpty() && BiliConfigManager.config.enableConfig.proxyEnable
                     if (retryCount >= maxRetries) {
                         logger.error(
                             buildRetryExhaustedLogMessage(
