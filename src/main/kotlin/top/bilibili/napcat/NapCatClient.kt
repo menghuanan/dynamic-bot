@@ -394,7 +394,7 @@ class NapCatClient(
                 action = request.action,
                 params = request.params,
                 logPreview = outgoingLogPreview,
-                timeoutMillis = 10_000L
+                timeoutMillis = 20_000L
             )
 
             if (response == null) {

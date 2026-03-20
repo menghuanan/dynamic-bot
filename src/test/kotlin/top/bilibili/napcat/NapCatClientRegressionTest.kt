@@ -121,4 +121,18 @@ class NapCatClientRegressionTest {
             "receive/connect loops should suppress expected cancellation noise during shutdown",
         )
     }
+
+    @Test
+    fun `send message timeout should be set to 20 seconds`() {
+        val source = read("src/main/kotlin/top/bilibili/napcat/NapCatClient.kt")
+
+        assertTrue(
+            source.contains("timeoutMillis = 20_000L"),
+            "NapCatClient should wait 20 seconds for send message responses",
+        )
+        assertTrue(
+            !source.contains("SEND_MESSAGE_TIMEOUT_MS"),
+            "NapCatClient should keep the send timeout inlined when using the direct style",
+        )
+    }
 }
