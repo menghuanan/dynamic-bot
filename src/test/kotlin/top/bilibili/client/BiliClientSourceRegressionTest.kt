@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class BiliClientSourceRegressionTest {
@@ -26,6 +27,9 @@ class BiliClientSourceRegressionTest {
         assertTrue(dynamicTasker.contains("source = \"DynamicCheckTasker.poll\""))
         assertTrue(dynamicTasker.contains("source = \"DynamicCheckTasker.manual-check\""))
         assertTrue(liveTasker.contains("source = \"LiveCheckTasker.followed-live-list\""))
-        assertTrue(liveTasker.contains("source = \"LiveCheckTasker.subscribed-live-status\""))
+        assertFalse(liveTasker.contains("source = \"LiveCheckTasker.subscribed-live-status\""))
+        assertFalse(liveTasker.contains("getLiveStatus("))
+        assertFalse(liveTasker.contains("allLiveRooms"))
+        assertFalse(liveTasker.contains("Instant.now().epochSecond - 600"))
     }
 }
