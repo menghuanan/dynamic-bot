@@ -228,13 +228,6 @@ object BiliBiliBot : CoroutineScope {
             }
 
             napCat.start()
-            launch {
-                delay(1_000)
-                BiliConfigManager.consumePendingSubjectColorMigrationNotice()?.let { notice ->
-                    runCatching { actionNotify(notice) }
-                        .onFailure { logger.warn("Failed to send subject color migration summary", it) }
-                }
-            }
 
             registerResourcePartitions()
 

@@ -4,8 +4,6 @@ import com.charleskorn.kaml.Yaml
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import org.slf4j.LoggerFactory
-import top.bilibili.service.ColorBindingMigrationSummary
-import top.bilibili.service.migrateSubjectScopedColorBindings
 import java.io.File
 import java.nio.file.Paths
 
@@ -16,8 +14,6 @@ import java.nio.file.Paths
 object BiliConfigManager {
     private val logger = LoggerFactory.getLogger(BiliConfigManager::class.java)
     private const val CURRENT_DATA_VERSION = 2
-    @Volatile
-    private var pendingSubjectColorMigrationNotice: String? = null
 
     lateinit var config: BiliConfig
         private set
@@ -110,11 +106,7 @@ object BiliConfigManager {
                 // 应用到 BiliData 全局单例
                 BiliDataWrapper.applyTo(loadedWrapper, BiliData)
                 val migrated = migrateDataIfNeeded(BiliData)
-                val colorMigrationSummary = migrateSubjectScopedColorBindings()
-                if (colorMigrationSummary.scannedCount > 0) {
-                    pendingSubjectColorMigrationNotice = buildSubjectColorMigrationNotice(colorMigrationSummary)
-                }
-                if (migrated || colorMigrationSummary.changedCount > 0) {
+                if (migrated) {
                     logger.info("检测到旧版数据结构，已完成迁移并准备写回")
                     saveData(BiliData)
                 }
@@ -247,20 +239,5 @@ object BiliConfigManager {
     fun reloadAll() {
         reloadConfig()
         reloadData()
-    }
-
-    fun consumePendingSubjectColorMigrationNotice(): String? {
-        val notice = pendingSubjectColorMigrationNotice
-        pendingSubjectColorMigrationNotice = null
-        return notice
-    }
-
-    private fun buildSubjectColorMigrationNotice(summary: ColorBindingMigrationSummary): String {
-        return buildString {
-            appendLine("Subject color migration completed")
-            appendLine("Scanned: ${summary.scannedCount}")
-            appendLine("Changed: ${summary.changedCount}")
-            appendLine("Unchanged: ${summary.unchangedCount}")
-        }.trim()
     }
 }

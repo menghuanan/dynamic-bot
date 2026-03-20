@@ -13,7 +13,6 @@ internal const val L_EPSILON = 0.0005
 
 enum class NormalizationContext {
     USER_COMMAND,
-    STARTUP_MIGRATION,
 }
 
 data class ColorNormalizationResult(
