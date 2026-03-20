@@ -14,12 +14,12 @@ object PgcService {
         val regex = pgcRegex.find(id) ?: return "ID 格式错误 例(ss11111, md22222, ep33333)"
 
         val type = regex.destructured.component1()
-        val id = regex.destructured.component2().toLong()
+        val parsedId = regex.destructured.component2().toLong()
 
         return when (type) {
-            "ss" -> followPgcBySsid(id, subject)
-            "md" -> followPgcByMdid(id, subject)
-            "ep" -> followPgcByEpid(id, subject)
+            "ss" -> followPgcBySsid(parsedId, subject)
+            "md" -> followPgcByMdid(parsedId, subject)
+            "ep" -> followPgcByEpid(parsedId, subject)
             else -> "额(⊙﹏⊙)"
         }
     }
@@ -62,12 +62,12 @@ object PgcService {
         val regex = pgcRegex.find(id) ?: return "ID 格式错误 例(ss11111, md22222, ep33333)"
 
         val type = regex.destructured.component1()
-        val id = regex.destructured.component2().toLong()
+        val parsedId = regex.destructured.component2().toLong()
 
         return when (type) {
-            "ss" -> removeBySsid(id, subject)
+            "ss" -> removeBySsid(parsedId, subject)
             "md" -> {
-                val pgc = bangumi.filter { it.value.mediaId == id }.values
+                val pgc = bangumi.filter { it.value.mediaId == parsedId }.values
                 if (pgc.isEmpty()) return "没有这个番剧哦"
                 val contacts = pgc.first().contacts
                 if (contacts.remove(subject)) {
@@ -76,7 +76,7 @@ object PgcService {
                 } else "没有订阅这个番剧哦"
             }
             "ep" -> {
-                val season = client.getEpisodeInfo(id) ?: return "获取番剧信息失败"
+                val season = client.getEpisodeInfo(parsedId) ?: return "获取番剧信息失败"
                 removeBySsid(season.seasonId, subject)
             }
             else -> "额(⊙﹏⊙)"
@@ -101,6 +101,4 @@ object PgcService {
         7 -> "综艺"
         else -> "未知"
     }
-
-
 }

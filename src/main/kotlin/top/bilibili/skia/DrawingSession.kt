@@ -44,9 +44,7 @@ class DrawingSession : AutoCloseable {
     }
 
     fun createImage(bytes: ByteArray): Image {
-        val image = Image.makeFromEncoded(bytes)
-            ?: throw IllegalArgumentException("Failed to decode image from bytes")
-        return image.track()
+        return Image.makeFromEncoded(bytes).track()
     }
 
     fun createParagraph(

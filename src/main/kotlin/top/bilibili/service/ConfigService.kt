@@ -108,6 +108,7 @@ object ConfigService {
     }
 
     // 兼容旧签名，保持可调用
+    @Suppress("UNUSED_PARAMETER")
     suspend fun config(event: Any, uid: Long = 0L, contact: Any): String {
         val subject = contact as? String ?: return "联系人参数错误"
         return configOverview(uid, subject)

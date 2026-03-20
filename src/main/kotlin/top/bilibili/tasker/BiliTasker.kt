@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.InternalForInheritanceCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
@@ -38,6 +39,7 @@ data class TaskerStopReport(
     val failures: List<TaskerStopFailure>,
 )
 
+@OptIn(InternalForInheritanceCoroutinesApi::class)
 abstract class BiliTasker(
     private val taskerName: String? = null,
 ) : CoroutineScope, CompletableJob by SupervisorJob(BiliBiliBot.coroutineContext[Job]) {
@@ -152,7 +154,8 @@ abstract class BiliTasker(
 
     override fun start(): Boolean {
         val taskName = this::class.simpleName ?: "UnknownTasker"
-        val policy = TaskResourcePolicyRegistry.policyOf(taskName)
+        // 预留未使用变量 policy: val policy = TaskResourcePolicyRegistry.policyOf(taskName)
+        TaskResourcePolicyRegistry.policyOf(taskName)
             ?: error("任务未声明资源策略: $taskName")
 
         job = launch(coroutineContext) {

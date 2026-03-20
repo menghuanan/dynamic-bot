@@ -76,8 +76,9 @@ object MD5 {
         try {
             val messagedigest = MessageDigest.getInstance("MD5")
             val buffer = ByteArray(1024)
-            var read = 0
-            while (`in`.read(buffer).also { read = it } != -1) {
+            while (true) {
+                val read = `in`.read(buffer)
+                if (read == -1) break
                 messagedigest.update(buffer, 0, read)
             }
             `in`.close()

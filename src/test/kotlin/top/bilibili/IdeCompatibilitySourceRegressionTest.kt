@@ -61,4 +61,64 @@ class IdeCompatibilitySourceRegressionTest {
         assertFalse(configManager.contains("BiliConfig.serializer()"))
         assertFalse(configManager.contains("BiliDataWrapper.serializer()"))
     }
+
+    @Test
+    fun `tasker and drawing session warning fixes should be explicit`() {
+        val tasker = read("src/main/kotlin/top/bilibili/tasker/BiliTasker.kt")
+        val drawingSession = read("src/main/kotlin/top/bilibili/skia/DrawingSession.kt")
+
+        assertTrue(tasker.contains("@OptIn(InternalForInheritanceCoroutinesApi::class)"))
+        assertTrue(tasker.contains("// 预留未使用变量 policy: val policy = TaskResourcePolicyRegistry.policyOf(taskName)"))
+
+        assertTrue(drawingSession.contains("return Image.makeFromEncoded(bytes).track()"))
+        assertFalse(drawingSession.contains("?: throw IllegalArgumentException(\"Failed to decode image from bytes\")"))
+    }
+
+    @Test
+    fun `napcat and utility search helpers should avoid warning patterns`() {
+        val napcat = read("src/main/kotlin/top/bilibili/napcat/NapCatClient.kt")
+        val general = read("src/main/kotlin/top/bilibili/utils/General.kt")
+
+        assertFalse(napcat.contains("as List<MessageSegment>"))
+        assertTrue(general.contains("biliClient.searchUser(target)"))
+        assertTrue(general.contains("// 预留未使用变量 users: val users = biliClient.searchUser(target)"))
+    }
+
+    @Test
+    fun `compatibility shims should suppress intentional unused parameters`() {
+        val biliClient = read("src/main/kotlin/top/bilibili/client/BiliClient.kt")
+        val liveDraw = read("src/main/kotlin/top/bilibili/draw/LiveDraw.kt")
+        val configService = read("src/main/kotlin/top/bilibili/service/ConfigService.kt")
+
+        assertTrue(biliClient.contains("@Suppress(\"UNUSED_PARAMETER\")\nfun buildRetryLogMessage("))
+        assertTrue(biliClient.contains("@Suppress(\"UNUSED_PARAMETER\")\nfun buildRetryExhaustedLogMessage("))
+        assertTrue(liveDraw.contains("@Suppress(\"UNUSED_PARAMETER\")\nfun Canvas.drawLiveOrnament("))
+        assertTrue(configService.contains("@Suppress(\"UNUSED_PARAMETER\")\n    suspend fun config("))
+    }
+
+    @Test
+    fun `low risk cleanup batch should remove shadowing and redundant temporaries`() {
+        val pgc = read("src/main/kotlin/top/bilibili/api/Pgc.kt")
+        val pgcService = read("src/main/kotlin/top/bilibili/service/PgcService.kt")
+        val liveDraw = read("src/main/kotlin/top/bilibili/draw/LiveDraw.kt")
+        val httpGet = read("src/main/kotlin/top/bilibili/utils/translate/HttpGet.kt")
+        val md5 = read("src/main/kotlin/top/bilibili/utils/translate/MD5.kt")
+        val init = read("src/main/kotlin/top/bilibili/Init.kt")
+
+        assertTrue(pgc.contains("val parsedId = regex.destructured.component2().toLong()"))
+        assertFalse(pgc.contains("val id = regex.destructured.component2().toLong()"))
+
+        assertTrue(pgcService.contains("val parsedId = regex.destructured.component2().toLong()"))
+        assertFalse(pgcService.contains("val id = regex.destructured.component2().toLong()"))
+
+        assertTrue(liveDraw.contains("// 预留未使用变量 liveUid: val liveUid = uid"))
+
+        assertFalse(httpGet.contains("var line: String? = null"))
+        assertTrue(httpGet.contains("val line = br.readLine() ?: break"))
+
+        assertFalse(md5.contains("var read = 0"))
+        assertTrue(md5.contains("val read = `in`.read(buffer)"))
+
+        assertTrue(init.contains("// 预留未使用变量 fontFolder: val fontFolder = BiliBiliBot.dataFolder.resolve(\"font\")"))
+    }
 }

@@ -579,7 +579,8 @@ suspend fun findRemoteIdOrName(target: String): List<Pair<Long, Double>> {
     return try {
         listOf(Pair(target.toLong(), 1.0))
     } catch (e: NumberFormatException) {
-        val users = biliClient.searchUser(target)
+        // 预留未使用变量 users: val users = biliClient.searchUser(target)
+        biliClient.searchUser(target)
         val list = BiliConfigManager.data.dynamic.map { Pair(it.key, it.value.name) }
         fuzzySearch(list, target)
     }

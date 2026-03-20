@@ -76,7 +76,7 @@ suspend fun loadFonts() {
         return
     }
 
-    val fontFolder = BiliBiliBot.dataFolder.resolve("font")
+    // 预留未使用变量 fontFolder: val fontFolder = BiliBiliBot.dataFolder.resolve("font")
     val fontFolderPath = BiliBiliBot.dataFolderPath.resolve("font")
 
     try {

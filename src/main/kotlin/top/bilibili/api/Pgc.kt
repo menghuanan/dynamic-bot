@@ -33,20 +33,20 @@ suspend fun BiliClient.getPcgInfo(id: String): BiliDetail? {
     val regex = pgcRegex.find(id) ?: return null
 
     val type = regex.destructured.component1()
-    val id = regex.destructured.component2().toLong()
+    val parsedId = regex.destructured.component2().toLong()
 
     return when (type) {
-        "ss" -> getSeasonInfo(id)
+        "ss" -> getSeasonInfo(parsedId)
         "md" -> {
             // 先获取 media 信息，然后用 season_id 获取完整的 season 信息（包含简介）
-            val mediaInfo = getMediaInfo(id)
+            val mediaInfo = getMediaInfo(parsedId)
             if (mediaInfo != null) {
                 getSeasonInfo(mediaInfo.media.seasonId)
             } else {
                 null
             }
         }
-        "ep" -> getEpisodeInfo(id)
+        "ep" -> getEpisodeInfo(parsedId)
         else -> null
     }
 }

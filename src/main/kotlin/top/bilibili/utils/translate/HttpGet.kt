@@ -52,8 +52,8 @@ internal object HttpGet {
                 val `is` = conn.inputStream
                 val br = BufferedReader(InputStreamReader(`is`, StandardCharsets.UTF_8))
                 val builder = StringBuilder()
-                var line: String? = null
-                while (br.readLine().also { line = it } != null) {
+                while (true) {
+                    val line = br.readLine() ?: break
                     builder.append(line)
                 }
                 val text = builder.toString()

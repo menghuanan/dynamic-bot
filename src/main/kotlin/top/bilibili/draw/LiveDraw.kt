@@ -120,7 +120,7 @@ suspend fun LiveInfo.drawAvatar(session: DrawingSession, qrCodeColor: Int): Imag
     val liveTitle = title
     val liveUname = uname
     val liveTime = liveTime
-    val liveUid = uid
+    // 预留未使用变量 liveUid: val liveUid = uid
     val liveRoomId = roomId
     val liveArea = area
 
@@ -180,6 +180,7 @@ suspend fun LiveInfo.drawAvatar(session: DrawingSession, qrCodeColor: Int): Imag
     }
 }
 
+@Suppress("UNUSED_PARAMETER")
 fun Canvas.drawLiveOrnament(session: DrawingSession, link: String?, qrCodeColor: Int?, label: String?) {
     when (BiliConfigManager.config.imageConfig.cardOrnament) {
         "QrCode" -> {

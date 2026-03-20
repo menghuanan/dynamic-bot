@@ -83,6 +83,7 @@ private fun Throwable.logReason(): String {
     }
 }
 
+@Suppress("UNUSED_PARAMETER")
 fun buildRetryLogMessage(
     trace: ApiRequestTrace,
     retryNumber: Int,
@@ -106,6 +107,7 @@ fun buildRetryLogMessage(
     }
 }
 
+@Suppress("UNUSED_PARAMETER")
 fun buildRetryExhaustedLogMessage(
     trace: ApiRequestTrace,
     attemptsUsed: Int,

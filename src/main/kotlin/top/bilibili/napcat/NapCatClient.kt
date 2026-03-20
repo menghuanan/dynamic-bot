@@ -337,22 +337,31 @@ class NapCatClient(
 
     /** 发送群消息 */
     suspend fun sendGroupMessage(groupId: Long, message: List<MessageSegment>): Boolean {
-        return sendMessage("send_group_msg", mapOf(
-            "group_id" to groupId,
-            "message" to message
-        ))
+        return sendMessage(
+            action = "send_group_msg",
+            targetKey = "group_id",
+            targetId = groupId,
+            message = message,
+        )
     }
 
     /** 发送私聊消息 */
     suspend fun sendPrivateMessage(userId: Long, message: List<MessageSegment>): Boolean {
-        return sendMessage("send_private_msg", mapOf(
-            "user_id" to userId,
-            "message" to message
-        ))
+        return sendMessage(
+            action = "send_private_msg",
+            targetKey = "user_id",
+            targetId = userId,
+            message = message,
+        )
     }
 
     /** 通用发送消息方法 */
-    private suspend fun sendMessage(action: String, params: Map<String, Any>): Boolean {
+    private suspend fun sendMessage(
+        action: String,
+        targetKey: String,
+        targetId: Long,
+        message: List<MessageSegment>,
+    ): Boolean {
         if (!isConnected.get()) {
             if (stopping.get()) {
                 logger.info("停机期间跳过发送消息: action=$action")
@@ -363,24 +372,16 @@ class NapCatClient(
         }
 
         return try {
-            var outgoingLogPreview: String? = null
-            val paramsJson = buildMap<String, kotlinx.serialization.json.JsonElement> {
-                params.forEach { (key, value) ->
-                    put(key, when (value) {
-                        is Long -> kotlinx.serialization.json.JsonPrimitive(value)
-                        is List<*> -> {
-                            val segments = value as List<MessageSegment>
-                            val segmentsToSend = prepareSegmentsForSend(segments) ?: return false
-                            outgoingLogPreview = buildOutgoingLogPreview(segmentsToSend)
-                            if (config.messageFormat == "string" || config.messageFormat == "cqcode") {
-                                kotlinx.serialization.json.JsonPrimitive(segmentsToSend.toCqCode())
-                            } else {
-                                json.encodeToJsonElement(segmentsToSend)
-                            }
-                        }
-                        else -> kotlinx.serialization.json.JsonPrimitive(value.toString())
-                    })
-                }
+            val segmentsToSend = prepareSegmentsForSend(message) ?: return false
+            val outgoingLogPreview = buildOutgoingLogPreview(segmentsToSend)
+            val messageJson = if (config.messageFormat == "string" || config.messageFormat == "cqcode") {
+                JsonPrimitive(segmentsToSend.toCqCode())
+            } else {
+                json.encodeToJsonElement(segmentsToSend)
+            }
+            val paramsJson = buildMap<String, JsonElement> {
+                put(targetKey, JsonPrimitive(targetId))
+                put("message", messageJson)
             }
 
             val request = OneBotAction(
