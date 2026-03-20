@@ -163,12 +163,18 @@ logs/
 #### 注意！以下是必须修改的配置项：
 - 首次后需要在运行目录配置 `/config/bot.yml` 与 `/config/BiliConfig.yml` 文件后再重新启动bot。
 - `/config/bot.yml` 配置 NapCat 连接信息
+```bash
+docker-compose down
+```
+
+> 先停止正在运行的容器，再编辑挂载到宿主机的配置文件，避免运行中的旧进程在退出时把配置写回旧值。
+
 ```yaml
 napcat:
   host: "NapCat WebSocket 服务器地址"  
   port: 3001    #默认3001
   token: ""     #如果有则填入，没有不填
-  send_mode: "file"  # 图片发送模式：file 或 base64
+  send_mode: "base64"  # 图片发送模式：file 或 base64
 ```
 #### 如果不清楚两种图片发送模式的区别，建议直接使用 `base64`，兼容性更好，也能避免路径或权限问题。
 
@@ -316,7 +322,7 @@ napcat:
   port: 3001                 # NapCat WebSocket 端口
   token: ""                  # NapCat WebSocket 访问令牌（如有）
   use_tls: false             # 是否使用 TLS 加密
-  send_mode: "file"          # 图片发送模式：file 或 base64
+  send_mode: "base64"        # 图片发送模式：file 或 base64
   heartbeat_interval: 30000  # 心跳间隔（毫秒）
   reconnect_interval: 5000   # 重连间隔（毫秒）
   message_format: "array"    # 消息格式：array
@@ -502,15 +508,15 @@ napcat:
   host: "NapCat WebSocket 主机地址"  
   port: 3001    #默认3001
   token: ""     #如果有则填入，没有不填
-  send_mode: "file"  # 图片发送模式：file 或 base64
+  send_mode: "base64"  # 图片发送模式：file 或 base64
 ```
 
 重启容器：
 
 ```bash
-docker-compose restart
+docker-compose down
 # 或
-docker restart dynamic-bot
+docker-compose up -d
 ```
 
 #### 6. 查看日志
@@ -1032,9 +1038,9 @@ docker logs -f dynamic-bot
    重启容器：
 
    ```bash
-   docker restart dynamic-bot
+   docker-compose down
    # 或
-   docker-compose restart dynamic-bot
+   docker-compose up -d
    ```
 2. **查看日志**
 

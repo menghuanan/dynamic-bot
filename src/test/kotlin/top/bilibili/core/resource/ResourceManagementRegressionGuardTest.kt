@@ -84,6 +84,28 @@ class ResourceManagementRegressionGuardTest {
     }
 
     @Test
+    fun `shutdown path should persist runtime data without rewriting bili config`() {
+        val bot = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
+
+        assertTrue(
+            bot.contains("runCatching { BiliConfigManager.saveData() }"),
+            "BiliBiliBot stop path should save runtime data explicitly",
+        )
+        assertFalse(
+            bot.contains("runCatching { BiliConfigManager.saveAll() }"),
+            "BiliBiliBot stop path should not rewrite BiliConfig.yml during shutdown",
+        )
+        assertFalse(
+            bot.contains("ConfigManager.saveConfig()"),
+            "BiliBiliBot stop path should not rewrite bot.yml during shutdown",
+        )
+        assertFalse(
+            bot.contains("BiliConfigManager.saveConfig()"),
+            "BiliBiliBot stop path should not rewrite BiliConfig.yml during shutdown",
+        )
+    }
+
+    @Test
     fun `shutdown lifecycle should use explicit stopping state and phased resource shutdown`() {
         val bot = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
         val supervisor = read("src/main/kotlin/top/bilibili/core/resource/ResourceSupervisor.kt")

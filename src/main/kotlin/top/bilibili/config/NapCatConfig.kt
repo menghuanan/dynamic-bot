@@ -35,7 +35,7 @@ data class NapCatConfig(
 
     /** 图片发送模式（file/base64） */
     @SerialName("send_mode")
-    val sendMode: String = "file",
+    val sendMode: String = "base64",
 
     /** 最大重连次数（-1 为无限） */
     @SerialName("max_reconnect_attempts")

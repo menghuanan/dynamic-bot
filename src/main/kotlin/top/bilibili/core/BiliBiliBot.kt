@@ -296,8 +296,8 @@ object BiliBiliBot : CoroutineScope {
             }
 
             if (::config.isInitialized) {
-                runCatching { BiliConfigManager.saveAll() }
-                    .onFailure { logger.warn("停机时保存配置失败: ${it.message}", it) }
+                runCatching { BiliConfigManager.saveData() }
+                    .onFailure { logger.warn("停机时保存运行数据失败: ${it.message}", it) }
             }
         } catch (e: Exception) {
             logger.error("停机过程中发生未预期异常: ${e.message}", e)
