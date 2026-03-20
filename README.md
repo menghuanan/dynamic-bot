@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 由 [bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin) 改造而来。  
-代码部分由 [claude](https://github.com/claude) 主刀构建大部分代码， GPT-5.2-Codex 协助修复部分BUG。  
+代码部分由 [claude](https://github.com/claude) 主刀构建改造后的主体框架， GPT-5系列模型（GPT-5.2-Codex、GPT-5.3-Codex、GPT-5.4） 协助完善功能细则与日常修复bug。  
 这是基于 NapCat 的 B站动态、直播推送机器人，支持动态订阅、直播通知、链接解析等功能。
 
 ## 文档目录
