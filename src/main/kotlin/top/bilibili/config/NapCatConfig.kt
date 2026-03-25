@@ -72,15 +72,16 @@ data class TargetConfig(
     val id: Long,
 
     /** 是否启用链接解析 */
-    @SerialName("enable_link_parse")
-    val enableLinkParse: Boolean = true
+    // 尚未启用:
+    // @SerialName("enable_link_parse")
+    // val enableLinkParse: Boolean = true
 ) {
     companion object {
-        fun group(groupId: Long, enableLinkParse: Boolean = true) =
-            TargetConfig("group", groupId, enableLinkParse)
+        fun group(groupId: Long) =
+            TargetConfig("group", groupId)
 
-        fun private(userId: Long, enableLinkParse: Boolean = true) =
-            TargetConfig("private", userId, enableLinkParse)
+        fun private(userId: Long) =
+            TargetConfig("private", userId)
     }
 }
 

@@ -16,53 +16,53 @@ suspend fun matchingRegular(content: String, subject: String? = null): ResolvedL
 }
 
 suspend fun matchingAllRegular(content: String, subject: String? = null): List<ResolvedLinkInfo> {
-    val results = mutableListOf<ResolvedLinkInfo>()
-    val processedIds = mutableSetOf<String>()
+    return matchingAllRegularOrdered(content, subject)
+}
 
-    // 定义优先级顺序：短链接优先，其他保持原顺序
-    val prioritizedTypes = listOf(LinkType.ShortLink) +
-        LinkType.values().filter { it != LinkType.ShortLink }
+private suspend fun matchingAllRegularOrdered(content: String, subject: String? = null): List<ResolvedLinkInfo> {
+    val processedIds = mutableSetOf<String>()
+    val results = mutableListOf<ResolvedLinkInfo>()
+
+    for (orderedMatch in collectOrderedMatches(content)) {
+        val info = resolveLinkMatch(orderedMatch.type, orderedMatch.matchResult, subject) ?: continue
+        val uniqueId = "${info.type.name}:${info.id}"
+        if (processedIds.add(uniqueId)) {
+            results.add(info)
+        }
+    }
+
+    return results
+}
+
+private data class OrderedLinkMatch(
+    val type: LinkType,
+    val matchResult: MatchResult
+) {
+    val startIndex: Int get() = matchResult.range.first
+}
+
+private fun prioritizedLinkTypes(): List<LinkType> {
+    return listOf(LinkType.ShortLink) + LinkType.values().filter { it != LinkType.ShortLink }
+}
+
+private fun collectOrderedMatches(content: String): List<OrderedLinkMatch> {
+    val prioritizedTypes = prioritizedLinkTypes()
+    val matches = mutableListOf<OrderedLinkMatch>()
 
     for (linkType in prioritizedTypes) {
         for (regex in linkType.regex) {
             var matchResult = regex.find(content)
             while (matchResult != null) {
-                val id = matchResult.destructured.component1()
-                val uniqueId = "${linkType.name}:$id"
-
-                if (!processedIds.contains(uniqueId)) {
-                    processedIds.add(uniqueId)
-
-                    // 如果是短链接，解析为真实链接类型
-                    if (linkType == LinkType.ShortLink) {
-                        val realLink = biliClient.redirect("https://b23.tv/$id")
-                        if (realLink != null) {
-                            logger.info("短链接 https://b23.tv/$id 解析为: $realLink")
-                            matchingInternalRegular(realLink, subject)?.let { results.add(it) }
-                        }
-                    } else if (linkType == LinkType.Dynamic && isOpusMatch(matchResult)) {
-                        val opusUrl = normalizeOpusUrl(matchResult.value)
-                        val cvId = resolveOpusCvId(opusUrl)
-                        if (cvId != null) {
-                            val articleKey = "${LinkType.Article.name}:$cvId"
-                            if (!processedIds.contains(articleKey)) {
-                                processedIds.add(articleKey)
-                                results.add(ResolvedLinkInfo(LinkType.Article, cvId, subject))
-                            }
-                        } else {
-                            results.add(ResolvedLinkInfo(linkType, id, subject))
-                        }
-                    } else {
-                        results.add(ResolvedLinkInfo(linkType, id, subject))
-                    }
-                }
-
+                matches += OrderedLinkMatch(linkType, matchResult)
                 matchResult = matchResult.next()
             }
         }
     }
 
-    return results
+    return matches.sortedWith(
+        compareBy<OrderedLinkMatch> { it.startIndex }
+            .thenBy { prioritizedTypes.indexOf(it.type) }
+    )
 }
 
 data class ResolvedLinkInfo(val type: LinkType, val id: String, val subject: String? = null) : ResolveLink {
@@ -74,7 +74,7 @@ suspend fun matchingInternalRegular(content: String, subject: String? = null): R
     var matchResult: MatchResult? = null
     var type: LinkType? = null
 
-    // 定义优先级顺序：短链接优先，其他保持原顺序
+
     val prioritizedTypes = listOf(LinkType.ShortLink) +
         LinkType.values().filter { it != LinkType.ShortLink }
 
@@ -90,23 +90,29 @@ suspend fun matchingInternalRegular(content: String, subject: String? = null): R
     }
 
     if (matchResult == null || type == null) {
-        logger.warn("未匹配到链接! -> $content")
+        logger.warn("\u672a\u5339\u914d\u5230\u94fe\u63a5! -> $content")
         return null
     }
 
+    return resolveLinkMatch(type, matchResult, subject)
+}
+
+private suspend fun resolveLinkMatch(
+    type: LinkType,
+    matchResult: MatchResult,
+    subject: String? = null
+): ResolvedLinkInfo? {
     val id = matchResult.destructured.component1()
 
-    // 如果是短链接，解析为真实链接类型
     if (type == LinkType.ShortLink) {
         val realLink = biliClient.redirect("https://b23.tv/$id")
         if (realLink != null) {
-            logger.info("短链接 https://b23.tv/$id 解析为: $realLink")
-            // 递归解析真实链接
+            logger.info("\u77ed\u94fe\u63a5 https://b23.tv/$id \u89e3\u6790\u4e3a: $realLink")
             return matchingInternalRegular(realLink, subject)
-        } else {
-            logger.warn("短链接解析失败: https://b23.tv/$id")
-            return null
         }
+
+        logger.warn("\u77ed\u94fe\u63a5\u89e3\u6790\u5931\u8d25: https://b23.tv/$id")
+        return null
     }
 
     if (type == LinkType.Dynamic && isOpusMatch(matchResult)) {

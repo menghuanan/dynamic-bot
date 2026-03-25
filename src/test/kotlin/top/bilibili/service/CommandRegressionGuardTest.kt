@@ -188,4 +188,10 @@ class CommandRegressionGuardTest {
         assertTrue(text.contains("sendActionAndAwaitResponse"), "send path should wait for OneBot response")
         assertTrue(text.contains("response.retcode"), "send path should check retcode before declaring success")
     }
+
+    @Test
+    fun `target config should mark link parse switch as not enabled`() {
+        val text = read("src/main/kotlin/top/bilibili/config/NapCatConfig.kt")
+        assertTrue(text.contains("尚未启用"), "target config should explicitly mark link-parse config as not enabled")
+    }
 }
