@@ -81,7 +81,7 @@ object FontUtils {
                     val face = fontMgr.makeFromData(data, index) ?: throw IllegalArgumentException("无法从数据加载字体")
                     if (defaultFont == null) defaultFont = face
                     registerTypeface(face, alias)
-                    logger.info("从 resources 加载字体 ${face.familyName} 成功")
+                    logger.info("从 resources 加载字体 ${alias ?: face.familyName} 成功")
                     face
                 } finally {
                     data.close()
