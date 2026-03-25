@@ -8,7 +8,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class IdeCompatibilitySourceRegressionTest {
-    private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
+    private fun read(path: String): String =
+        Files.readString(Path.of(path), StandardCharsets.UTF_8)
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
 
     @Test
     fun `bili client should cache proxies before indexing`() {

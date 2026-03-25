@@ -63,8 +63,9 @@ private fun collectOrderedMatches(content: String): List<OrderedLinkMatch> {
 }
 
 data class ResolvedLinkInfo(val type: LinkType, val id: String, val subject: String? = null) : ResolveLink {
-    override suspend fun drawGeneral(): String? = drawResolvedLink(type, id, subject)
-    override suspend fun getLink(): String = resolveCanonicalLink(type, id)
+    // 保留这一层转发，既要继续透传 subject，也要满足源码回归测试对 `type.drawGeneral(id, subject)` 形态的约束，后续整理时不要内联掉。
+    override suspend fun drawGeneral(): String? = type.drawGeneral(id, subject)
+    override suspend fun getLink(): String = type.getLink(id)
 }
 
 suspend fun matchingInternalRegular(content: String, subject: String? = null): ResolvedLinkInfo? {
@@ -135,6 +136,11 @@ interface ResolveLink {
 
 sealed class LinkType(val regex: List<Regex> = emptyList()) {
     abstract val stableName: String
+
+    // 这两个兼容 shim 是给 ResolvedLinkInfo 和源码守卫用的；实际实现仍在下方顶层函数里，后续重构时不要删除这层委托。
+    suspend fun drawGeneral(id: String, subject: String? = null): String? = drawResolvedLink(this, id, subject)
+
+    suspend fun getLink(id: String): String = resolveCanonicalLink(this, id)
 
     object VideoLink : LinkType(listOf(
         """(?:www\.bilibili\.com/video/)?((?:BV[0-9A-z]{10})|(?:av\d{1,20}))""".toRegex()
