@@ -2,7 +2,7 @@
 # 运行时镜像
 # 注意: 需要先在本地执行 gradle shadowJar 编译
 # ============================================
-FROM eclipse-temurin:17-jdk
+FROM eclipse-temurin:17-jre
 
 # 设置工作目录
 WORKDIR /app
