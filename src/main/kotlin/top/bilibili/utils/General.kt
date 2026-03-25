@@ -390,7 +390,7 @@ suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN)
         }
          if (filePath.exists()) {
             filePath.setLastModifiedTime(FileTime.from(Instant.now()))
-            return filePath.readBytes()
+            return prepareDownloadedImageBytes(filePath)
          } else if(normalizedUrl.startsWith("cache/")){
              return null
          }
@@ -413,7 +413,7 @@ suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN)
                     }
                     if (filePath.exists()) {
                         filePath.setLastModifiedTime(FileTime.from(Instant.now()))
-                        return filePath.readBytes()
+                        return prepareDownloadedImageBytes(filePath)
                     }
                 }catch (t: Throwable) {
                     logger.warn("下载资源失败 (尝试 ${retryCount + 1}/${maxRetries + 1}): $normalizedUrl")

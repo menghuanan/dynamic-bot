@@ -352,5 +352,36 @@ class ResourceManagementRegressionGuardTest {
             "imgApi should return empty fallback when base url is invalid",
         )
     }
+
+    @Test
+    fun `large image preprocessing should stay wired into shared download flow`() {
+        val general = read("src/main/kotlin/top/bilibili/utils/General.kt")
+        val preprocess = read("src/main/kotlin/top/bilibili/utils/ImagePreprocessing.kt")
+
+        assertTrue(
+            general.contains("return prepareDownloadedImageBytes(filePath)"),
+            "getOrDownload should route cached files through large-image preprocessing",
+        )
+        assertTrue(
+            preprocess.contains("Image.makeFromEncoded(originalBytes).use"),
+            "large-image preprocessing should explicitly scope decoded Skia images with use",
+        )
+        assertTrue(
+            preprocess.contains("resolveSibling(\"resized_\${originalPath.name}\")"),
+            "large-image preprocessing should persist a stable resized sibling cache variant",
+        )
+        assertTrue(
+            preprocess.contains("originalBytes"),
+            "large-image preprocessing should fall back to original bytes on failures",
+        )
+        assertTrue(
+            preprocess.contains("正在预处理过大的静态图片: 文件名="),
+            "large-image preprocessing should log the preprocessing event in Chinese",
+        )
+        assertTrue(
+            preprocess.contains("大图预处理失败，正在回退原图: 文件名="),
+            "large-image preprocessing should log the fallback event in Chinese",
+        )
+    }
 }
 
