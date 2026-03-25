@@ -25,6 +25,12 @@ data class ArticleDetail(
 ): BiliDetail
 
 @Serializable
+data class ArticleViewInfo(
+    @SerialName("dyn_id_str")
+    val dynIdStr: String? = null,
+)
+
+@Serializable
 data class ArticleInfo(
     @SerialName("like")
     val like: Int? = null,

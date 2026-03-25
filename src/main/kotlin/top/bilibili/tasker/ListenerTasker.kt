@@ -297,7 +297,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
      * 将链接转换为标准格式（非短链接）
      */
     private fun convertToStandardLink(link: String, linkInfo: ResolvedLinkInfo): String {
-        return when (linkInfo.type) {
+        return when (val type = linkInfo.type) {
             top.bilibili.service.LinkType.VideoLink -> {
                 val id = linkInfo.id
                 val videoId = if (id.contains("BV") || id.contains("av")) id else "av$id"
@@ -316,6 +316,10 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
                 }
             }
             top.bilibili.service.LinkType.ShortLink -> link
+            is top.bilibili.service.LinkType.OpusWithCv -> {
+                type.cvId?.let { "https://www.bilibili.com/read/cv$it" }
+                    ?: "https://www.bilibili.com/opus/${type.opusId}"
+            }
         }
     }
 }

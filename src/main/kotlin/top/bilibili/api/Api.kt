@@ -13,6 +13,7 @@ const val DYNAMIC_DETAIL = "https://api.bilibili.com/x/polymer/web-dynamic/v1/de
 const val VIDEO_DETAIL = "https://api.bilibili.com/x/web-interface/view"
 
 // Article
+const val ARTICLE_VIEW = "https://api.bilibili.com/x/article/view"
 const val ARTICLE_DETAIL = "https://api.bilibili.com/x/article/viewinfo"
 const val ARTICLE_LIST = "https://api.bilibili.com/x/article/cards"
 

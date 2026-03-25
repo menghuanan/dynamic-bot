@@ -78,7 +78,7 @@ class LinkResolvePolicyService(
     }
 
     private fun buildCooldownKey(groupId: Long, candidate: ResolvedLinkInfo): String {
-        return "$groupId:${candidate.type}:${candidate.id}"
+        return "$groupId:${candidate.type.stableName}:${candidate.id}"
     }
 
     companion object {

@@ -67,6 +67,13 @@ suspend fun BiliClient.getArticleDetailOld(id: String): ArticleDetail? {
     }
 }
 
+suspend fun BiliClient.getArticleView(id: String): ArticleViewInfo? {
+    return getData(ARTICLE_VIEW) {
+        if (id.startsWith("cv")) parameter("id", id.removePrefix("cv"))
+        else parameter("id", id)
+    }
+}
+
 suspend fun BiliClient.getArticleDetail(id: String): ArticleDetail? {
     return getArticleList(listOf(id))?.get(id)
 }

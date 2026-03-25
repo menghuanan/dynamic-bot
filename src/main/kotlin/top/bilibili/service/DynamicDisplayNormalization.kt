@@ -5,17 +5,21 @@ import top.bilibili.data.DynamicType
 import top.bilibili.data.ModuleDynamic
 
 internal fun DynamicItem.normalizeArticleOpusDisplayTree() {
-    normalizeArticleOpusDisplay()
+    normalizeArticleOpusDisplayTree(articleIdOverride = null)
+}
+
+internal fun DynamicItem.normalizeArticleOpusDisplayTree(articleIdOverride: String? = null) {
+    normalizeArticleOpusDisplay(articleIdOverride)
     orig?.normalizeArticleOpusDisplayTree()
 }
 
-private fun DynamicItem.normalizeArticleOpusDisplay() {
+private fun DynamicItem.normalizeArticleOpusDisplay(articleIdOverride: String?) {
     val major = modules.moduleDynamic.major ?: return
     if (type != DynamicType.DYNAMIC_TYPE_ARTICLE || major.type != "MAJOR_TYPE_OPUS") return
 
     val opus = major.opus ?: return
     major.article = ModuleDynamic.Major.Article(
-        basic.ridStr,
+        articleIdOverride ?: basic.ridStr,
         opus.title.orEmpty(),
         opus.summary?.text.orEmpty(),
         "",
