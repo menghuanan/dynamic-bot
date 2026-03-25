@@ -16,6 +16,7 @@ import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.*
 import top.bilibili.service.DynamicService
 import top.bilibili.service.FeatureSwitchService
+import top.bilibili.service.normalizeArticleOpusDisplayTree
 import top.bilibili.service.parseGradientColors
 import top.bilibili.service.resolveGradientPalette
 
@@ -62,23 +63,7 @@ object DynamicMessageTasker : BiliTasker() {
             && modules.moduleAuthor.iconBadge?.text == "专属动态"
 
     suspend fun DynamicItem.buildMessage(contact: String? = null): DynamicMessage {
-
-        try {
-            if (type == DYNAMIC_TYPE_ARTICLE) {
-                modules.moduleDynamic.major!!.article = ModuleDynamic.Major.Article(
-                    basic.ridStr,
-                    modules.moduleDynamic.major.opus?.title!!,
-                    modules.moduleDynamic.major.opus?.summary?.text!!,
-                    "",
-                    "",
-                    modules.moduleDynamic.major.opus?.pics?.map { it.src }!!
-                )
-                modules.moduleDynamic.major.type = "MAJOR_TYPE_ARTICLE"
-                modules.moduleDynamic.major.opus = null
-            }
-        } catch (e: Exception) {
-            logger.warn("专栏消息转换失败", e)
-        }
+        normalizeArticleOpusDisplayTree()
 
         val pgcSeasonId = if (type == DYNAMIC_TYPE_PGC || type == DYNAMIC_TYPE_PGC_UNION) {
             modules.moduleDynamic.major?.pgc?.seasonId?.toLong()

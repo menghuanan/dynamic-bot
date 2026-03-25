@@ -210,6 +210,7 @@ enum class LinkType(val regex: List<Regex>) {
             }
             Dynamic -> {
                 biliClient.getDynamicDetail(id)?.run {
+                    normalizeArticleOpusDisplayTree()
                     val palette = resolveGradientPalette(modules.moduleAuthor.mid, subject)
                     SkiaManager.executeDrawing {
                         val dynamic = this@run.drawDynamic(this, palette.themeColor)
