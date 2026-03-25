@@ -8,30 +8,18 @@ FROM eclipse-temurin:17-jdk
 WORKDIR /app
 
 # ============================================
-# 安装系统依赖
+# 安装系统依赖 - 纯软件渲染模式
 # ============================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # jemalloc - 更好的内存分配器，减少碎片
     libjemalloc2 \
-    # Xvfb 虚拟显示服务器
-    xvfb \
     # 进程管理工具
     procps \
     # 字体支持 (Skia 绘图需要)
     fonts-dejavu-core \
     fonts-noto-color-emoji \
-    # 基础 X11 库
-    libx11-6 \
-    libxext6 \
-    libxrender1 \
-    libxtst6 \
-    libxi6 \
-    # OpenGL 库 (即使使用软件渲染也需要)
+    # OpenGL 基础符号库 (Skiko 软件渲染下仍可能需要)
     libgl1 \
-    libgl1-mesa-dri \
-    libglu1-mesa \
-    libegl1 \
-    libgles2 \
     # 字体和图形库
     libfreetype6 \
     libfontconfig1 \
@@ -63,8 +51,8 @@ ENV MALLOC_CONF=background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000,n
 #
 # 当前策略:
 #   - 堆内存默认 64m~160m
-#   - 收紧 Direct/Metaspace/CodeCache 预留
-#   - 保留绘图能力（Xvfb + Skia）
+#   - 适度放宽 DirectMemory/线程栈，覆盖软件渲染场景的原生缓冲开销
+#   - 保持纯软件渲染（SOFTWARE + 禁用硬件加速），不再依赖 Xvfb
 # ============================================
 ENV JAVA_TOOL_OPTIONS="\
     -XX:+UseG1GC \
@@ -72,7 +60,7 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:G1HeapRegionSize=4m \
     -XX:InitiatingHeapOccupancyPercent=30 \
     -XX:G1ReservePercent=15 \
-    -XX:MaxDirectMemorySize=24m \
+    -XX:MaxDirectMemorySize=48m \
     -XX:MetaspaceSize=16m \
     -XX:MaxMetaspaceSize=40m \
     -XX:CompressedClassSpaceSize=16m \
@@ -85,7 +73,7 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:+ParallelRefProcEnabled \
     -XX:CompileThreshold=500 \
     -XX:Tier4CompileThreshold=500 \
-    -Xss256k \
+    -Xss512k \
     -Djdk.nio.maxCachedBufferSize=65536 \
     -Dio.netty.allocator.maxCachedBufferCapacity=65536 \
     -Dio.netty.allocator.cacheTrimIntervalMillis=5000 \
@@ -103,9 +91,6 @@ ENV JAVA_TOOL_OPTIONS="\
 # 应用配置
 # ============================================
 ARG APP_VERSION=auto
-ENV DISPLAY=:99
-ENV XVFB_SCREEN_SIZE=1280x720x24
-ENV XVFB_DISPLAY=:99
 
 # 创建必要的目录
 RUN mkdir -p /app/config /app/data /app/temp /app/logs
