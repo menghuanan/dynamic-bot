@@ -92,12 +92,21 @@ sealed interface OutgoingPart {
 data class PlatformInboundMessage(
     val platform: PlatformType,
     val chatType: PlatformChatType,
-    val chatId: String,
-    val senderId: String,
-    val selfId: String,
+    val chatContact: PlatformContact,
+    val senderContact: PlatformContact,
+    val selfContact: PlatformContact,
     val messageText: String,
     val searchTexts: List<String>,
     val hasMention: Boolean,
     val fromSelf: Boolean,
     val rawPayload: Any?,
-)
+) {
+    // 为仍在迁移中的调用方保留字符串 ID 访问入口，避免再次回退到 Long 假设。
+    val chatId: String get() = chatContact.id
+
+    // 为仍在迁移中的调用方保留字符串发送者 ID。
+    val senderId: String get() = senderContact.id
+
+    // 为仍在迁移中的调用方保留字符串机器人自身 ID。
+    val selfId: String get() = selfContact.id
+}

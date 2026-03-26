@@ -4,12 +4,12 @@ import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.utils.normalizeContactSubject
-import top.bilibili.utils.parseContactId
+import top.bilibili.utils.parsePlatformContact
 import top.bilibili.utils.subjectsEquivalent
 
 object ConfigService {
     fun configOverview(uid: Long = 0L, subject: String): String {
-        parseContactId(subject) ?: return "联系人格式错误: $subject"
+        parsePlatformContact(subject) ?: return "联系人格式错误: $subject"
         if (uid < 0L) return "UID 格式错误: $uid"
 
         val normalizedSubject = normalizeContactSubject(subject) ?: return "联系人格式错误: $subject"

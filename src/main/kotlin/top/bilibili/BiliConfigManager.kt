@@ -180,10 +180,34 @@ object BiliConfigManager {
 
         data.group.values.forEach { group ->
             changed = migrateStringSet(group.contacts) || changed
+            changed = migrateStringSet(group.adminContacts) || changed
+            if (group.creatorContact.isBlank() && group.creator > 0L) {
+                group.creatorContact = "onebot11:private:${group.creator}"
+                changed = true
+            } else {
+                val normalizedCreator = normalizeContactSubject(group.creatorContact)
+                if (normalizedCreator != null && normalizedCreator != group.creatorContact) {
+                    group.creatorContact = normalizedCreator
+                    changed = true
+                }
+            }
+            if (group.adminContacts.isEmpty() && group.admin.isNotEmpty()) {
+                group.admin.forEach { adminId ->
+                    group.adminContacts.add("onebot11:private:$adminId")
+                }
+                changed = true
+            }
         }
         data.bangumi.values.forEach { bangumi ->
             changed = migrateStringSet(bangumi.contacts) || changed
         }
+        if (data.linkParseBlacklistContacts.isEmpty() && data.linkParseBlacklist.isNotEmpty()) {
+            data.linkParseBlacklist.forEach { userId ->
+                data.linkParseBlacklistContacts.add("onebot11:private:$userId")
+            }
+            changed = true
+        }
+        changed = migrateStringSet(data.linkParseBlacklistContacts) || changed
 
         return changed
     }

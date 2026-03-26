@@ -45,6 +45,9 @@ object BiliData {
 
     // 链接解析黑名单 - 忽略指定QQ号的链接解析请求
     var linkParseBlacklist: MutableSet<Long> = mutableSetOf()
+
+    // 链接解析黑名单（平台联系人版）- 新增写入走该集合，旧 Long 集合保留兼容读取
+    var linkParseBlacklistContacts: MutableSet<String> = mutableSetOf()
 }
 
 @Serializable
@@ -65,6 +68,8 @@ data class Group(
     val name: String,
     val creator: Long,
     val admin: MutableSet<Long> = mutableSetOf(),
+    var creatorContact: String = "",
+    val adminContacts: MutableSet<String> = mutableSetOf(),
     val contacts: MutableSet<String> = mutableSetOf(),
 ) {
     override fun toString(): String {

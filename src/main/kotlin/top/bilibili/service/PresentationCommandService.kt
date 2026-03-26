@@ -2,13 +2,17 @@ package top.bilibili.service
 
 import top.bilibili.BiliConfigManager
 import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformContact
 import top.bilibili.core.BiliBiliBot
+import top.bilibili.utils.toSubject
 
 object PresentationCommandService {
-    suspend fun sendHelp(contactId: Long, userId: Long, isGroup: Boolean) {
-        if (!CommandPermission.isSuperAdmin(userId) && (!isGroup || !CommandPermission.isGroupAdmin(contactId, userId))) return
+    suspend fun sendHelp(chatContact: PlatformContact, senderContact: PlatformContact) {
+        val isGroup = chatContact.type == PlatformChatType.GROUP
+        if (!CommandPermission.isSuperAdmin(senderContact) && (!isGroup || !CommandPermission.isGroupAdmin(chatContact, senderContact))) return
 
-        val isSuper = CommandPermission.isSuperAdmin(userId)
+        val isSuper = CommandPermission.isSuperAdmin(senderContact)
         val msg = if (isSuper) {
             """
             订阅管理:
@@ -73,24 +77,23 @@ object PresentationCommandService {
             val imagePath = getHelpImagePath(imageName)
             if (imagePath != null) {
                 val imageSegments = listOf(OutgoingPart.image(imagePath))
-                if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, imageSegments)
-                else MessageGatewayProvider.require().sendPrivateMessage(contactId, imageSegments)
+                MessageGatewayProvider.require().sendMessage(chatContact, imageSegments)
             } else {
                 false
             }
         }.getOrDefault(false)
 
         if (!imageSent) {
-            send(contactId, isGroup, msg)
+            sendText(chatContact, msg)
         }
     }
 
-    suspend fun handleTemplate(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        if (!CommandPermission.isSuperAdmin(userId) && (!isGroup || !CommandPermission.isGroupAdmin(contactId, userId))) return
+    suspend fun handleTemplate(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
+        val isGroup = chatContact.type == PlatformChatType.GROUP
+        if (!CommandPermission.isSuperAdmin(senderContact) && (!isGroup || !CommandPermission.isGroupAdmin(chatContact, senderContact))) return
         if (args.size < 2) {
-            send(
-                contactId,
-                isGroup,
+            sendText(
+                chatContact,
                 """
                 用法:
                 /bili template list <d|l|le>
@@ -102,45 +105,45 @@ object PresentationCommandService {
             return
         }
 
-        val subject = if (isGroup) "group:$contactId" else "private:$contactId"
+        val subject = chatContact.toSubject()
         when (args[1].lowercase()) {
             "list", "ls" -> {
                 val type = args.getOrNull(2) ?: "d"
-                send(contactId, isGroup, TemplateService.listTemplateText(type))
+                sendText(chatContact, TemplateService.listTemplateText(type))
             }
 
             "preview", "pv" -> {
                 if (args.size < 4) {
-                    send(contactId, isGroup, "用法: /bili template preview <d|l|le> <模板名>")
+                    sendText(chatContact, "用法: /bili template preview <d|l|le> <模板名>")
                     return
                 }
-                send(contactId, isGroup, TemplateService.previewTemplate(args[2], args[3], subject))
+                sendText(chatContact, TemplateService.previewTemplate(args[2], args[3], subject))
             }
 
             "set" -> {
                 if (args.size < 4) {
-                    send(contactId, isGroup, "用法: /bili template set <d|l|le> <模板名> [uid]")
+                    sendText(chatContact, "用法: /bili template set <d|l|le> <模板名> [uid]")
                     return
                 }
                 val uid = args.getOrNull(4)?.trim()?.let {
                     val parsed = it.toLongOrNull()
                     if (parsed == null || parsed <= 0L) {
-                        send(contactId, isGroup, "UID 格式错误，请输入纯数字")
+                        sendText(chatContact, "UID 格式错误，请输入纯数字")
                         return
                     }
                     parsed
                 }
                 val result = TemplateService.setTemplate(args[2], args[3], subject, uid)
                 BiliConfigManager.saveData()
-                send(contactId, isGroup, result)
+                sendText(chatContact, result)
             }
 
             "explain", "exp" -> {
                 val type = args.getOrNull(2) ?: "d"
-                send(contactId, isGroup, TemplateService.explainTemplate(type))
+                sendText(chatContact, TemplateService.explainTemplate(type))
             }
 
-            else -> send(contactId, isGroup, "未知子命令: ${args[1]}")
+            else -> sendText(chatContact, "未知子命令: ${args[1]}")
         }
     }
 
@@ -155,10 +158,5 @@ object PresentationCommandService {
             }
         }
         return tempFile.absolutePath
-    }
-
-    private suspend fun send(contactId: Long, isGroup: Boolean, msg: String) {
-        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
-        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
     }
 }

@@ -28,8 +28,8 @@ class SubscriptionSourceRegressionTest {
     fun `subscription command should validate target group membership for explicit group id`() {
         val text = read("src/main/kotlin/top/bilibili/service/SubscriptionCommandService.kt")
         assertTrue(
-            text.contains("PlatformCapabilityService.isGroupReachable"),
-            "explicit group target should be validated before add",
+            text.contains("PlatformCapabilityService.canSendMessageTo(target)"),
+            "explicit group target should be validated through contact send capability before add",
         )
     }
 }

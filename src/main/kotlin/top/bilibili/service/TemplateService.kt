@@ -4,13 +4,12 @@ import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.connector.OutgoingPart
-import top.bilibili.core.ContactId
 import top.bilibili.data.DynamicMessage
 import top.bilibili.data.DynamicType
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
 import top.bilibili.utils.normalizeContactSubject
-import top.bilibili.utils.parseContactId
+import top.bilibili.utils.parsePlatformContact
 
 object TemplateService {
     private val runtimeConfig: BiliConfig
@@ -50,14 +49,14 @@ object TemplateService {
 
     suspend fun listTemplate(type: String, subject: Any) {
         val subjectStr = subject as? String ?: return
-        val contact: ContactId = parseContactId(subjectStr) ?: return
+        val contact = parsePlatformContact(subjectStr) ?: return
         MessageGatewayProvider.require().sendMessage(contact, listOf(OutgoingPart.text(listTemplateText(type))))
     }
 
     suspend fun previewTemplate(type: String, template: String, subject: String): String {
         val templates = templateMap(type) ?: return "类型错误 d:动态 l:直播 le:直播结束"
         val selected = templates[template] ?: return "没有这个模板: $template"
-        val contact = parseContactId(subject) ?: return "联系人格式错误"
+        val contact = parsePlatformContact(subject) ?: return "联系人格式错误"
         val normalizedSubject = normalizeContactSubject(subject) ?: return "联系人格式错误"
         val sampleMessage = buildSampleMessage(type, normalizedSubject) ?: return "类型错误 d:动态 l:直播 le:直播结束"
         val renderedSegments = TemplateRenderService.buildSegments(

@@ -9,15 +9,15 @@ class LinkResolvePolicyService(
     private val nowProvider: () -> Long = System::currentTimeMillis
 ) {
     private val linkCooldowns = mutableMapOf<String, Long>()
-    private val userApprovals = mutableMapOf<Long, ArrayDeque<Long>>()
+    private val userApprovals = mutableMapOf<String, ArrayDeque<Long>>()
 
     @Synchronized
-    fun applyPolicy(groupId: Long, userId: Long, candidates: List<ResolvedLinkInfo>): LinkResolvePolicyDecision {
+    fun applyPolicy(groupKey: String, userKey: String, candidates: List<ResolvedLinkInfo>): LinkResolvePolicyDecision {
         val now = nowProvider()
         cleanupExpiredState(now)
 
         val approved = mutableListOf<ResolvedLinkInfo>()
-        val userWindow = userApprovals.getOrPut(userId) { ArrayDeque() }
+        val userWindow = userApprovals.getOrPut(userKey) { ArrayDeque() }
         var shouldWarn = false
 
         for (candidate in candidates) {
@@ -25,7 +25,7 @@ class LinkResolvePolicyService(
                 break
             }
 
-            val cooldownKey = buildCooldownKey(groupId, candidate)
+            val cooldownKey = buildCooldownKey(groupKey, candidate)
             val lastApprovedAt = linkCooldowns[cooldownKey]
             if (lastApprovedAt != null && now - lastApprovedAt < LINK_COOLDOWN_MS) {
                 continue
@@ -43,13 +43,20 @@ class LinkResolvePolicyService(
         }
 
         if (userWindow.isEmpty()) {
-            userApprovals.remove(userId)
+            userApprovals.remove(userKey)
         }
 
         return LinkResolvePolicyDecision(
             approvedLinks = approved,
             shouldWarnTooManyRequests = shouldWarn
         )
+    }
+
+    /**
+     * 为旧测试与 OneBot11 调用方保留 Long 型入口。
+     */
+    fun applyPolicy(groupId: Long, userId: Long, candidates: List<ResolvedLinkInfo>): LinkResolvePolicyDecision {
+        return applyPolicy(groupId.toString(), userId.toString(), candidates)
     }
 
     private fun cleanupExpiredState(now: Long) {
@@ -77,8 +84,8 @@ class LinkResolvePolicyService(
         }
     }
 
-    private fun buildCooldownKey(groupId: Long, candidate: ResolvedLinkInfo): String {
-        return "$groupId:${candidate.type.stableName}:${candidate.id}"
+    private fun buildCooldownKey(groupKey: String, candidate: ResolvedLinkInfo): String {
+        return "$groupKey:${candidate.type.stableName}:${candidate.id}"
     }
 
     companion object {

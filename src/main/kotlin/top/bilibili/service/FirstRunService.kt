@@ -5,6 +5,7 @@ import top.bilibili.config.ConfigManager
 import top.bilibili.config.BotConfig
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.connector.OutgoingPart
+import top.bilibili.utils.parsePlatformContact
 
 object FirstRunService {
     suspend fun checkFirstRun(config: BotConfig) {
@@ -12,9 +13,9 @@ object FirstRunService {
 
         BiliBiliBot.logger.info("首次运行检查: 检测到 first_run_flag=0，准备发送欢迎消息...")
 
-        val adminId = BiliConfigManager.config.admin
-        if (adminId <= 0L) {
-            BiliBiliBot.logger.warn("首次运行检查：未配置管理员 ID，无法发送欢迎消息")
+        val adminContact = BiliConfigManager.config.normalizedAdminSubject()?.let(::parsePlatformContact)
+        if (adminContact == null) {
+            BiliBiliBot.logger.warn("首次运行检查：未配置管理员联系人，无法发送欢迎消息")
             return
         }
 
@@ -32,7 +33,7 @@ object FirstRunService {
         """.trimIndent()
 
         try {
-            val success = MessageGatewayProvider.require().sendPrivateMessage(adminId, listOf(OutgoingPart.text(welcomeMsg)))
+            val success = MessageGatewayProvider.require().sendMessage(adminContact, listOf(OutgoingPart.text(welcomeMsg)))
             if (success) {
                 BiliBiliBot.logger.info("欢迎消息发送成功")
                 config.firstRunFlag = 1

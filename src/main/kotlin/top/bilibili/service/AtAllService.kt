@@ -9,8 +9,9 @@ import top.bilibili.data.DynamicMessage
 import top.bilibili.data.DynamicType
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
+import top.bilibili.connector.PlatformChatType
 import top.bilibili.utils.normalizeContactSubject
-import top.bilibili.utils.parseContactId
+import top.bilibili.utils.parsePlatformContact
 
 object AtAllService {
     private val mutex = Mutex()
@@ -29,8 +30,8 @@ object AtAllService {
     suspend fun addAtAll(type: String, uid: Long = 0L, subject: String): String = mutex.withLock {
         val atAllType = toAtAllType(type) ?: return@withLock "没有这个类型哦 [$type]"
         val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
-        val contact = parseContactId(normalizedSubject) ?: return@withLock "联系人格式错误: $subject"
-        if (contact.type != "group") return@withLock "仅群聊支持 @全体 策略"
+        val contact = parsePlatformContact(normalizedSubject) ?: return@withLock "联系人格式错误: $subject"
+        if (contact.type != PlatformChatType.GROUP) return@withLock "仅群聊支持 @全体 策略"
         validateUidScope(uid, normalizedSubject)?.let { return@withLock it }
 
         val list = BiliData.atAll

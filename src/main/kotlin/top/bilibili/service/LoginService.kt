@@ -9,22 +9,24 @@ import top.bilibili.BiliConfigManager
 import top.bilibili.api.getLoginQrcode
 import top.bilibili.api.loginInfo
 import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.PlatformContact
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.core.resource.BusinessLifecycleManager
 import top.bilibili.core.resource.ResourceStrictness
 import top.bilibili.draw.loginQrCode
 import top.bilibili.initTagid
+import top.bilibili.utils.toSubject
 import java.io.File
 import java.net.URI
 
 object LoginService {
-    suspend fun login(isGroup: Boolean, contactId: Long) {
+    suspend fun login(contact: PlatformContact) {
         BusinessLifecycleManager.run(
             owner = "LoginService",
-            operation = "login:${if (isGroup) "group" else "private"}:$contactId",
+            operation = "login:${contact.toSubject()}",
             strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
         ) {
-            logger.info("开始 BiliBili QR 码登录流程，联系人 $contactId")
+            logger.info("开始 BiliBili QR 码登录流程，联系人 ${contact.toSubject()}")
 
             var qrImageFile: File? = null
             onFinally {
@@ -35,7 +37,7 @@ object LoginService {
             try {
                 val loginData = client.getLoginQrcode()
                 if (loginData == null) {
-                    sendMessage(isGroup, contactId, "获取登录二维码失败")
+                    sendMessage(contact, "获取登录二维码失败")
                     logger.error("获取登录二维码失败")
                     return@run
                 }
@@ -53,8 +55,7 @@ object LoginService {
                 qrImage.close()
 
                 sendMessage(
-                    isGroup,
-                    contactId,
+                    contact,
                     listOf(
                         OutgoingPart.text("请使用 BiliBili 手机 APP 扫码登录（3 分钟有效）"),
                         OutgoingPart.image(qrImageFile.absolutePath),
@@ -75,17 +76,17 @@ object LoginService {
                                         BiliConfigManager.saveConfig()
                                         BiliBiliBot.cookie.parse(cookie)
                                         initTagid()
-                                        sendMessage(isGroup, contactId, "BiliBili 登录成功")
+                                        sendMessage(contact, "BiliBili 登录成功")
                                         logger.info("BiliBili 登录成功")
                                     } else {
-                                        sendMessage(isGroup, contactId, "Cookie 解析失败")
+                                        sendMessage(contact, "Cookie 解析失败")
                                         logger.error("Cookie 解析失败")
                                     }
                                     break
                                 }
 
                                 86038 -> {
-                                    sendMessage(isGroup, contactId, "二维码已失效，请重新登录")
+                                    sendMessage(contact, "二维码已失效，请重新登录")
                                     logger.warn("二维码已失效")
                                     break
                                 }
@@ -102,12 +103,12 @@ object LoginService {
                     } else {
                         "登录失败，请稍后重试"
                     }
-                    sendMessage(isGroup, contactId, userMessage)
+                    sendMessage(contact, userMessage)
                     logger.error("登录失败", it)
                 }
             } catch (e: Exception) {
                 logger.error("登录流程发生异常", e)
-                sendMessage(isGroup, contactId, "登录过程出错，请稍后重试")
+                sendMessage(contact, "登录过程出错，请稍后重试")
             } finally {
                 qrImageFile?.delete()
             }
@@ -130,17 +131,13 @@ object LoginService {
         }
     }
 
-    private suspend fun sendMessage(isGroup: Boolean, contactId: Long, message: String) {
-        sendMessage(isGroup, contactId, listOf(OutgoingPart.text(message)))
+    private suspend fun sendMessage(contact: PlatformContact, message: String) {
+        sendMessage(contact, listOf(OutgoingPart.text(message)))
     }
 
-    private suspend fun sendMessage(isGroup: Boolean, contactId: Long, message: List<OutgoingPart>) {
+    private suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>) {
         try {
-            if (isGroup) {
-                MessageGatewayProvider.require().sendGroupMessage(contactId, message)
-            } else {
-                MessageGatewayProvider.require().sendPrivateMessage(contactId, message)
-            }
+            MessageGatewayProvider.require().sendMessage(contact, message)
         } catch (e: Exception) {
             logger.error("发送消息失败", e)
         }

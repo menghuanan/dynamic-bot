@@ -6,10 +6,10 @@ import top.bilibili.connector.ImageSource
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformAdapter
 import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformInboundMessage
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.PlatformType
-import top.bilibili.core.ContactId
 import top.bilibili.napcat.MessageEvent
 import top.bilibili.napcat.MessageSegment
 import top.bilibili.napcat.NapCatClient
@@ -30,19 +30,12 @@ class OneBot11Adapter(
         napCatClient.stop()
     }
 
-    override suspend fun sendGroupMessage(groupId: Long, message: List<OutgoingPart>): Boolean {
-        return napCatClient.sendGroupMessage(groupId, toMessageSegments(message))
-    }
-
-    override suspend fun sendPrivateMessage(userId: Long, message: List<OutgoingPart>): Boolean {
-        return napCatClient.sendPrivateMessage(userId, toMessageSegments(message))
-    }
-
-    override suspend fun sendMessage(contact: ContactId, message: List<OutgoingPart>): Boolean {
+    override suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean {
+        if (contact.platform != PlatformType.ONEBOT11) return false
+        val numericId = contact.id.toLongOrNull() ?: return false
         return when (contact.type) {
-            "group" -> sendGroupMessage(contact.id, message)
-            "private" -> sendPrivateMessage(contact.id, message)
-            else -> false
+            PlatformChatType.GROUP -> napCatClient.sendGroupMessage(numericId, toMessageSegments(message))
+            PlatformChatType.PRIVATE -> napCatClient.sendPrivateMessage(numericId, toMessageSegments(message))
         }
     }
 
@@ -54,11 +47,18 @@ class OneBot11Adapter(
         )
     }
 
-    override suspend fun isGroupReachable(groupId: Long): Boolean {
+    override suspend fun isContactReachable(contact: PlatformContact): Boolean {
+        if (contact.platform != PlatformType.ONEBOT11) return false
+        if (contact.type != PlatformChatType.GROUP) return true
+        val groupId = contact.id.toLongOrNull() ?: return false
         return napCatClient.isBotInGroup(groupId)
     }
 
-    override suspend fun canAtAll(groupId: Long): Boolean {
+    override suspend fun canAtAll(contact: PlatformContact): Boolean {
+        if (contact.platform != PlatformType.ONEBOT11 || contact.type != PlatformChatType.GROUP) {
+            return false
+        }
+        val groupId = contact.id.toLongOrNull() ?: return false
         return napCatClient.canAtAllInGroup(groupId)
     }
 
@@ -120,9 +120,9 @@ class OneBot11Adapter(
             return PlatformInboundMessage(
                 platform = PlatformType.ONEBOT11,
                 chatType = chatType,
-                chatId = chatId,
-                senderId = event.userId.toString(),
-                selfId = event.selfId.toString(),
+                chatContact = PlatformContact(PlatformType.ONEBOT11, chatType, chatId),
+                senderContact = PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, event.userId.toString()),
+                selfContact = PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, event.selfId.toString()),
                 messageText = event.rawMessage,
                 searchTexts = searchTexts,
                 hasMention = event.message.any { it.type == "at" },

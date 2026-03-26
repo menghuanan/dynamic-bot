@@ -3,62 +3,68 @@ package top.bilibili.service
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.api.getEpisodeInfo
-import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformCapabilityService
+import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformContact
 import top.bilibili.utils.biliClient
 import top.bilibili.utils.containsEquivalentSubject
-import top.bilibili.utils.groupIdFromSubject
+import top.bilibili.utils.groupLabelFromSubject
+import top.bilibili.utils.parseCommandPlatformContact
+import top.bilibili.utils.toSubject
 
 object SubscriptionCommandService {
-    suspend fun handleAdd(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        if (!isGroup && !CommandPermission.isSuperAdmin(userId)) return
+    suspend fun handleAdd(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
+        val isGroup = chatContact.type == PlatformChatType.GROUP
+        if (!isGroup && !CommandPermission.isSuperAdmin(senderContact)) return
         if (args.size < 2) {
-            send(contactId, isGroup, "用法: /bili add <UID|ss|md|ep> [群号]")
+            sendText(chatContact, "用法: /bili add <UID|ss|md|ep> [群号]")
             return
         }
 
         val id = args[1]
-        val targetContact = resolveTargetContact(contactId, userId, args, isGroup, "add") ?: return
+        val targetContact = resolveTargetContact(chatContact, senderContact, args, "add") ?: return
         val result = if (pgcRegex.matches(id)) {
-            PgcService.followPgc(id, targetContact)
+            PgcService.followPgc(id, targetContact.toSubject())
         } else {
             val uid = id.toLongOrNull() ?: run {
-                send(contactId, isGroup, "UID 格式错误")
+                sendText(chatContact, "UID 格式错误")
                 return
             }
-            DynamicService.addDirectSubscribe(uid, targetContact, isSelf = false)
+            DynamicService.addDirectSubscribe(uid, targetContact.toSubject(), isSelf = false)
         }
 
         BiliConfigManager.saveData()
-        send(contactId, isGroup, result)
+        sendText(chatContact, result)
     }
 
-    suspend fun handleRemove(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        if (!isGroup && !CommandPermission.isSuperAdmin(userId)) return
+    suspend fun handleRemove(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
+        val isGroup = chatContact.type == PlatformChatType.GROUP
+        if (!isGroup && !CommandPermission.isSuperAdmin(senderContact)) return
         if (args.size < 2) {
-            send(contactId, isGroup, "用法: /bili remove <UID|ss|md|ep> [群号]")
+            sendText(chatContact, "用法: /bili remove <UID|ss|md|ep> [群号]")
             return
         }
 
         val id = args[1]
-        val targetContact = resolveTargetContact(contactId, userId, args, isGroup, "remove") ?: return
+        val targetContact = resolveTargetContact(chatContact, senderContact, args, "remove") ?: return
         val result = if (pgcRegex.matches(id)) {
-            PgcService.delPgc(id, targetContact)
+            PgcService.delPgc(id, targetContact.toSubject())
         } else {
             val uid = id.toLongOrNull() ?: run {
-                send(contactId, isGroup, "UID 格式错误")
+                sendText(chatContact, "UID 格式错误")
                 return
             }
-            DynamicService.removeDirectSubscribe(uid, targetContact, isSelf = false)
+            DynamicService.removeDirectSubscribe(uid, targetContact.toSubject(), isSelf = false)
         }
 
         BiliConfigManager.saveData()
-        send(contactId, isGroup, result)
+        sendText(chatContact, result)
     }
 
-    suspend fun handleList(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
+    suspend fun handleList(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
+        val isGroup = chatContact.type == PlatformChatType.GROUP
         if (args.size == 1) {
-            val contact = if (isGroup) "group:$contactId" else "private:$contactId"
+            val contact = chatContact.toSubject()
             val userSubs = BiliData.dynamic
                 .filter { containsEquivalentSubject(it.value.contacts, contact) }
                 .map { "${it.value.name} (UID: ${it.key})" }
@@ -67,12 +73,12 @@ object SubscriptionCommandService {
                 .map { "${it.value.title} (ss${it.value.seasonId})" }
             val subs = userSubs + bangumiSubs
             val msg = if (subs.isEmpty()) "当前会话没有任何订阅" else "订阅列表:\n${subs.joinToString("\n")}"
-            send(contactId, isGroup, msg)
+            sendText(chatContact, msg)
             return
         }
 
-        if (!CommandPermission.isSuperAdmin(userId)) {
-            send(contactId, isGroup, "权限不足: 仅超级管理员可查看推送范围")
+        if (!CommandPermission.isSuperAdmin(senderContact)) {
+            sendText(chatContact, "权限不足: 仅超级管理员可查看推送范围")
             return
         }
 
@@ -84,7 +90,7 @@ object SubscriptionCommandService {
             if (idType == "ep") {
                 val season = biliClient.getEpisodeInfo(idValue)
                 if (season == null) {
-                    send(contactId, isGroup, "获取番剧信息失败")
+                    sendText(chatContact, "获取番剧信息失败")
                     return
                 }
                 idType = "ss"
@@ -102,7 +108,7 @@ object SubscriptionCommandService {
                     if (bangumi == null) {
                         "没有订阅过番剧 ${idType}${idValue}"
                     } else {
-                        val groups = bangumi.contacts.mapNotNull { groupIdFromSubject(it)?.toString() }
+                        val groups = bangumi.contacts.mapNotNull(::groupLabelFromSubject)
                         if (groups.isEmpty()) {
                             "${bangumi.title} (ss${bangumi.seasonId})\n没有推送到任何群"
                         } else {
@@ -112,78 +118,74 @@ object SubscriptionCommandService {
                 }
                 else -> "ID 格式错误"
             }
-            send(contactId, isGroup, msg)
+            sendText(chatContact, msg)
             return
         }
 
         val uid = id.toLongOrNull()
         if (uid == null) {
-            send(contactId, isGroup, "UID 或番剧ID 格式错误")
+            sendText(chatContact, "UID 或番剧ID 格式错误")
             return
         }
 
         val subData = BiliData.dynamic[uid]
         if (subData == null) {
-            send(contactId, isGroup, "没有订阅过 UID: $uid")
+            sendText(chatContact, "没有订阅过 UID: $uid")
             return
         }
 
-        val groups = subData.contacts.mapNotNull { groupIdFromSubject(it)?.toString() }
+        val groups = subData.contacts.mapNotNull(::groupLabelFromSubject)
         val msg = if (groups.isEmpty()) {
             "${subData.name} (UID: $uid)\n没有推送到任何群"
         } else {
             "${subData.name} (UID: $uid)\n推送到以下群:\n${groups.joinToString("\n")}"
         }
-        send(contactId, isGroup, msg)
+        sendText(chatContact, msg)
     }
 
     private suspend fun resolveTargetContact(
-        contactId: Long,
-        userId: Long,
+        chatContact: PlatformContact,
+        senderContact: PlatformContact,
         args: List<String>,
-        isGroup: Boolean,
         action: String,
-    ): String? {
+    ): PlatformContact? {
+        val isGroup = chatContact.type == PlatformChatType.GROUP
         if (args.size == 2) {
-            return if (CommandPermission.isSuperAdmin(userId) || (isGroup && CommandPermission.isGroupAdmin(contactId, userId))) {
-                if (isGroup) "group:$contactId" else "private:$contactId"
+            return if (CommandPermission.isSuperAdmin(senderContact) || (isGroup && CommandPermission.isGroupAdmin(chatContact, senderContact))) {
+                chatContact
             } else {
                 null
             }
         }
 
-        if (!CommandPermission.isSuperAdmin(userId)) {
-            if (isGroup && CommandPermission.isGroupAdmin(contactId, userId)) {
-                send(contactId, isGroup, "普通管理员请使用简短格式: /bili $action <UID>（无需群号）")
+        if (!CommandPermission.isSuperAdmin(senderContact)) {
+            if (isGroup && CommandPermission.isGroupAdmin(chatContact, senderContact)) {
+                sendText(chatContact, "普通管理员请使用简短格式: /bili $action <UID>（无需群号）")
             }
             return null
         }
 
-        val target = args[2].toLongOrNull()
+        val target = parseCommandPlatformContact(
+            raw = args[2],
+            defaultPlatform = chatContact.platform,
+            defaultType = PlatformChatType.GROUP,
+        )
         if (target == null) {
-            send(contactId, isGroup, "群号格式错误")
+            sendText(chatContact, "群号格式错误")
             return null
         }
 
         if (action == "add") {
             val available = runCatching {
-                PlatformCapabilityService.isGroupReachable(target)
+                PlatformCapabilityService.canSendMessageTo(target)
             }.getOrDefault(false)
 
             if (!available) {
-                send(contactId, isGroup, "拒绝添加：Bot 不在目标群 $target")
+                sendText(chatContact, "拒绝添加：Bot 不在目标群 ${target.id}")
                 return null
             }
         }
 
-        return "group:$target"
-    }
-
-    private suspend fun send(contactId: Long, isGroup: Boolean, msg: String) {
-        if (isGroup) {
-            MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
-        } else {
-            MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
-        }
+        return target
     }
 }

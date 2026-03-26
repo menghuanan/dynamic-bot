@@ -14,6 +14,7 @@ import top.bilibili.service.MessageGatewayProvider
 import top.bilibili.service.ResolvedLinkInfo
 import top.bilibili.service.TriggerMode
 import top.bilibili.service.matchingAllRegular
+import top.bilibili.utils.toSubject
 import top.bilibili.utils.logger
 
 object ListenerTasker : BiliTasker("ListenerTasker") {
@@ -50,11 +51,14 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
     }
 
     private suspend fun handleGroupMessage(event: PlatformInboundMessage) {
-        val groupId = event.chatId.toLongOrNull() ?: return
-        val userId = event.senderId.toLongOrNull() ?: return
+        val groupContact = event.chatContact
+        val senderContact = event.senderContact
+        val senderSubject = senderContact.toSubject()
 
-        if (top.bilibili.BiliData.linkParseBlacklist.contains(userId)) {
-            logger.debug("忽略黑名单用户 $userId 的链接解析请求")
+        if (top.bilibili.BiliData.linkParseBlacklistContacts.contains(senderSubject) ||
+            senderContact.id.toLongOrNull()?.let(top.bilibili.BiliData.linkParseBlacklist::contains) == true
+        ) {
+            logger.debug("忽略黑名单用户 {} 的链接解析请求", senderContact.id)
             return
         }
 
@@ -74,7 +78,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
 
         val matchedLinks = mutableListOf<Pair<String, ResolvedLinkInfo>>()
         for (link in event.searchTexts) {
-            val infos = matchingAllRegular(link, "group:$groupId")
+            val infos = matchingAllRegular(link, groupContact.toSubject())
             for (info in infos) {
                 matchedLinks.add(link to info)
             }
@@ -83,8 +87,8 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         if (matchedLinks.isEmpty()) return
 
         val policyDecision = linkResolvePolicyService.applyPolicy(
-            groupId = groupId,
-            userId = userId,
+            groupKey = groupContact.toSubject(),
+            userKey = senderSubject,
             candidates = matchedLinks.map { it.second },
         )
 
@@ -99,19 +103,19 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         }
 
         if (approvedMatchedLinks.isNotEmpty()) {
-            processApprovedMatchedLinks(groupId, approvedMatchedLinks)
+            processApprovedMatchedLinks(groupContact, approvedMatchedLinks)
         }
 
         if (policyDecision.shouldWarnTooManyRequests) {
-            MessageGatewayProvider.require().sendGroupMessage(
-                groupId,
+            MessageGatewayProvider.require().sendMessage(
+                groupContact,
                 listOf(OutgoingPart.text(TOO_MANY_REQUESTS_NOTICE)),
             )
         }
     }
 
     private suspend fun processApprovedMatchedLinks(
-        groupId: Long,
+        groupContact: top.bilibili.connector.PlatformContact,
         matchedLinks: List<Pair<String, ResolvedLinkInfo>>,
     ) {
         for ((index, entry) in matchedLinks.withIndex()) {
@@ -124,8 +128,8 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
                 val canDraw = FeatureSwitchService.canRenderLinkResolveDraw()
 
                 if (!canDraw) {
-                    val success = MessageGatewayProvider.require().sendGroupMessage(
-                        groupId,
+                    val success = MessageGatewayProvider.require().sendMessage(
+                        groupContact,
                         listOf(OutgoingPart.text(standardLink)),
                     )
 
@@ -162,8 +166,8 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
                 }
 
                 if (imagePath == null) {
-                    MessageGatewayProvider.require().sendGroupMessage(
-                        groupId,
+                    MessageGatewayProvider.require().sendMessage(
+                        groupContact,
                         listOf(OutgoingPart.text("解析失败")),
                     )
                     continue
@@ -176,12 +180,12 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
                     replySegments.add(OutgoingPart.text("\n$standardLink"))
                 }
 
-                val success = MessageGatewayProvider.require().sendGroupMessage(groupId, replySegments)
+                val success = MessageGatewayProvider.require().sendMessage(groupContact, replySegments)
 
                 if (!success) {
                     logger.warn("链接解析结果发送失败")
-                    MessageGatewayProvider.require().sendGroupMessage(
-                        groupId,
+                    MessageGatewayProvider.require().sendMessage(
+                        groupContact,
                         listOf(OutgoingPart.text("图片上传失败")),
                     )
                 }
@@ -191,8 +195,8 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
                 }
             } catch (e: Exception) {
                 logger.error("解析链接时出错: ${e.message}", e)
-                MessageGatewayProvider.require().sendGroupMessage(
-                    groupId,
+                MessageGatewayProvider.require().sendMessage(
+                    groupContact,
                     listOf(OutgoingPart.text("解析失败: ${e.message}")),
                 )
             }

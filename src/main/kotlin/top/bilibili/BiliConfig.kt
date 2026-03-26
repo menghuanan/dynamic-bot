@@ -1,13 +1,17 @@
 package top.bilibili
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import top.bilibili.service.TriggerMode
+import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.CacheType
 
 @Serializable
 data class BiliConfig(
     // 管理员
     val admin: Long = 0L,
+    @SerialName("admin_contact")
+    val adminContact: String = "",
 
     // 功能开关
     val enableConfig: EnableConfig = EnableConfig(),
@@ -38,7 +42,17 @@ data class BiliConfig(
 
     // 链接解析配置
     val linkResolveConfig: LinkResolveConfig = LinkResolveConfig(),
-)
+) {
+    /**
+     * 统一返回超级管理员联系人，优先使用显式 subject，再回退到旧 OneBot11 数字 QQ 号。
+     */
+    fun normalizedAdminSubject(): String? {
+        if (adminContact.isNotBlank()) {
+            return normalizeContactSubject(adminContact) ?: adminContact
+        }
+        return if (admin > 0L) "onebot11:private:$admin" else null
+    }
+}
 
 @Serializable
 data class EnableConfig(

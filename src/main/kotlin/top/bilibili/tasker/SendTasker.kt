@@ -11,9 +11,10 @@ import top.bilibili.DynamicFilter
 import top.bilibili.DynamicFilterType
 import top.bilibili.FilterMode
 import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformCapabilityService
+import top.bilibili.connector.PlatformContact
 import top.bilibili.core.BiliBiliBot
-import top.bilibili.core.ContactId
 import top.bilibili.data.BiliMessage
 import top.bilibili.data.DynamicMessage
 import top.bilibili.data.LiveCloseMessage
@@ -22,7 +23,8 @@ import top.bilibili.data.DynamicType
 import top.bilibili.service.AtAllService
 import top.bilibili.service.TemplateRenderService
 import top.bilibili.utils.actionNotify
-import top.bilibili.utils.parseContactId
+import top.bilibili.utils.parsePlatformContact
+import top.bilibili.utils.toSubject
 
 /**
  * 消息发送任务
@@ -34,8 +36,8 @@ object SendTasker : BiliTasker("SendTasker") {
     override val wrapMainInBusinessLifecycle = false
     private const val AT_ALL_WARN_INTERVAL_MS = 60 * 60 * 1000L
 
-    private val messageQueue = Channel<Pair<ContactId, List<OutgoingPart>>>(100)
-    private val atAllPermissionWarnTs = mutableMapOf<Long, Long>()
+    private val messageQueue = Channel<Pair<PlatformContact, List<OutgoingPart>>>(100)
+    private val atAllPermissionWarnTs = mutableMapOf<String, Long>()
 
     override fun init() {
         BiliBiliBot.logger.info("SendTasker 已启动")
@@ -74,10 +76,10 @@ object SendTasker : BiliTasker("SendTasker") {
                 val gateway = top.bilibili.service.MessageGatewayProvider.require()
                 var success = gateway.sendMessage(contact, segments)
 
-                if (!success && contact.type == "group" && containsAtAllSegment(segments)) {
+                if (!success && contact.type == PlatformChatType.GROUP && containsAtAllSegment(segments)) {
                     val downgradedSegments = segments.filterNot { it is OutgoingPart.MentionAll }
                     if (downgradedSegments.isNotEmpty()) {
-                        BiliBiliBot.logger.warn("检测到 @全体 发送失败，尝试降级重发: ${contact.type}:${contact.id}")
+                        BiliBiliBot.logger.warn("检测到 @全体 发送失败，尝试降级重发: ${contact.toSubject()}")
                         success = gateway.sendMessage(contact, downgradedSegments)
                         if (success) {
                             notifyAtAllFallback(contact.id)
@@ -86,9 +88,9 @@ object SendTasker : BiliTasker("SendTasker") {
                 }
 
                 if (success) {
-                    BiliBiliBot.logger.info("消息已发送到 ${contact.type}:${contact.id}")
+                    BiliBiliBot.logger.info("消息已发送到 {}", contact.toSubject())
                 } else {
-                    BiliBiliBot.logger.warn("消息发送失败: ${contact.type}:${contact.id}")
+                    BiliBiliBot.logger.warn("消息发送失败: {}", contact.toSubject())
                 }
 
                 // 鍙戦€侀棿闅?
@@ -166,7 +168,7 @@ object SendTasker : BiliTasker("SendTasker") {
         val specificContact = message.contact
         if (specificContact != null) {
             BiliBiliBot.logger.info("消息指定了联系人: $specificContact")
-            val contact = parseContactId(specificContact) ?: return
+            val contact = parsePlatformContact(specificContact) ?: return
             if (!shouldSendToContact(message, specificContact)) {
                 BiliBiliBot.logger.info("过滤器已拦截发送到 $specificContact")
                 return
@@ -181,7 +183,7 @@ object SendTasker : BiliTasker("SendTasker") {
         for (contactStr in contacts) {
             try {
                 BiliBiliBot.logger.info("处理联系人: $contactStr")
-                val contact = parseContactId(contactStr) ?: continue
+                val contact = parsePlatformContact(contactStr) ?: continue
 
                 // 检查是否被禁用
                 if (banList.contains(contactStr)) {
@@ -202,7 +204,7 @@ object SendTasker : BiliTasker("SendTasker") {
 
                 // 加入发送队列
                 messageQueue.send(contact to finalSegments)
-                BiliBiliBot.logger.info("消息已加入发送队列: ${contact.type}:${contact.id}")
+                BiliBiliBot.logger.info("消息已加入发送队列: {}", contact.toSubject())
 
                 // 消息间隔
                 delay(BiliConfigManager.config.pushConfig.messageInterval)
@@ -214,21 +216,21 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     private suspend fun applyAtAllIfNeeded(
-        contact: ContactId,
+        contact: PlatformContact,
         contactStr: String,
         message: BiliMessage,
         segments: List<OutgoingPart>
     ): List<OutgoingPart> {
-        if (contact.type != "group") return segments
+        if (contact.type != PlatformChatType.GROUP) return segments
         val alreadyAtAll = segments.any { it.type == "at" && it.data["qq"] == "all" }
         if (alreadyAtAll) return segments
         val atAllEnabled = AtAllService.shouldAtAll(contactStr, message.mid, message)
         if (!atAllEnabled) return segments
 
         val canAtAll = runCatching {
-            PlatformCapabilityService.canAtAllInGroup(contact.id)
+            PlatformCapabilityService.canAtAllInContact(contact)
         }.getOrElse {
-            BiliBiliBot.logger.warn("检查群 ${contact.id} 的 @全体 权限失败: ${it.message}")
+            BiliBiliBot.logger.warn("检查群 {} 的 @全体 权限失败: {}", contact.id, it.message)
             false
         }
 
@@ -240,22 +242,24 @@ object SendTasker : BiliTasker("SendTasker") {
         return listOf(OutgoingPart.atAll()) + segments
     }
 
-    private suspend fun notifyAtAllPermissionMissing(groupId: Long, uid: Long) {
+    private suspend fun notifyAtAllPermissionMissing(groupId: String, uid: Long) {
         val now = System.currentTimeMillis()
-        val last = atAllPermissionWarnTs[groupId]
+        val groupKey = groupId
+        val last = atAllPermissionWarnTs[groupKey]
         if (last != null && now - last < AT_ALL_WARN_INTERVAL_MS) return
-        atAllPermissionWarnTs[groupId] = now
+        atAllPermissionWarnTs[groupKey] = now
 
         val notice = "群 $groupId 已配置 At全体(UID: $uid)，但 Bot 无 @全体 权限，已自动降级为普通推送。请将 Bot 设为管理员。"
         runCatching { actionNotify(notice) }
             .onFailure { BiliBiliBot.logger.warn("发送 @全体 降级提醒失败: ${it.message}") }
     }
 
-    private suspend fun notifyAtAllFallback(groupId: Long) {
+    private suspend fun notifyAtAllFallback(groupId: String) {
         val now = System.currentTimeMillis()
-        val last = atAllPermissionWarnTs[groupId]
+        val groupKey = groupId
+        val last = atAllPermissionWarnTs[groupKey]
         if (last != null && now - last < AT_ALL_WARN_INTERVAL_MS) return
-        atAllPermissionWarnTs[groupId] = now
+        atAllPermissionWarnTs[groupKey] = now
 
         val notice = "群 $groupId 的 @全体 推送发送失败，已自动降级为普通推送。请检查 Bot 是否具备 @全体 权限或当日次数是否耗尽。"
         runCatching { actionNotify(notice) }

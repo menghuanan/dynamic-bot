@@ -3,16 +3,18 @@ package top.bilibili.service
 import top.bilibili.BiliConfigManager
 import top.bilibili.FilterMode
 import top.bilibili.FilterType
-import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformContact
+import top.bilibili.utils.toSubject
 
 object FilterCommandService {
-    suspend fun handle(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        if (!CommandPermission.isSuperAdmin(userId) && (!isGroup || !CommandPermission.isGroupAdmin(contactId, userId))) return
+    suspend fun handle(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
+        val isGroup = chatContact.type == PlatformChatType.GROUP
+        if (!CommandPermission.isSuperAdmin(senderContact) && (!isGroup || !CommandPermission.isGroupAdmin(chatContact, senderContact))) return
 
         if (args.size < 2) {
-            send(
-                contactId,
-                isGroup,
+            sendText(
+                chatContact,
                 """
                 用法:
                 /bili filter add <UID> <type|regex> <black|white> <内容>
@@ -24,18 +26,17 @@ object FilterCommandService {
         }
 
         when (args[1].lowercase()) {
-            "add" -> add(contactId, args, isGroup)
-            "list", "ls" -> list(contactId, args, isGroup)
-            "del", "delete", "rm" -> del(contactId, args, isGroup)
-            else -> send(contactId, isGroup, "未知的过滤器命令: ${args[1]}\n使用 /bili filter 查看帮助")
+            "add" -> add(chatContact, args)
+            "list", "ls" -> list(chatContact, args)
+            "del", "delete", "rm" -> del(chatContact, args)
+            else -> sendText(chatContact, "未知的过滤器命令: ${args[1]}\n使用 /bili filter 查看帮助")
         }
     }
 
-    private suspend fun add(contactId: Long, args: List<String>, isGroup: Boolean) {
+    private suspend fun add(chatContact: PlatformContact, args: List<String>) {
         if (args.size < 6) {
-            send(
-                contactId,
-                isGroup,
+            sendText(
+                chatContact,
                 """
                 用法:
                 /bili filter add <UID> type <black|white> <动态|转发动态|视频|音乐|专栏|直播>
@@ -47,7 +48,7 @@ object FilterCommandService {
 
         val uid = args[2].toLongOrNull()
         if (uid == null) {
-            send(contactId, isGroup, "UID 格式错误")
+            sendText(chatContact, "UID 格式错误")
             return
         }
 
@@ -55,7 +56,7 @@ object FilterCommandService {
             "type" -> FilterType.TYPE
             "regex" -> FilterType.REGULAR
             else -> {
-                send(contactId, isGroup, "过滤器类型错误，只能是 type 或 regex")
+                sendText(chatContact, "过滤器类型错误，只能是 type 或 regex")
                 return
             }
         }
@@ -64,51 +65,46 @@ object FilterCommandService {
             "black", "blacklist", "黑名单" -> FilterMode.BLACK_LIST
             "white", "whitelist", "白名单" -> FilterMode.WHITE_LIST
             else -> {
-                send(contactId, isGroup, "模式错误，只能是 black 或 white")
+                sendText(chatContact, "模式错误，只能是 black 或 white")
                 return
             }
         }
 
         val content = args.drop(5).joinToString(" ")
-        val subject = if (isGroup) "group:$contactId" else "private:$contactId"
+        val subject = chatContact.toSubject()
         val result = FilterService.addFilter(filterType, mode, content, uid, subject)
         BiliConfigManager.saveData()
-        send(contactId, isGroup, result)
+        sendText(chatContact, result)
     }
 
-    private suspend fun list(contactId: Long, args: List<String>, isGroup: Boolean) {
+    private suspend fun list(chatContact: PlatformContact, args: List<String>) {
         if (args.size < 3) {
-            send(contactId, isGroup, "用法: /bili filter list <UID>")
+            sendText(chatContact, "用法: /bili filter list <UID>")
             return
         }
         val uid = args[2].toLongOrNull()
         if (uid == null) {
-            send(contactId, isGroup, "UID 格式错误")
+            sendText(chatContact, "UID 格式错误")
             return
         }
-        val subject = if (isGroup) "group:$contactId" else "private:$contactId"
-        send(contactId, isGroup, FilterService.listFilter(uid, subject))
+        val subject = chatContact.toSubject()
+        sendText(chatContact, FilterService.listFilter(uid, subject))
     }
 
-    private suspend fun del(contactId: Long, args: List<String>, isGroup: Boolean) {
+    private suspend fun del(chatContact: PlatformContact, args: List<String>) {
         if (args.size < 4) {
-            send(contactId, isGroup, "用法: /bili filter del <UID> <索引>\n示例: /bili filter del 123456 t0")
+            sendText(chatContact, "用法: /bili filter del <UID> <索引>\n示例: /bili filter del 123456 t0")
             return
         }
         val uid = args[2].toLongOrNull()
         if (uid == null) {
-            send(contactId, isGroup, "UID 格式错误")
+            sendText(chatContact, "UID 格式错误")
             return
         }
         val index = args[3]
-        val subject = if (isGroup) "group:$contactId" else "private:$contactId"
+        val subject = chatContact.toSubject()
         val result = FilterService.delFilter(index, uid, subject)
         BiliConfigManager.saveData()
-        send(contactId, isGroup, result)
-    }
-
-    private suspend fun send(contactId: Long, isGroup: Boolean, msg: String) {
-        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
-        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
+        sendText(chatContact, result)
     }
 }

@@ -21,7 +21,8 @@ data class BiliDataWrapper(
     var atAll: MutableMap<String, MutableMap<Long, MutableSet<AtAllType>>> = mutableMapOf(),
     var group: MutableMap<String, Group> = mutableMapOf(),
     var bangumi: MutableMap<Long, Bangumi> = mutableMapOf(),
-    var linkParseBlacklist: MutableSet<Long> = mutableSetOf()
+    var linkParseBlacklist: MutableSet<Long> = mutableSetOf(),
+    var linkParseBlacklistContacts: MutableSet<String> = mutableSetOf(),
 ) {
     companion object {
         /** 从 BiliData object 创建包装类 */
@@ -40,7 +41,8 @@ data class BiliDataWrapper(
                 atAll = biliData.atAll,
                 group = biliData.group,
                 bangumi = biliData.bangumi,
-                linkParseBlacklist = biliData.linkParseBlacklist
+                linkParseBlacklist = biliData.linkParseBlacklist,
+                linkParseBlacklistContacts = biliData.linkParseBlacklistContacts,
             )
         }
 
@@ -60,6 +62,7 @@ data class BiliDataWrapper(
             biliData.group = wrapper.group
             biliData.bangumi = wrapper.bangumi
             biliData.linkParseBlacklist = wrapper.linkParseBlacklist
+            biliData.linkParseBlacklistContacts = wrapper.linkParseBlacklistContacts
         }
     }
 }

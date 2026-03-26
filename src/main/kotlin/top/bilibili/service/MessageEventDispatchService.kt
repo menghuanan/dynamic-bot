@@ -23,21 +23,18 @@ object MessageEventDispatchService {
     }
 
     private suspend fun handleGroupMessage(event: PlatformInboundMessage) {
-        val groupId = event.chatId.toLongOrNull() ?: return
-        val userId = event.senderId.toLongOrNull() ?: return
         val simplified = MessageLogFormatter.simplify(event.messageText) { length ->
             BiliBiliBot.logger.warn("消息过长 ($length)，已截断")
         }
-        BiliBiliBot.logger.info("群消息[$groupId] 来自 $userId: $simplified")
+        BiliBiliBot.logger.info("群消息[{}] 来自 {}: {}", event.chatContact.id, event.senderContact.id, simplified)
         MessageCommandRouterService.handleGroupMessage(event)
     }
 
     private suspend fun handlePrivateMessage(event: PlatformInboundMessage) {
-        val userId = event.senderId.toLongOrNull() ?: return
         val simplified = MessageLogFormatter.simplify(event.messageText) { length ->
             BiliBiliBot.logger.warn("消息过长 ($length)，已截断")
         }
-        BiliBiliBot.logger.info("私聊消息 来自 $userId: $simplified")
+        BiliBiliBot.logger.info("私聊消息 来自 {}: {}", event.senderContact.id, simplified)
         MessageCommandRouterService.handlePrivateMessage(event)
     }
 }

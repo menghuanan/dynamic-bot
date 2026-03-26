@@ -15,6 +15,8 @@ import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfigManager
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformAdapter
+import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformType
 import top.bilibili.connector.onebot11.OneBot11Adapter
 import top.bilibili.connector.qqofficial.QQOfficialAdapter
@@ -39,6 +41,7 @@ import top.bilibili.service.TaskBootstrapService
 import top.bilibili.service.closeServiceClient
 import top.bilibili.tasker.BiliCheckTasker
 import top.bilibili.tasker.BiliTasker
+import top.bilibili.utils.parsePlatformContact
 import top.bilibili.utils.ImageCache
 import top.bilibili.utils.actionNotify
 import java.io.File
@@ -209,7 +212,7 @@ object BiliBiliBot : CoroutineScope {
             }
 
             if (!config.validateSelectedPlatform()) {
-                logger.error("NapCat 配置无效，请检查 config/bot.yml")
+                logger.error("平台配置无效，请检查 config/bot.yml 中的 {}", config.selectedPlatformType())
                 isRunning.set(false)
                 lifecycleState.set(BotLifecycleState.STOPPED)
                 return
@@ -227,7 +230,7 @@ object BiliBiliBot : CoroutineScope {
             MessageGatewayProvider.register(
                 NapCatMessageGateway(
                     platformAdapterProvider = { requirePlatformAdapter() },
-                    adminIdProvider = { BiliConfigManager.config.admin },
+                    adminContactProvider = { BiliConfigManager.config.normalizedAdminSubject() },
                     logger = logger,
                 ),
             )
@@ -346,19 +349,39 @@ object BiliBiliBot : CoroutineScope {
         }
     }
 
+    /**
+     * 为仍在迁移中的 OneBot11 调用方保留数字群号发送入口。
+     */
+    @Deprecated(
+        message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",
+        replaceWith = ReplaceWith("sendMessage(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()), message)"),
+    )
     suspend fun sendGroupMessage(groupId: Long, message: List<OutgoingPart>): Boolean {
-        return MessageGatewayProvider.require().sendGroupMessage(groupId, message)
+        return MessageGatewayProvider.require().sendMessage(
+            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()),
+            message,
+        )
     }
 
+    /**
+     * 为仍在迁移中的 OneBot11 调用方保留数字私聊发送入口。
+     */
+    @Deprecated(
+        message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",
+        replaceWith = ReplaceWith("sendMessage(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, userId.toString()), message)"),
+    )
     suspend fun sendPrivateMessage(userId: Long, message: List<OutgoingPart>): Boolean {
-        return MessageGatewayProvider.require().sendPrivateMessage(userId, message)
+        return MessageGatewayProvider.require().sendMessage(
+            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, userId.toString()),
+            message,
+        )
     }
 
     suspend fun sendAdminMessage(message: String): Boolean {
         return MessageGatewayProvider.require().sendAdminMessage(message)
     }
 
-    suspend fun sendMessage(contact: ContactId, message: List<OutgoingPart>): Boolean {
+    suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean {
         return MessageGatewayProvider.require().sendMessage(contact, message)
     }
 

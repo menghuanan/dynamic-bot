@@ -15,7 +15,7 @@ class AdminNoticeWiringRegressionTest {
         val sendTasker = read("src/main/kotlin/top/bilibili/tasker/SendTasker.kt")
         val cacheClear = read("src/main/kotlin/top/bilibili/tasker/CacheClearTasker.kt")
 
-        assertTrue(general.contains("FeatureSwitchService.canSendManagedAdminNotice"))
+        assertTrue(general.contains("PlatformCapabilityService.canSendManagedAdminNotice"))
         assertTrue(sendTasker.contains("actionNotify(") || sendTasker.contains("FeatureSwitchService.canSendManagedAdminNotice"))
         assertTrue(cacheClear.contains("actionNotify(") || cacheClear.contains("FeatureSwitchService.canSendManagedAdminNotice"))
     }

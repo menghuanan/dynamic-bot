@@ -14,6 +14,7 @@ import top.bilibili.utils.actionNotify
 import top.bilibili.utils.containsEquivalentSubject
 import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parseContactId
+import top.bilibili.utils.parsePlatformContact
 
 object DynamicService {
     private val mutex = Mutex()
@@ -411,10 +412,10 @@ object DynamicService {
             val custom = mutableListOf<String>()
 
             user.forEach { subject ->
-                val contact = parseContactId(subject)
+                val contact = parsePlatformContact(subject)
                 when (contact?.type) {
-                    "group" -> groups.add("群@${contact.id}")
-                    "private" -> privates.add("私聊@${contact.id}")
+                    top.bilibili.connector.PlatformChatType.GROUP -> groups.add("群@${contact.id}")
+                    top.bilibili.connector.PlatformChatType.PRIVATE -> privates.add("私聊@${contact.id}")
                     else -> custom.add(subject)
                 }
             }

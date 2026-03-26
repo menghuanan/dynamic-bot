@@ -1,7 +1,6 @@
 package top.bilibili.service
 
 import kotlinx.coroutines.launch
-import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformInboundMessage
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.core.resource.BusinessLifecycleManager
@@ -10,15 +9,15 @@ import top.bilibili.tasker.DynamicCheckTasker
 
 object MessageCommandRouterService {
     suspend fun handleGroupMessage(event: PlatformInboundMessage) {
-        val groupId = event.chatId.toLongOrNull() ?: return
-        val userId = event.senderId.toLongOrNull() ?: return
+        val groupContact = event.chatContact
+        val senderContact = event.senderContact
         val message = event.messageText.trim()
-        val isSuperAdmin = CommandPermission.isSuperAdmin(userId)
+        val isSuperAdmin = CommandPermission.isSuperAdmin(senderContact)
 
         if (isSuperAdmin && (message == "/login" || message == "登录")) {
             BiliBiliBot.logger.info("收到登录命令，准备发送二维码...")
-            launchManaged(operation = "group:/login:$groupId") {
-                LoginService.login(isGroup = true, contactId = groupId)
+            launchManaged(operation = "group:/login:${groupContact.id}") {
+                LoginService.login(groupContact)
             }
             return
         }
@@ -26,9 +25,9 @@ object MessageCommandRouterService {
         if (isSuperAdmin && message.startsWith("/add ")) {
             val uid = message.removePrefix("/add ").trim().toLongOrNull()
             if (uid == null) {
-                send(groupId, true, "UID 格式错误")
+                sendText(groupContact, "UID 格式错误")
             } else {
-                QuickSubscriptionService.subscribe(groupId, uid, isGroup = true)
+                QuickSubscriptionService.subscribe(groupContact, uid)
             }
             return
         }
@@ -36,41 +35,41 @@ object MessageCommandRouterService {
         if (isSuperAdmin && message.startsWith("/del ")) {
             val uid = message.removePrefix("/del ").trim().toLongOrNull()
             if (uid == null) {
-                send(groupId, true, "UID 格式错误")
+                sendText(groupContact, "UID 格式错误")
             } else {
-                QuickSubscriptionService.unsubscribe(groupId, uid, isGroup = true)
+                QuickSubscriptionService.unsubscribe(groupContact, uid)
             }
             return
         }
 
         if (isSuperAdmin && message == "/list") {
-            QuickSubscriptionService.listSubscriptions(groupId, isGroup = true)
+            QuickSubscriptionService.listSubscriptions(groupContact)
             return
         }
 
         if (isSuperAdmin) {
             when {
                 message == "/black list" -> {
-                    BlacklistCommandService.quickList(groupId, isGroup = true)
+                    BlacklistCommandService.quickList(groupContact)
                     return
                 }
 
                 message.startsWith("/black ") -> {
-                    val targetId = message.removePrefix("/black ").trim().toLongOrNull()
-                    if (targetId == null) {
-                        send(groupId, true, "QQ号格式错误")
+                    val targetId = message.removePrefix("/black ").trim()
+                    if (targetId.isBlank()) {
+                        sendText(groupContact, "QQ号格式错误")
                     } else {
-                        BlacklistCommandService.quickAdd(groupId, targetId, isGroup = true)
+                        BlacklistCommandService.quickAdd(groupContact, targetId)
                     }
                     return
                 }
 
                 message.startsWith("/unblock ") -> {
-                    val targetId = message.removePrefix("/unblock ").trim().toLongOrNull()
-                    if (targetId == null) {
-                        send(groupId, true, "QQ号格式错误")
+                    val targetId = message.removePrefix("/unblock ").trim()
+                    if (targetId.isBlank()) {
+                        sendText(groupContact, "QQ号格式错误")
                     } else {
-                        BlacklistCommandService.quickRemove(groupId, targetId, isGroup = true)
+                        BlacklistCommandService.quickRemove(groupContact, targetId)
                     }
                     return
                 }
@@ -78,24 +77,24 @@ object MessageCommandRouterService {
         }
 
         if (isSuperAdmin && message == "/check") {
-            send(groupId, true, "正在检查动态...")
+            sendText(groupContact, "正在检查动态...")
             launchManaged(
-                operation = "group:/check:$groupId",
+                operation = "group:/check:${groupContact.id}",
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
             ) {
                 BusinessLifecycleManager.run(
                     owner = "MessageCommandRouterService",
-                    operation = "group:/check:$groupId",
+                    operation = "group:/check:${groupContact.id}",
                 ) {
                     try {
                         val result = DynamicCheckTasker.executeManualCheck()
                         if (result > 0) {
-                            send(groupId, true, "检查完成，检测到 $result 条动态，正在处理...")
+                            sendText(groupContact, "检查完成，检测到 $result 条动态，正在处理...")
                         } else {
-                            send(groupId, true, "检查完成，没有新动态")
+                            sendText(groupContact, "检查完成，没有新动态")
                         }
                     } catch (e: Exception) {
-                        send(groupId, true, "检查失败: ${e.message}")
+                        sendText(groupContact, "检查失败: ${e.message}")
                         BiliBiliBot.logger.error("手动检查失败", e)
                     }
                 }
@@ -103,20 +102,21 @@ object MessageCommandRouterService {
             return
         }
 
-        if (message.startsWith("/bili ") && (isSuperAdmin || CommandPermission.isGroupAdmin(groupId, userId))) {
-            BiliCommandDispatchService.dispatch(groupId, userId, message, isGroup = true)
+        if (message.startsWith("/bili ") && (isSuperAdmin || CommandPermission.isGroupAdmin(groupContact, senderContact))) {
+            BiliCommandDispatchService.dispatch(groupContact, senderContact, message)
         }
     }
 
     suspend fun handlePrivateMessage(event: PlatformInboundMessage) {
-        val userId = event.senderId.toLongOrNull() ?: return
+        val userContact = event.chatContact
+        val senderContact = event.senderContact
         val message = event.messageText.trim()
-        val isSuperAdmin = CommandPermission.isSuperAdmin(userId)
+        val isSuperAdmin = CommandPermission.isSuperAdmin(senderContact)
 
         if (isSuperAdmin && (message == "/login" || message == "登录")) {
             BiliBiliBot.logger.info("收到登录命令，准备发送二维码...")
-            launchManaged(operation = "private:/login:$userId") {
-                LoginService.login(isGroup = false, contactId = userId)
+            launchManaged(operation = "private:/login:${userContact.id}") {
+                LoginService.login(userContact)
             }
             return
         }
@@ -126,9 +126,9 @@ object MessageCommandRouterService {
         if (message.startsWith("/add ")) {
             val uid = message.removePrefix("/add ").trim().toLongOrNull()
             if (uid == null) {
-                send(userId, false, "UID 格式错误")
+                sendText(userContact, "UID 格式错误")
             } else {
-                QuickSubscriptionService.subscribe(userId, uid, isGroup = false)
+                QuickSubscriptionService.subscribe(userContact, uid)
             }
             return
         }
@@ -136,20 +136,20 @@ object MessageCommandRouterService {
         if (message.startsWith("/del ")) {
             val uid = message.removePrefix("/del ").trim().toLongOrNull()
             if (uid == null) {
-                send(userId, false, "UID 格式错误")
+                sendText(userContact, "UID 格式错误")
             } else {
-                QuickSubscriptionService.unsubscribe(userId, uid, isGroup = false)
+                QuickSubscriptionService.unsubscribe(userContact, uid)
             }
             return
         }
 
         if (message == "/list") {
-            QuickSubscriptionService.listSubscriptions(userId, isGroup = false)
+            QuickSubscriptionService.listSubscriptions(userContact)
             return
         }
 
         if (message.startsWith("/bili ")) {
-            BiliCommandDispatchService.dispatch(userId, userId, message, isGroup = false)
+            BiliCommandDispatchService.dispatch(userContact, senderContact, message)
         }
     }
 
@@ -166,14 +166,6 @@ object MessageCommandRouterService {
             ) {
                 block()
             }
-        }
-    }
-
-    private suspend fun send(contactId: Long, isGroup: Boolean, text: String) {
-        if (isGroup) {
-            MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(text)))
-        } else {
-            MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(text)))
         }
     }
 }

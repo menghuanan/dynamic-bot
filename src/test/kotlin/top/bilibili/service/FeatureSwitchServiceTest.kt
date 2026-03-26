@@ -62,15 +62,16 @@ class FeatureSwitchServiceTest {
     fun `managed admin notice follows notify switch and skips self-notify for admin subject`() {
         val config = BiliConfig(
             admin = 42L,
+            adminContact = "onebot11:private:42",
             enableConfig = EnableConfig(notifyEnable = true),
         )
 
-        assertTrue(FeatureSwitchService.canSendManagedAdminNotice(config, subject = 7L))
-        assertFalse(FeatureSwitchService.canSendManagedAdminNotice(config, subject = 42L))
+        assertTrue(FeatureSwitchService.canSendManagedAdminNotice(config, subject = "onebot11:private:7"))
+        assertFalse(FeatureSwitchService.canSendManagedAdminNotice(config, subject = "onebot11:private:42"))
         assertFalse(
             FeatureSwitchService.canSendManagedAdminNotice(
                 config.copy(enableConfig = config.enableConfig.copy(notifyEnable = false)),
-                subject = 7L
+                subject = "onebot11:private:7"
             )
         )
     }

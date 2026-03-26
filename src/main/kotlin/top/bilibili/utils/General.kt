@@ -643,12 +643,12 @@ data class ActionMessage(
 )
 
 // TODO: 以下通知函数需要使用新的消息发送机制重新实现
-suspend fun actionNotify(subject: Long?, operator: String, target: String, action: String, message: String) {
+suspend fun actionNotify(subject: String?, operator: String, target: String, action: String, message: String) {
     actionNotify(subject, ActionMessage(operator, target, action, message))
 }
 
-suspend fun actionNotify(subject: Long?, message: ActionMessage) {
-    if (top.bilibili.service.FeatureSwitchService.canSendManagedAdminNotice(subject = subject)) {
+suspend fun actionNotify(subject: String?, message: ActionMessage) {
+    if (top.bilibili.connector.PlatformCapabilityService.canSendManagedAdminNotice(subject = subject)) {
         actionNotify(buildString {
             appendLine("操作人: ${message.operator}")
             appendLine("目标: ${message.target}")
@@ -659,7 +659,7 @@ suspend fun actionNotify(subject: Long?, message: ActionMessage) {
 }
 
 suspend fun actionNotify(message: String) {
-    if (!top.bilibili.service.FeatureSwitchService.canSendManagedAdminNotice()) return
+    if (!top.bilibili.connector.PlatformCapabilityService.canSendManagedAdminNotice()) return
     val success = top.bilibili.service.MessageGatewayProvider.require().sendAdminMessage(message)
     if (!success) {
         logger.info("通知消息: $message")

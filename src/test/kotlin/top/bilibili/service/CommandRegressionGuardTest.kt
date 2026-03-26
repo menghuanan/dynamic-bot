@@ -35,7 +35,7 @@ class CommandRegressionGuardTest {
         val text = read("src/main/kotlin/top/bilibili/service/MessageCommandRouterService.kt")
         assertTrue(text.contains("message == \"/check\""))
         assertTrue(text.contains("DynamicCheckTasker.executeManualCheck()"))
-        assertTrue(text.contains("send(groupId, true"))
+        assertTrue(text.contains("sendText(groupContact"), "check route should still reply back into the current group contact")
     }
 
     @Test
@@ -74,7 +74,7 @@ class CommandRegressionGuardTest {
     fun `send path should inject napcat at-all segment when policy matches`() {
         val text = read("src/main/kotlin/top/bilibili/tasker/SendTasker.kt")
         assertTrue(text.contains("OutgoingPart.atAll()"), "send path should support real at-all segment injection")
-        assertTrue(text.contains("canAtAllInGroup"), "send path should verify group at-all permission before injecting segment")
+        assertTrue(text.contains("canAtAllInContact"), "send path should verify group at-all permission before injecting segment")
         assertTrue(text.contains("filterNot { it is OutgoingPart.MentionAll"), "send path should retry downgrade without at-all segment on failure")
     }
 
@@ -168,7 +168,7 @@ class CommandRegressionGuardTest {
         val listener = read("src/main/kotlin/top/bilibili/tasker/ListenerTasker.kt")
         val resolve = read("src/main/kotlin/top/bilibili/service/ResolveLinkService.kt")
         assertTrue(
-            listener.contains("matchingAllRegular(link, \"group:\$groupId\")"),
+            listener.contains("matchingAllRegular(link, groupContact.toSubject())"),
             "listener should pass group subject into resolve matching",
         )
         assertTrue(

@@ -3,6 +3,7 @@ package top.bilibili.config
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import top.bilibili.connector.PlatformType
+import top.bilibili.utils.normalizeContactSubject
 
 @Serializable
 data class NapCatConfig(
@@ -41,10 +42,26 @@ data class NapCatConfig(
 data class TargetConfig(
     val type: String,
     val id: Long,
+    @SerialName("contact")
+    val contact: String = "",
     // 尚未启用:
     // @SerialName("enable_link_parse")
     // val enableLinkParse: Boolean = true
 ) {
+    /**
+     * 统一返回目标联系人 subject；若未显式配置则回退到旧 OneBot11 数字字段。
+     */
+    fun normalizedContact(): String? {
+        if (contact.isNotBlank()) {
+            return normalizeContactSubject(contact) ?: contact
+        }
+        return when (type) {
+            "group" -> "onebot11:group:$id"
+            "private" -> "onebot11:private:$id"
+            else -> null
+        }
+    }
+
     companion object {
         fun group(groupId: Long) = TargetConfig("group", groupId)
 
@@ -54,9 +71,38 @@ data class TargetConfig(
 
 @Serializable
 data class GroupAdminConfig(
-    val groupId: Long,
+    val groupId: Long = 0L,
     val userIds: MutableList<Long> = mutableListOf(),
-)
+    @SerialName("group_contact")
+    val groupContact: String = "",
+    @SerialName("user_contacts")
+    val userContacts: MutableList<String> = mutableListOf(),
+) {
+    /**
+     * 统一返回管理员配置绑定的群联系人。
+     */
+    fun normalizedGroupContact(): String? {
+        if (groupContact.isNotBlank()) {
+            return normalizeContactSubject(groupContact) ?: groupContact
+        }
+        return if (groupId > 0L) "onebot11:group:$groupId" else null
+    }
+
+    /**
+     * 统一返回管理员配置绑定的用户联系人集合。
+     */
+    fun normalizedUserContacts(): Set<String> {
+        val normalized = linkedSetOf<String>()
+        userContacts.forEach { raw ->
+            val subject = normalizeContactSubject(raw) ?: raw
+            normalized += subject
+        }
+        userIds.filter { it > 0L }.forEach { id ->
+            normalized += "onebot11:private:$id"
+        }
+        return normalized
+    }
+}
 
 @Serializable
 data class QQOfficialConfig(
@@ -99,7 +145,10 @@ data class BotConfig(
     fun validateSelectedPlatform(): Boolean {
         return when (selectedPlatformType()) {
             PlatformType.ONEBOT11 -> selectedOneBot11Config().validate()
-            PlatformType.QQ_OFFICIAL -> true
+            PlatformType.QQ_OFFICIAL -> {
+                platform.qqOfficial.appId.isNotBlank() &&
+                    platform.qqOfficial.appSecret.isNotBlank()
+            }
         }
     }
 }

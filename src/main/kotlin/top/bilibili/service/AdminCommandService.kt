@@ -2,16 +2,20 @@ package top.bilibili.service
 
 import top.bilibili.config.ConfigManager
 import top.bilibili.config.GroupAdminConfig
-import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformContact
+import top.bilibili.utils.parseCommandPlatformContact
+import top.bilibili.utils.subjectsEquivalent
+import top.bilibili.utils.toSubject
 
 object AdminCommandService {
-    suspend fun handle(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
-        if (!CommandPermission.isSuperAdmin(userId)) return
+    suspend fun handle(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
+        if (!CommandPermission.isSuperAdmin(senderContact)) return
+        val isGroup = chatContact.type == PlatformChatType.GROUP
 
         if (args.size < 2) {
-            send(
-                contactId,
-                isGroup,
+            sendText(
+                chatContact,
                 """
                 用法:
                 /bili admin add <QQ号> - 添加本群普通管理员
@@ -24,109 +28,115 @@ object AdminCommandService {
         }
 
         when (args[1].lowercase()) {
-            "add" -> add(contactId, args, isGroup)
-            "remove", "rm" -> remove(contactId, args, isGroup)
-            "list", "ls" -> list(contactId, isGroup)
-            "all" -> all(contactId, isGroup)
-            else -> send(contactId, isGroup, "未知子命令: ${args[1]}")
+            "add" -> add(chatContact, args)
+            "remove", "rm" -> remove(chatContact, args)
+            "list", "ls" -> list(chatContact)
+            "all" -> all(chatContact)
+            else -> sendText(chatContact, "未知子命令: ${args[1]}")
         }
     }
 
-    private suspend fun add(contactId: Long, args: List<String>, isGroup: Boolean) {
-        if (!isGroup) {
-            send(contactId, false, "请在群聊中使用此命令")
+    private suspend fun add(chatContact: PlatformContact, args: List<String>) {
+        if (chatContact.type != PlatformChatType.GROUP) {
+            sendText(chatContact, "请在群聊中使用此命令")
             return
         }
         if (args.size < 3) {
-            send(contactId, true, "用法: /bili admin add <QQ号>")
+            sendText(chatContact, "用法: /bili admin add <QQ号>")
             return
         }
 
-        val targetId = args[2].toLongOrNull()
-        if (targetId == null) {
-            send(contactId, true, "QQ号格式错误")
+        val targetContact = parseCommandPlatformContact(
+            raw = args[2],
+            defaultPlatform = chatContact.platform,
+            defaultType = PlatformChatType.PRIVATE,
+        )
+        if (targetContact == null) {
+            sendText(chatContact, "QQ号格式错误")
             return
         }
 
         val admins = ConfigManager.botConfig.admins
-        var groupConfig = admins.find { it.groupId == contactId }
+        var groupConfig = admins.find { subjectsEquivalent(it.normalizedGroupContact(), chatContact.toSubject()) }
         if (groupConfig == null) {
-            groupConfig = GroupAdminConfig(contactId)
+            groupConfig = GroupAdminConfig(groupContact = chatContact.toSubject())
             admins.add(groupConfig)
         }
 
-        if (targetId in groupConfig.userIds) {
-            send(contactId, true, "用户 $targetId 已经是本群管理员")
+        if (groupConfig.normalizedUserContacts().any { subjectsEquivalent(it, targetContact.toSubject()) }) {
+            sendText(chatContact, "用户 ${targetContact.id} 已经是本群管理员")
             return
         }
 
-        groupConfig.userIds.add(targetId)
+        groupConfig.userContacts.add(targetContact.toSubject())
         ConfigManager.saveConfig()
-        send(contactId, true, "已将 $targetId 添加为本群普通管理员")
+        sendText(chatContact, "已将 ${targetContact.id} 添加为本群普通管理员")
     }
 
-    private suspend fun remove(contactId: Long, args: List<String>, isGroup: Boolean) {
-        if (!isGroup) {
-            send(contactId, false, "请在群聊中使用此命令")
+    private suspend fun remove(chatContact: PlatformContact, args: List<String>) {
+        if (chatContact.type != PlatformChatType.GROUP) {
+            sendText(chatContact, "请在群聊中使用此命令")
             return
         }
         if (args.size < 3) {
-            send(contactId, true, "用法: /bili admin remove <QQ号>")
+            sendText(chatContact, "用法: /bili admin remove <QQ号>")
             return
         }
 
-        val targetId = args[2].toLongOrNull()
-        if (targetId == null) {
-            send(contactId, true, "QQ号格式错误")
+        val targetContact = parseCommandPlatformContact(
+            raw = args[2],
+            defaultPlatform = chatContact.platform,
+            defaultType = PlatformChatType.PRIVATE,
+        )
+        if (targetContact == null) {
+            sendText(chatContact, "QQ号格式错误")
             return
         }
 
-        val groupConfig = ConfigManager.botConfig.admins.find { it.groupId == contactId }
-        if (groupConfig == null || targetId !in groupConfig.userIds) {
-            send(contactId, true, "用户 $targetId 不是本群管理员")
+        val groupConfig = ConfigManager.botConfig.admins.find { subjectsEquivalent(it.normalizedGroupContact(), chatContact.toSubject()) }
+        if (groupConfig == null || groupConfig.normalizedUserContacts().none { subjectsEquivalent(it, targetContact.toSubject()) }) {
+            sendText(chatContact, "用户 ${targetContact.id} 不是本群管理员")
             return
         }
 
-        groupConfig.userIds.remove(targetId)
-        if (groupConfig.userIds.isEmpty()) {
+        groupConfig.userContacts.removeIf { subjectsEquivalent(it, targetContact.toSubject()) }
+        targetContact.id.toLongOrNull()?.let(groupConfig.userIds::remove)
+        if (groupConfig.userIds.isEmpty() && groupConfig.userContacts.isEmpty()) {
             ConfigManager.botConfig.admins.remove(groupConfig)
         }
         ConfigManager.saveConfig()
-        send(contactId, true, "已移除 $targetId 的本群普通管理员身份")
+        sendText(chatContact, "已移除 ${targetContact.id} 的本群普通管理员身份")
     }
 
-    private suspend fun list(contactId: Long, isGroup: Boolean) {
-        if (!isGroup) {
-            send(contactId, false, "请在群聊中使用此命令")
+    private suspend fun list(chatContact: PlatformContact) {
+        if (chatContact.type != PlatformChatType.GROUP) {
+            sendText(chatContact, "请在群聊中使用此命令")
             return
         }
-        val groupConfig = ConfigManager.botConfig.admins.find { it.groupId == contactId }
-        if (groupConfig == null || groupConfig.userIds.isEmpty()) {
-            send(contactId, true, "本群暂无普通管理员")
+        val groupConfig = ConfigManager.botConfig.admins.find { subjectsEquivalent(it.normalizedGroupContact(), chatContact.toSubject()) }
+        val admins = groupConfig?.normalizedUserContacts().orEmpty()
+        if (groupConfig == null || admins.isEmpty()) {
+            sendText(chatContact, "本群暂无普通管理员")
         } else {
-            send(contactId, true, "本群普通管理员: ${groupConfig.userIds.joinToString("、")}")
+            sendText(chatContact, "本群普通管理员: ${admins.joinToString("、")}")
         }
     }
 
-    private suspend fun all(contactId: Long, isGroup: Boolean) {
+    private suspend fun all(chatContact: PlatformContact) {
         val admins = ConfigManager.botConfig.admins
         if (admins.isEmpty()) {
-            send(contactId, isGroup, "暂无任何普通管理员")
+            sendText(chatContact, "暂无任何普通管理员")
             return
         }
 
         val sb = StringBuilder()
         admins.forEach { cfg ->
-            if (cfg.userIds.isNotEmpty()) {
-                sb.append("群聊: ${cfg.groupId}\n")
-                sb.append("普通管理员: ${cfg.userIds.joinToString("、")}\n")
+            val users = cfg.normalizedUserContacts()
+            if (users.isNotEmpty()) {
+                sb.append("群聊: ${cfg.normalizedGroupContact()}\n")
+                sb.append("普通管理员: ${users.joinToString("、")}\n")
             }
         }
-        send(contactId, isGroup, sb.toString().trim())
-    }
-
-    private suspend fun send(contactId: Long, isGroup: Boolean, msg: String) {
-        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
-        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
+        sendText(chatContact, sb.toString().trim())
     }
 }

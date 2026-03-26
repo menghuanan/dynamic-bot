@@ -1,5 +1,6 @@
 package top.bilibili.utils
 
+import top.bilibili.connector.PlatformContact
 import top.bilibili.core.ContactId
 
 /**
@@ -31,4 +32,11 @@ fun parseContactId(contactStr: String): ContactId? {
     } catch (e: Exception) {
         null
     }
+}
+
+/**
+ * 解析运行时平台联系人；兼容旧 OneBot11 subject 和新的多平台 subject。
+ */
+fun parsePlatformContactOrNull(contactStr: String): PlatformContact? {
+    return parsePlatformContact(contactStr)
 }
