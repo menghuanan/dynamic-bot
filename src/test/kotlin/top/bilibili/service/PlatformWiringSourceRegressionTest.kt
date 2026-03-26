@@ -35,6 +35,22 @@ class PlatformWiringSourceRegressionTest {
         assertTrue(managerSource.contains("selectedPlatformType"))
     }
 
+    // 约束启动选择必须显式区分 NapCat 与通用 OneBot11，避免继续把供应商实现藏在协议类型后面。
+    @Test
+    fun `bot startup should distinguish napcat from generic onebot11 adapter selection`() {
+        val modelSource = File("src/main/kotlin/top/bilibili/connector/PlatformModels.kt").readText()
+        val configSource = File("src/main/kotlin/top/bilibili/config/NapCatConfig.kt").readText()
+        val botSource = File("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt").readText()
+
+        assertTrue(modelSource.contains("enum class PlatformAdapterKind"))
+        assertTrue(modelSource.contains("NAPCAT"))
+        assertTrue(modelSource.contains("ONEBOT11"))
+        assertTrue(configSource.contains("selectedAdapterKind"))
+        assertTrue(botSource.contains("config.selectedAdapterKind()"))
+        assertTrue(botSource.contains("PlatformAdapterKind.NAPCAT"))
+        assertTrue(botSource.contains("PlatformAdapterKind.ONEBOT11"))
+    }
+
     @Test
     fun `main ingress should only rely on neutral inbound fields`() {
         val dispatchSource = File("src/main/kotlin/top/bilibili/service/MessageEventDispatchService.kt").readText()

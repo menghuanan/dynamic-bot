@@ -2,6 +2,7 @@ package top.bilibili.config
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import top.bilibili.connector.PlatformAdapterKind
 import top.bilibili.connector.PlatformType
 import top.bilibili.utils.normalizeContactSubject
 
@@ -117,6 +118,8 @@ data class QQOfficialConfig(
 @Serializable
 data class PlatformConfig(
     val type: PlatformType = PlatformType.ONEBOT11,
+    @SerialName("adapter")
+    val adapter: PlatformAdapterKind? = null,
     val onebot11: NapCatConfig = NapCatConfig(),
     @SerialName("qq_official")
     val qqOfficial: QQOfficialConfig = QQOfficialConfig(),
@@ -133,6 +136,21 @@ data class BotConfig(
     var firstRunFlag: Int = 0,
 ) {
     fun selectedPlatformType(): PlatformType = platform.type
+
+    /**
+     * 为 OneBot11 路径返回显式适配器选择；旧配置未声明时继续回退到 NapCat，确保兼容历史部署。
+     */
+    fun selectedAdapterKind(): PlatformAdapterKind {
+        return when (selectedPlatformType()) {
+            PlatformType.ONEBOT11 -> {
+                when (platform.adapter) {
+                    PlatformAdapterKind.ONEBOT11 -> PlatformAdapterKind.ONEBOT11
+                    else -> PlatformAdapterKind.NAPCAT
+                }
+            }
+            PlatformType.QQ_OFFICIAL -> PlatformAdapterKind.QQ_OFFICIAL
+        }
+    }
 
     fun selectedOneBot11Config(): NapCatConfig {
         return if (platform.onebot11 == NapCatConfig() && napcat != NapCatConfig()) {

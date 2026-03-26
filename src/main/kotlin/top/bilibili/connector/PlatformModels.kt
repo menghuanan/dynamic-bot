@@ -12,6 +12,16 @@ enum class PlatformType {
 }
 
 @Serializable
+enum class PlatformAdapterKind {
+    @SerialName("napcat")
+    NAPCAT,
+    @SerialName("onebot11")
+    ONEBOT11,
+    @SerialName("qq_official")
+    QQ_OFFICIAL,
+}
+
+@Serializable
 enum class PlatformChatType {
     GROUP,
     PRIVATE,

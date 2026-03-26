@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfigManager
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformAdapter
+import top.bilibili.connector.PlatformAdapterKind
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformType
@@ -218,14 +219,20 @@ object BiliBiliBot : CoroutineScope {
                 return
             }
 
-            logger.info("正在初始化 NapCat 客户端...")
-            platformAdapter = when (config.selectedPlatformType()) {
-                PlatformType.ONEBOT11 -> {
+            logger.info("正在初始化平台适配器...")
+            // 启动期先按显式适配器选择分发，后续任务再把通用 OneBot11 传输与 NapCat 实现彻底拆开。
+            platformAdapter = when (config.selectedAdapterKind()) {
+                PlatformAdapterKind.NAPCAT -> {
                     val oneBotConfig = config.selectedOneBot11Config()
                     napCat = NapCatClient(oneBotConfig)
                     OneBot11Adapter(napCat)
                 }
-                PlatformType.QQ_OFFICIAL -> QQOfficialAdapter(config.platform.qqOfficial)
+                PlatformAdapterKind.ONEBOT11 -> {
+                    val oneBotConfig = config.selectedOneBot11Config()
+                    // 在 vendor 拆分完成前，通用 OneBot11 仍沿用现有传输配置入口。
+                    OneBot11Adapter(NapCatClient(oneBotConfig))
+                }
+                PlatformAdapterKind.QQ_OFFICIAL -> QQOfficialAdapter(config.platform.qqOfficial)
             }
             MessageGatewayProvider.register(
                 NapCatMessageGateway(
