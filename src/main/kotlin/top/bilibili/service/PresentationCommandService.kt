@@ -1,9 +1,8 @@
 package top.bilibili.service
 
 import top.bilibili.BiliConfigManager
+import top.bilibili.connector.OutgoingPart
 import top.bilibili.core.BiliBiliBot
-import top.bilibili.napcat.MessageSegment
-import top.bilibili.utils.ImageCache
 
 object PresentationCommandService {
     suspend fun sendHelp(contactId: Long, userId: Long, isGroup: Boolean) {
@@ -32,7 +31,6 @@ object PresentationCommandService {
               regex模式: /bili filter add <UID> regex <black|white> <正则表达式>
             /bili filter list <UID> - 查看过滤器
             /bili filter del <UID> <索引> - 删除过滤器（如 t0, r1）
-
             管理员管理:
             /bili admin add <QQ号> - 添加本群普通管理员
             /bili admin remove <QQ号> - 移除本群普通管理员
@@ -65,7 +63,6 @@ object PresentationCommandService {
               regex模式: /bili filter add <UID> regex <black|white> <正则表达式>
             /bili filter list <UID> - 查看过滤器
             /bili filter del <UID> <索引> - 删除过滤器（如 t0, r1）
-
             其他:
             /bili help - 显示此帮助
             """.trimIndent()
@@ -73,9 +70,9 @@ object PresentationCommandService {
 
         val imageName = if (isSuper) "admin_help.png" else "HELP.png"
         val imageSent = runCatching {
-            val imageUrl = getHelpImageFileUrl(imageName)
-            if (imageUrl != null) {
-                val imageSegments = listOf(MessageSegment.image(imageUrl))
+            val imagePath = getHelpImagePath(imageName)
+            if (imagePath != null) {
+                val imageSegments = listOf(OutgoingPart.image(imagePath))
                 if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, imageSegments)
                 else MessageGatewayProvider.require().sendPrivateMessage(contactId, imageSegments)
             } else {
@@ -91,13 +88,17 @@ object PresentationCommandService {
     suspend fun handleTemplate(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
         if (!CommandPermission.isSuperAdmin(userId) && (!isGroup || !CommandPermission.isGroupAdmin(contactId, userId))) return
         if (args.size < 2) {
-            send(contactId, isGroup, """
+            send(
+                contactId,
+                isGroup,
+                """
                 用法:
                 /bili template list <d|l|le>
                 /bili template preview <d|l|le> <模板名>
                 /bili template set <d|l|le> <模板名> [uid]
                 /bili template explain <d|l|le>
-            """.trimIndent())
+                """.trimIndent(),
+            )
             return
         }
 
@@ -107,6 +108,7 @@ object PresentationCommandService {
                 val type = args.getOrNull(2) ?: "d"
                 send(contactId, isGroup, TemplateService.listTemplateText(type))
             }
+
             "preview", "pv" -> {
                 if (args.size < 4) {
                     send(contactId, isGroup, "用法: /bili template preview <d|l|le> <模板名>")
@@ -114,6 +116,7 @@ object PresentationCommandService {
                 }
                 send(contactId, isGroup, TemplateService.previewTemplate(args[2], args[3], subject))
             }
+
             "set" -> {
                 if (args.size < 4) {
                     send(contactId, isGroup, "用法: /bili template set <d|l|le> <模板名> [uid]")
@@ -131,15 +134,17 @@ object PresentationCommandService {
                 BiliConfigManager.saveData()
                 send(contactId, isGroup, result)
             }
+
             "explain", "exp" -> {
                 val type = args.getOrNull(2) ?: "d"
                 send(contactId, isGroup, TemplateService.explainTemplate(type))
             }
+
             else -> send(contactId, isGroup, "未知子命令: ${args[1]}")
         }
     }
 
-    private fun getHelpImageFileUrl(imageName: String): String? {
+    private fun getHelpImagePath(imageName: String): String? {
         val tempFile = BiliBiliBot.tempPath.resolve(imageName).toFile()
         if (!tempFile.exists()) {
             val bytes = BiliBiliBot.getResourceBytes("image/$imageName") ?: return null
@@ -149,13 +154,11 @@ object PresentationCommandService {
                 return null
             }
         }
-        return ImageCache.toFileUrl(tempFile.absolutePath)
+        return tempFile.absolutePath
     }
 
     private suspend fun send(contactId: Long, isGroup: Boolean, msg: String) {
-        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
+        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
     }
 }
-
-

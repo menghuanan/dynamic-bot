@@ -3,12 +3,12 @@ package top.bilibili.service
 import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
+import top.bilibili.connector.OutgoingPart
 import top.bilibili.core.ContactId
 import top.bilibili.data.DynamicMessage
 import top.bilibili.data.DynamicType
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
-import top.bilibili.napcat.MessageSegment
 import top.bilibili.utils.parseContactId
 
 object TemplateService {
@@ -50,7 +50,7 @@ object TemplateService {
     suspend fun listTemplate(type: String, subject: Any) {
         val subjectStr = subject as? String ?: return
         val contact: ContactId = parseContactId(subjectStr) ?: return
-        MessageGatewayProvider.require().sendMessage(contact, listOf(MessageSegment.text(listTemplateText(type))))
+        MessageGatewayProvider.require().sendMessage(contact, listOf(OutgoingPart.text(listTemplateText(type))))
     }
 
     suspend fun previewTemplate(type: String, template: String, subject: String): String {
@@ -61,17 +61,17 @@ object TemplateService {
         val renderedSegments = TemplateRenderService.buildSegments(
             message = sampleMessage,
             contactStr = subject,
-            overrideTemplate = selected
+            overrideTemplate = selected,
         )
 
         val previewSegments = buildList {
-            add(MessageSegment.text("模板预览: $template ($type)"))
-            add(MessageSegment.text("\n"))
+            add(OutgoingPart.text("模板预览: $template ($type)"))
+            add(OutgoingPart.text("\n"))
             addAll(renderedSegments)
         }
 
         val sent = MessageGatewayProvider.require().sendMessage(contact, previewSegments)
-        return if (sent) "预览已发送（基于实发渲染链）" else "预览发送失败"
+        return if (sent) "预览已发送（基于实发渲染链路）" else "预览发送失败"
     }
 
     fun explainTemplate(type: String): String {
@@ -85,7 +85,7 @@ object TemplateService {
         return buildString {
             appendLine("$scope 说明")
             appendLine("作用: 控制推送消息的文案布局与消息段顺序。")
-            appendLine("可改变: 文本结构、换行拆分(\\r)、占位符展示内容。")
+            appendLine("可改动: 文本结构、换行拆分(\\r)、占位符展示内容。")
             appendLine()
             appendLine("常用占位符:")
             appendLine("{name} {uid} {mid} {time} {link}")

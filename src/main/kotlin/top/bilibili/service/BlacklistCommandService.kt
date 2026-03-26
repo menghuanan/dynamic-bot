@@ -2,7 +2,7 @@ package top.bilibili.service
 
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
-import top.bilibili.napcat.MessageSegment
+import top.bilibili.connector.OutgoingPart
 
 object BlacklistCommandService {
     suspend fun handle(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
@@ -94,7 +94,7 @@ object BlacklistCommandService {
     }
 
     private suspend fun send(contactId: Long, isGroup: Boolean, msg: String) {
-        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
+        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
     }
 }

@@ -264,13 +264,14 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
      * 检查连接状态
      */
     private fun checkConnectionStatus(report: MonitorReport) {
-        if (!BiliBiliBot.isNapCatInitialized()) {
+        if (!BiliBiliBot.isPlatformAdapterInitialized()) {
             report.hasConnectionIssue = false
             return
         }
 
-        val isConnected = BiliBiliBot.napCat.isConnected()
-        val reconnectAttempts = BiliBiliBot.napCat.getReconnectAttempts()
+        val runtimeStatus = BiliBiliBot.platformAdapter.runtimeStatus()
+        val isConnected = runtimeStatus.connected
+        val reconnectAttempts = runtimeStatus.reconnectAttempts
 
         if (!isConnected) {
             disconnectedDuration += interval
@@ -337,7 +338,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             // 由于 Channel 的 trySend 需要实际数据，我们通过检查 NapCat 的发送队列来间接判断
 
             // 检查 NapCat 发送队列
-            if (BiliBiliBot.isNapCatInitialized() && BiliBiliBot.napCat.isSendQueueFull()) {
+            if (BiliBiliBot.isPlatformAdapterInitialized() && BiliBiliBot.platformAdapter.runtimeStatus().sendQueueFull) {
                 fullChannels.add("NapCat.sendChannel (容量: 200)")
                 logger.warn("NapCat 发送队列已满，可能存在消息积压")
             }

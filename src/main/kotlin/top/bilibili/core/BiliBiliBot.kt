@@ -13,6 +13,11 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfigManager
+import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.PlatformAdapter
+import top.bilibili.connector.PlatformType
+import top.bilibili.connector.onebot11.OneBot11Adapter
+import top.bilibili.connector.qqofficial.QQOfficialAdapter
 import top.bilibili.config.ConfigManager
 import top.bilibili.core.resource.LambdaResourcePartition
 import top.bilibili.core.resource.ResourceStopReport
@@ -23,7 +28,6 @@ import top.bilibili.data.BiliCookie
 import top.bilibili.data.BiliMessage
 import top.bilibili.data.DynamicDetail
 import top.bilibili.data.LiveDetail
-import top.bilibili.napcat.MessageSegment
 import top.bilibili.napcat.NapCatClient
 import top.bilibili.service.CacheMaintenanceService
 import top.bilibili.service.FirstRunService
@@ -77,6 +81,9 @@ object BiliBiliBot : CoroutineScope {
     lateinit var napCat: NapCatClient
         private set
 
+    lateinit var platformAdapter: PlatformAdapter
+        private set
+
     lateinit var config: top.bilibili.config.BotConfig
         private set
 
@@ -84,6 +91,8 @@ object BiliBiliBot : CoroutineScope {
     private val resourceSupervisor = ResourceSupervisor()
 
     fun isNapCatInitialized(): Boolean = ::napCat.isInitialized
+
+    fun isPlatformAdapterInitialized(): Boolean = ::platformAdapter.isInitialized
 
     fun isConfigInitialized(): Boolean = ::config.isInitialized
 
@@ -94,6 +103,13 @@ object BiliBiliBot : CoroutineScope {
             "NapCat 客户端尚未初始化，请先完成启动。"
         }
         return napCat
+    }
+
+    fun requirePlatformAdapter(): PlatformAdapter {
+        require(::platformAdapter.isInitialized) {
+            "平台适配器尚未初始化，请先完成启动。"
+        }
+        return platformAdapter
     }
 
     fun requireConfig(): top.bilibili.config.BotConfig {
@@ -192,7 +208,7 @@ object BiliBiliBot : CoroutineScope {
                 CacheMaintenanceService.clearAllCache()
             }
 
-            if (!config.napcat.validate()) {
+            if (!config.validateSelectedPlatform()) {
                 logger.error("NapCat 配置无效，请检查 config/bot.yml")
                 isRunning.set(false)
                 lifecycleState.set(BotLifecycleState.STOPPED)
@@ -200,23 +216,30 @@ object BiliBiliBot : CoroutineScope {
             }
 
             logger.info("正在初始化 NapCat 客户端...")
-            napCat = NapCatClient(config.napcat)
+            platformAdapter = when (config.selectedPlatformType()) {
+                PlatformType.ONEBOT11 -> {
+                    val oneBotConfig = config.selectedOneBot11Config()
+                    napCat = NapCatClient(oneBotConfig)
+                    OneBot11Adapter(napCat)
+                }
+                PlatformType.QQ_OFFICIAL -> QQOfficialAdapter()
+            }
             MessageGatewayProvider.register(
                 NapCatMessageGateway(
-                    napCatProvider = { requireNapCat() },
+                    platformAdapterProvider = { requirePlatformAdapter() },
                     adminIdProvider = { BiliConfigManager.config.admin },
                     logger = logger,
                 ),
             )
 
             eventCollectorJob = launch {
-                napCat.eventFlow.collect { event ->
+                platformAdapter.eventFlow.collect { event ->
                     try {
                         withTimeout(5_000) {
                             MessageEventDispatchService.handleMessageEvent(event)
                         }
                     } catch (_: TimeoutCancellationException) {
-                        logger.warn("消息事件处理超时: ${event.messageType}")
+                        logger.warn("消息事件处理超时: ${event.chatType}")
                     } catch (e: Exception) {
                         if (isStopping()) {
                             logger.debug("停机期间忽略事件分发异常: ${e.message}")
@@ -227,7 +250,7 @@ object BiliBiliBot : CoroutineScope {
                 }
             }
 
-            napCat.start()
+            platformAdapter.start()
 
             registerResourcePartitions()
 
@@ -312,7 +335,7 @@ object BiliBiliBot : CoroutineScope {
         return lifecycleState.get() == BotLifecycleState.RUNNING &&
             isRunning.get() &&
             job?.isActive == true &&
-            ::napCat.isInitialized
+            ::platformAdapter.isInitialized
     }
 
     fun getUptimeSeconds(): Long {
@@ -323,11 +346,11 @@ object BiliBiliBot : CoroutineScope {
         }
     }
 
-    suspend fun sendGroupMessage(groupId: Long, message: List<MessageSegment>): Boolean {
+    suspend fun sendGroupMessage(groupId: Long, message: List<OutgoingPart>): Boolean {
         return MessageGatewayProvider.require().sendGroupMessage(groupId, message)
     }
 
-    suspend fun sendPrivateMessage(userId: Long, message: List<MessageSegment>): Boolean {
+    suspend fun sendPrivateMessage(userId: Long, message: List<OutgoingPart>): Boolean {
         return MessageGatewayProvider.require().sendPrivateMessage(userId, message)
     }
 
@@ -335,7 +358,7 @@ object BiliBiliBot : CoroutineScope {
         return MessageGatewayProvider.require().sendAdminMessage(message)
     }
 
-    suspend fun sendMessage(contact: ContactId, message: List<MessageSegment>): Boolean {
+    suspend fun sendMessage(contact: ContactId, message: List<OutgoingPart>): Boolean {
         return MessageGatewayProvider.require().sendMessage(contact, message)
     }
 
@@ -445,13 +468,13 @@ object BiliBiliBot : CoroutineScope {
 
         resourceSupervisor.register(
             LambdaResourcePartition(
-                id = "gateway-napcat",
-                owns = listOf("NapCatClient", "MessageGatewayProvider"),
+                id = "gateway-platform",
+                owns = listOf("PlatformAdapter", "MessageGatewayProvider"),
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
                 shutdownPhase = ShutdownPhase.INGRESS,
                 stopAction = {
-                    if (::napCat.isInitialized) {
-                        napCat.stop()
+                    if (::platformAdapter.isInitialized) {
+                        platformAdapter.stop()
                     }
                     MessageGatewayProvider.unregister()
                 },
@@ -489,8 +512,8 @@ object BiliBiliBot : CoroutineScope {
 
     private suspend fun fallbackStopResources() {
         runCatching {
-            if (::napCat.isInitialized) {
-                napCat.stop()
+            if (::platformAdapter.isInitialized) {
+                platformAdapter.stop()
             }
             MessageGatewayProvider.unregister()
         }.onFailure {

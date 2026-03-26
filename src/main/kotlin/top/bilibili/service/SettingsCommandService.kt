@@ -1,8 +1,9 @@
 package top.bilibili.service
 
 import top.bilibili.BiliConfigManager
+import top.bilibili.connector.PlatformCapabilityService
 import top.bilibili.core.BiliBiliBot
-import top.bilibili.napcat.MessageSegment
+import top.bilibili.connector.OutgoingPart
 import top.bilibili.utils.actionNotify
 import top.bilibili.utils.findLocalIdOrName
 
@@ -144,9 +145,8 @@ object SettingsCommandService {
     }
 
     private suspend fun canAtAllInGroup(groupId: Long): Boolean {
-        if (!BiliBiliBot.isNapCatInitialized()) return false
         return runCatching {
-            BiliBiliBot.napCat.canAtAllInGroup(groupId)
+            PlatformCapabilityService.canAtAllInGroup(groupId)
         }.getOrElse {
             BiliBiliBot.logger.warn("检查群 @全体 权限失败: ${it.message}")
             false
@@ -154,8 +154,8 @@ object SettingsCommandService {
     }
 
     private suspend fun send(contactId: Long, isGroup: Boolean, msg: String) {
-        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
+        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
     }
 }
 

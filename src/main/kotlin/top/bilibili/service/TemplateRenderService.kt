@@ -3,65 +3,55 @@ package top.bilibili.service
 import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
+import top.bilibili.connector.OutgoingPart
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.data.BiliMessage
 import top.bilibili.data.DynamicMessage
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
-import top.bilibili.napcat.MessageSegment
 import top.bilibili.utils.ImageCache
 
 object TemplateRenderService {
     suspend fun buildSegments(
         message: BiliMessage,
         contactStr: String,
-        overrideTemplate: String? = null
-    ): List<MessageSegment> {
+        overrideTemplate: String? = null,
+    ): List<OutgoingPart> {
         BiliBiliBot.logger.info("开始构建消息段...")
-        val segments = mutableListOf<MessageSegment>()
+        val segments = mutableListOf<OutgoingPart>()
         val config = runCatching { BiliConfigManager.config }.getOrElse { BiliConfig() }
 
         return try {
-            BiliBiliBot.logger.info("获取推送模板...")
             val template = overrideTemplate ?: when (message) {
                 is DynamicMessage -> resolveTemplate(config, contactStr, message.mid, "dynamic")
                 is LiveMessage -> resolveTemplate(config, contactStr, message.mid, "live")
                 is LiveCloseMessage -> resolveTemplate(config, contactStr, message.mid, "liveClose")
             }
-            BiliBiliBot.logger.info("使用模板: $template")
 
             val messageParts = template.split("\r")
-            BiliBiliBot.logger.info("模板拆分为 ${messageParts.size} 部分")
-
             for ((index, part) in messageParts.withIndex()) {
                 if (index > 0) {
-                    segments.add(MessageSegment.text("\n"))
+                    segments.add(OutgoingPart.text("\n"))
                 }
 
-                BiliBiliBot.logger.info("替换模板变量...")
                 val content = replacePlaceholders(part, message)
-                BiliBiliBot.logger.info("替换后内容: ${content.take(100)}...")
-
-                BiliBiliBot.logger.info("解析内容并提取图片和文本...")
                 parseContent(content, message, segments, config)
-                BiliBiliBot.logger.info("当前消息段数量: ${segments.size}")
             }
 
             if (template.contains("{draw}") && !hasMeaningfulSegments(segments)) {
                 buildDrawDisabledFallback(message)?.let { fallback ->
-                    segments.add(MessageSegment.text(fallback))
+                    segments.add(OutgoingPart.text(fallback))
                 }
             }
 
-            BiliBiliBot.logger.info("消息段构建完成，共 ${segments.size} 个")
             segments
         } catch (e: Exception) {
             BiliBiliBot.logger.error("构建消息段失败: ${e.message}", e)
-            listOf(MessageSegment.text("${message.name} 发布了新内容"))
+            listOf(OutgoingPart.text("${message.name} 发布了新内容"))
         }
     }
 
-    private fun hasMeaningfulSegments(segments: List<MessageSegment>): Boolean {
+    private fun hasMeaningfulSegments(segments: List<OutgoingPart>): Boolean {
         return segments.any { segment ->
             segment.type == "image" || (segment.type == "text" && !segment.data["text"].orEmpty().isBlank())
         }
@@ -120,12 +110,14 @@ object TemplateRenderService {
                 val linksText = message.links?.joinToString("\n") { "${it.tag}: ${it.value}" } ?: ""
                 result = result.replace("{links}", linksText)
             }
+
             is LiveMessage -> {
                 result = result.replace("{title}", message.title)
                 result = result.replace("{area}", message.area)
                 result = result.replace("{link}", message.link)
                 result = result.replace("{cover}", message.cover)
             }
+
             is LiveCloseMessage -> {
                 result = result.replace("{title}", message.title)
                 result = result.replace("{duration}", message.duration)
@@ -140,7 +132,7 @@ object TemplateRenderService {
     private suspend fun parseContent(
         content: String,
         message: BiliMessage,
-        segments: MutableList<MessageSegment>,
+        segments: MutableList<OutgoingPart>,
         config: BiliConfig,
     ) {
         var currentText = content
@@ -148,8 +140,7 @@ object TemplateRenderService {
         if (currentText.contains("{draw}")) {
             val drawPath = message.drawPath
             if (drawPath != null && FeatureSwitchService.canRenderPushDraw(config)) {
-                val imageUrl = ImageCache.toFileUrl(drawPath)
-                segments.add(MessageSegment.image(imageUrl))
+                segments.add(OutgoingPart.image(drawPath))
             }
             currentText = currentText.replace("{draw}", "")
         }
@@ -160,7 +151,7 @@ object TemplateRenderService {
                 for (imageUrl in message.images) {
                     val cachedUrl = ImageCache.cacheImage(imageUrl)
                     if (cachedUrl != null) {
-                        segments.add(MessageSegment.image(cachedUrl))
+                        segments.add(OutgoingPart.image(cachedUrl))
                     }
                 }
             } else {
@@ -169,7 +160,7 @@ object TemplateRenderService {
         }
 
         if (currentText.isNotBlank()) {
-            segments.add(MessageSegment.text(currentText.trim()))
+            segments.add(OutgoingPart.text(currentText.trim()))
         }
     }
 

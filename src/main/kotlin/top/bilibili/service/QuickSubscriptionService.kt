@@ -3,7 +3,7 @@ package top.bilibili.service
 import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfigManager
 import top.bilibili.api.userInfo
-import top.bilibili.napcat.MessageSegment
+import top.bilibili.connector.OutgoingPart
 import top.bilibili.utils.biliClient
 
 object QuickSubscriptionService {
@@ -55,9 +55,9 @@ object QuickSubscriptionService {
 
     private suspend fun sendText(contactId: Long, isGroup: Boolean, text: String) {
         if (isGroup) {
-            MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(MessageSegment.text(text)))
+            MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(text)))
         } else {
-            MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(MessageSegment.text(text)))
+            MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(text)))
         }
     }
 }

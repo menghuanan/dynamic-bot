@@ -3,8 +3,9 @@ package top.bilibili.service
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.Group
+import top.bilibili.connector.PlatformCapabilityService
 import top.bilibili.core.BiliBiliBot
-import top.bilibili.napcat.MessageSegment
+import top.bilibili.connector.OutgoingPart
 
 object GroupCommandService {
     suspend fun handle(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
@@ -98,7 +99,7 @@ object GroupCommandService {
         }
 
         val inGroup = runCatching {
-            if (!BiliBiliBot.isNapCatInitialized()) false else BiliBiliBot.napCat.isBotInGroup(targetGroupId)
+            PlatformCapabilityService.isGroupReachable(targetGroupId)
         }.getOrDefault(false)
         if (!inGroup) {
             send(contactId, isGroup, "拒绝添加：Bot 不在目标群 $targetGroupId")
@@ -294,7 +295,7 @@ object GroupCommandService {
     }
 
     private suspend fun send(contactId: Long, isGroup: Boolean, msg: String) {
-        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
+        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
     }
 }

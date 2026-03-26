@@ -1,18 +1,18 @@
 package top.bilibili.service
 
 import kotlinx.coroutines.launch
+import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.PlatformInboundMessage
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.core.resource.BusinessLifecycleManager
 import top.bilibili.core.resource.ResourceStrictness
-import top.bilibili.napcat.MessageEvent
-import top.bilibili.napcat.MessageSegment
 import top.bilibili.tasker.DynamicCheckTasker
 
 object MessageCommandRouterService {
-    suspend fun handleGroupMessage(event: MessageEvent) {
-        val groupId = event.groupId ?: return
-        val userId = event.userId
-        val message = event.rawMessage.trim()
+    suspend fun handleGroupMessage(event: PlatformInboundMessage) {
+        val groupId = event.chatId.toLongOrNull() ?: return
+        val userId = event.senderId.toLongOrNull() ?: return
+        val message = event.messageText.trim()
         val isSuperAdmin = CommandPermission.isSuperAdmin(userId)
 
         if (isSuperAdmin && (message == "/login" || message == "登录")) {
@@ -54,6 +54,7 @@ object MessageCommandRouterService {
                     BlacklistCommandService.quickList(groupId, isGroup = true)
                     return
                 }
+
                 message.startsWith("/black ") -> {
                     val targetId = message.removePrefix("/black ").trim().toLongOrNull()
                     if (targetId == null) {
@@ -63,6 +64,7 @@ object MessageCommandRouterService {
                     }
                     return
                 }
+
                 message.startsWith("/unblock ") -> {
                     val targetId = message.removePrefix("/unblock ").trim().toLongOrNull()
                     if (targetId == null) {
@@ -106,9 +108,9 @@ object MessageCommandRouterService {
         }
     }
 
-    suspend fun handlePrivateMessage(event: MessageEvent) {
-        val userId = event.userId
-        val message = event.rawMessage.trim()
+    suspend fun handlePrivateMessage(event: PlatformInboundMessage) {
+        val userId = event.senderId.toLongOrNull() ?: return
+        val message = event.messageText.trim()
         val isSuperAdmin = CommandPermission.isSuperAdmin(userId)
 
         if (isSuperAdmin && (message == "/login" || message == "登录")) {
@@ -168,8 +170,10 @@ object MessageCommandRouterService {
     }
 
     private suspend fun send(contactId: Long, isGroup: Boolean, text: String) {
-        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(MessageSegment.text(text)))
-        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(MessageSegment.text(text)))
+        if (isGroup) {
+            MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(text)))
+        } else {
+            MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(text)))
+        }
     }
 }
-

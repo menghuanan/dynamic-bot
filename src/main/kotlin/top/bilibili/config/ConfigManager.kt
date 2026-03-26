@@ -1,14 +1,11 @@
 package top.bilibili.config
 
+import com.charleskorn.kaml.Yaml
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import org.slf4j.LoggerFactory
 import java.io.File
-import com.charleskorn.kaml.Yaml
 
-/**
- * 配置管理器
- */
 object ConfigManager {
     private val logger = LoggerFactory.getLogger(ConfigManager::class.java)
     private val yaml = Yaml.default
@@ -19,14 +16,12 @@ object ConfigManager {
     lateinit var botConfig: BotConfig
         private set
 
-    /** 初始化配置 */
     fun init() {
         if (!configDir.exists()) {
             configDir.mkdirs()
             logger.info("创建配置目录: ${configDir.absolutePath}")
         }
 
-        // 加载或创建 bot 配置
         if (botConfigFile.exists()) {
             try {
                 val content = botConfigFile.readText()
@@ -43,13 +38,11 @@ object ConfigManager {
             saveConfig()
         }
 
-        // 验证配置
-        if (!botConfig.napcat.validate()) {
-            logger.warn("NapCat 配置无效，请检查配置文件")
+        if (!botConfig.validateSelectedPlatform()) {
+            logger.warn("当前平台配置无效，请检查 config/bot.yml 中的 ${botConfig.selectedPlatformType()}")
         }
     }
 
-    /** 保存配置 */
     fun saveConfig() {
         try {
             val content = yaml.encodeToString(botConfig)
@@ -60,7 +53,6 @@ object ConfigManager {
         }
     }
 
-    /** 重新加载配置 */
     fun reload() {
         logger.info("正在重新加载配置...")
         init()

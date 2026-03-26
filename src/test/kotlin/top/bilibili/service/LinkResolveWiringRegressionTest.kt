@@ -17,11 +17,11 @@ class LinkResolveWiringRegressionTest {
         val listener = read("src/main/kotlin/top/bilibili/tasker/ListenerTasker.kt")
 
         assertTrue(resolve.contains("FeatureSwitchService.canRenderLinkResolveDraw"))
-        assertTrue(listener.contains("MessageSegment.text(standardLink)"))
+        assertTrue(listener.contains("OutgoingPart.text(standardLink)"))
         assertTrue(listener.contains("LinkResolvePolicyService"), "listener should delegate link approval to policy service")
         assertTrue(
-            listener.contains("请求太多次啦，冷静一下吧~"),
-            "listener should emit the configured throttle warning text"
+            listener.contains("TOO_MANY_REQUESTS_NOTICE"),
+            "listener should emit the configured throttle warning text",
         )
         assertFalse(listener.contains("recentlyParsedLinks"), "listener should no longer keep local cooldown cache state")
         assertFalse(listener.contains("legacyLinkCooldownCache"), "listener should not keep renamed legacy cooldown cache state")
@@ -29,6 +29,7 @@ class LinkResolveWiringRegressionTest {
         assertFalse(listener.contains("cacheDuration"), "listener should not keep local cooldown duration state")
         assertFalse(listener.contains("cacheMutex"), "listener should not synchronize its own cooldown cache anymore")
         assertFalse(listener.contains("cleanExpiredCache"), "listener should not own cooldown cleanup routines")
+        assertFalse(listener.contains("extractMiniAppUrl("), "listener should not parse OneBot11 mini-app payloads locally anymore")
     }
 
     @Test
@@ -41,9 +42,9 @@ class LinkResolveWiringRegressionTest {
                 return matchingAllRegularOrdered(content, subject)
 
                     val results = mutableListOf<ResolvedLinkInfo>()
-                """.trimIndent()
+                """.trimIndent(),
             ),
-            "matchingAllRegular should not keep the old implementation after delegating to the ordered path"
+            "matchingAllRegular should not keep the old implementation after delegating to the ordered path",
         )
         assertFalse(
             resolve.contains(
@@ -51,9 +52,9 @@ class LinkResolveWiringRegressionTest {
                 return resolveLinkMatch(type, matchResult, subject)
 
                     val id = matchResult.destructured.component1()
-                """.trimIndent()
+                """.trimIndent(),
             ),
-            "matchingInternalRegular should not keep the old implementation after delegating to resolveLinkMatch"
+            "matchingInternalRegular should not keep the old implementation after delegating to resolveLinkMatch",
         )
     }
 }

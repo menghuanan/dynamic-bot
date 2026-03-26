@@ -2,7 +2,7 @@ package top.bilibili.service
 
 import top.bilibili.config.ConfigManager
 import top.bilibili.config.GroupAdminConfig
-import top.bilibili.napcat.MessageSegment
+import top.bilibili.connector.OutgoingPart
 
 object AdminCommandService {
     suspend fun handle(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
@@ -126,7 +126,7 @@ object AdminCommandService {
     }
 
     private suspend fun send(contactId: Long, isGroup: Boolean, msg: String) {
-        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
+        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
     }
 }

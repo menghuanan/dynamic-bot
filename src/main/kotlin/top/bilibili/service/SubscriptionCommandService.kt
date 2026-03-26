@@ -3,8 +3,9 @@ package top.bilibili.service
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.api.getEpisodeInfo
+import top.bilibili.connector.PlatformCapabilityService
 import top.bilibili.core.BiliBiliBot
-import top.bilibili.napcat.MessageSegment
+import top.bilibili.connector.OutgoingPart
 import top.bilibili.utils.biliClient
 
 object SubscriptionCommandService {
@@ -163,11 +164,7 @@ object SubscriptionCommandService {
 
         if (action == "add") {
             val available = runCatching {
-                if (!BiliBiliBot.isNapCatInitialized()) {
-                    false
-                } else {
-                    BiliBiliBot.napCat.isBotInGroup(target)
-                }
+                PlatformCapabilityService.isGroupReachable(target)
             }.getOrDefault(false)
 
             if (!available) {
@@ -180,7 +177,7 @@ object SubscriptionCommandService {
     }
 
     private suspend fun send(contactId: Long, isGroup: Boolean, msg: String) {
-        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
+        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
     }
 }

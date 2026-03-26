@@ -10,6 +10,8 @@ import top.bilibili.BiliData
 import top.bilibili.DynamicFilter
 import top.bilibili.DynamicFilterType
 import top.bilibili.FilterMode
+import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.PlatformCapabilityService
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.core.ContactId
 import top.bilibili.data.BiliMessage
@@ -17,7 +19,6 @@ import top.bilibili.data.DynamicMessage
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
 import top.bilibili.data.DynamicType
-import top.bilibili.napcat.MessageSegment
 import top.bilibili.service.AtAllService
 import top.bilibili.service.TemplateRenderService
 import top.bilibili.utils.actionNotify
@@ -33,7 +34,7 @@ object SendTasker : BiliTasker("SendTasker") {
     override val wrapMainInBusinessLifecycle = false
     private const val AT_ALL_WARN_INTERVAL_MS = 60 * 60 * 1000L
 
-    private val messageQueue = Channel<Pair<ContactId, List<MessageSegment>>>(100)
+    private val messageQueue = Channel<Pair<ContactId, List<OutgoingPart>>>(100)
     private val atAllPermissionWarnTs = mutableMapOf<Long, Long>()
 
     override fun init() {
@@ -74,7 +75,7 @@ object SendTasker : BiliTasker("SendTasker") {
                 var success = gateway.sendMessage(contact, segments)
 
                 if (!success && contact.type == "group" && containsAtAllSegment(segments)) {
-                    val downgradedSegments = segments.filterNot { it.type == "at" && it.data["qq"] == "all" }
+                    val downgradedSegments = segments.filterNot { it is OutgoingPart.MentionAll }
                     if (downgradedSegments.isNotEmpty()) {
                         BiliBiliBot.logger.warn("检测到 @全体 发送失败，尝试降级重发: ${contact.type}:${contact.id}")
                         success = gateway.sendMessage(contact, downgradedSegments)
@@ -216,8 +217,8 @@ object SendTasker : BiliTasker("SendTasker") {
         contact: ContactId,
         contactStr: String,
         message: BiliMessage,
-        segments: List<MessageSegment>
-    ): List<MessageSegment> {
+        segments: List<OutgoingPart>
+    ): List<OutgoingPart> {
         if (contact.type != "group") return segments
         val alreadyAtAll = segments.any { it.type == "at" && it.data["qq"] == "all" }
         if (alreadyAtAll) return segments
@@ -225,7 +226,7 @@ object SendTasker : BiliTasker("SendTasker") {
         if (!atAllEnabled) return segments
 
         val canAtAll = runCatching {
-            BiliBiliBot.isNapCatInitialized() && BiliBiliBot.napCat.canAtAllInGroup(contact.id)
+            PlatformCapabilityService.canAtAllInGroup(contact.id)
         }.getOrElse {
             BiliBiliBot.logger.warn("检查群 ${contact.id} 的 @全体 权限失败: ${it.message}")
             false
@@ -236,7 +237,7 @@ object SendTasker : BiliTasker("SendTasker") {
             return segments
         }
 
-        return listOf(MessageSegment.atAll()) + segments
+        return listOf(OutgoingPart.atAll()) + segments
     }
 
     private suspend fun notifyAtAllPermissionMissing(groupId: Long, uid: Long) {
@@ -261,8 +262,8 @@ object SendTasker : BiliTasker("SendTasker") {
             .onFailure { BiliBiliBot.logger.warn("发送 @全体 重试降级提醒失败: ${it.message}") }
     }
 
-    private fun containsAtAllSegment(segments: List<MessageSegment>): Boolean {
-        return segments.any { it.type == "at" && it.data["qq"] == "all" }
+    private fun containsAtAllSegment(segments: List<OutgoingPart>): Boolean {
+        return segments.any { it is OutgoingPart.MentionAll }
     }
 
     private fun shouldSendToContact(message: BiliMessage, contactStr: String): Boolean {
@@ -354,7 +355,7 @@ object SendTasker : BiliTasker("SendTasker") {
     private suspend fun buildMessageSegments(
         message: BiliMessage,
         contactStr: String
-    ): List<MessageSegment> {
+    ): List<OutgoingPart> {
         return TemplateRenderService.buildSegments(message, contactStr)
     }
 }

@@ -4,7 +4,7 @@ import top.bilibili.BiliConfigManager
 import top.bilibili.config.ConfigManager
 import top.bilibili.config.BotConfig
 import top.bilibili.core.BiliBiliBot
-import top.bilibili.napcat.MessageSegment
+import top.bilibili.connector.OutgoingPart
 
 object FirstRunService {
     suspend fun checkFirstRun(config: BotConfig) {
@@ -32,7 +32,7 @@ object FirstRunService {
         """.trimIndent()
 
         try {
-            val success = MessageGatewayProvider.require().sendPrivateMessage(adminId, listOf(MessageSegment.text(welcomeMsg)))
+            val success = MessageGatewayProvider.require().sendPrivateMessage(adminId, listOf(OutgoingPart.text(welcomeMsg)))
             if (success) {
                 BiliBiliBot.logger.info("欢迎消息发送成功")
                 config.firstRunFlag = 1

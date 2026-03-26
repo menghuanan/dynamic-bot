@@ -3,7 +3,7 @@ package top.bilibili.service
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.core.BiliCommandExecutor
 import top.bilibili.core.BiliCommandProcessor
-import top.bilibili.napcat.MessageSegment
+import top.bilibili.connector.OutgoingPart
 
 object BiliCommandDispatchService {
     suspend fun dispatch(contactId: Long, userId: Long, message: String, isGroup: Boolean) {
@@ -25,15 +25,15 @@ object BiliCommandDispatchService {
                 override suspend fun help() = PresentationCommandService.sendHelp(contactId, userId, isGroup)
                 override suspend fun unknown(command: String) {
                     val msg = "未知命令: $command\n使用 /bili help 查看帮助"
-                    if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-                    else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                    if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
+                    else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
                 }
             })
         } catch (e: Exception) {
             BiliBiliBot.logger.error("处理 /bili 命令失败: ${e.message}", e)
             val msg = "命令执行失败: ${e.message}"
-            if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
+            else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
         }
     }
 }
