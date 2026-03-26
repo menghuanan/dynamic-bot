@@ -58,7 +58,11 @@ class QQOfficialAdapterTest {
 
         try {
             val tokenRequest = transport.requests.first { it.url.endsWith("/app/getAppAccessToken") }
-            val identifyPayload = transport.lastGatewaySession.sentTexts.first().jsonObject
+            // 心跳协程与 identify 会并发启动，测试需要显式挑出 op=2 帧而不是依赖发送顺序。
+            val identifyPayload =
+                transport.lastGatewaySession.sentTexts.first {
+                    it.jsonObject["op"]?.jsonPrimitive?.content == "2"
+                }.jsonObject
 
             assertEquals("POST", tokenRequest.method)
             assertEquals("demo-app", tokenRequest.body!!.jsonObject["appId"]!!.jsonPrimitive.content)
