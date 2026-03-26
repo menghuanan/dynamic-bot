@@ -73,9 +73,13 @@ class CommandRegressionGuardTest {
     @Test
     fun `send path should inject napcat at-all segment when policy matches`() {
         val text = read("src/main/kotlin/top/bilibili/tasker/SendTasker.kt")
+        val gateway = read("src/main/kotlin/top/bilibili/service/NapCatMessageGateway.kt")
         assertTrue(text.contains("OutgoingPart.atAll()"), "send path should support real at-all segment injection")
-        assertTrue(text.contains("canAtAllInContact"), "send path should verify group at-all permission before injecting segment")
+        assertTrue(text.contains("guardAtAllInContact"), "send path should verify group at-all permission through guard before injecting segment")
+        assertTrue(text.contains("stopCurrentOperation"), "send path should stop only the current at-all branch when guard blocks it")
         assertTrue(text.contains("filterNot { it is OutgoingPart.MentionAll"), "send path should retry downgrade without at-all segment on failure")
+        assertTrue(gateway.contains("sendMessageGuarded"), "gateway should expose guarded send entrypoint")
+        assertTrue(gateway.contains("CapabilityGuard.UNSUPPORTED_MESSAGE"), "guarded send path should log unified unsupported marker")
     }
 
     @Test

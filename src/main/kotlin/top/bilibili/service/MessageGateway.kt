@@ -12,14 +12,21 @@ interface MessageGateway {
     suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean
 
     /**
+     * 统一走 capability guard 的发送入口；guard 阻断时只停止当前发送路径。
+     */
+    suspend fun sendMessageGuarded(contact: PlatformContact, message: List<OutgoingPart>): Boolean {
+        return sendMessage(contact, message)
+    }
+
+    /**
      * 为仍在迁移中的 OneBot11 调用方保留数字群号入口。
      */
     @Deprecated(
         message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",
-        replaceWith = ReplaceWith("sendMessage(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()), message)"),
+        replaceWith = ReplaceWith("sendMessageGuarded(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()), message)"),
     )
     suspend fun sendGroupMessage(groupId: Long, message: List<OutgoingPart>): Boolean {
-        return sendMessage(
+        return sendMessageGuarded(
             PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()),
             message,
         )
@@ -30,10 +37,10 @@ interface MessageGateway {
      */
     @Deprecated(
         message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",
-        replaceWith = ReplaceWith("sendMessage(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, userId.toString()), message)"),
+        replaceWith = ReplaceWith("sendMessageGuarded(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, userId.toString()), message)"),
     )
     suspend fun sendPrivateMessage(userId: Long, message: List<OutgoingPart>): Boolean {
-        return sendMessage(
+        return sendMessageGuarded(
             PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, userId.toString()),
             message,
         )

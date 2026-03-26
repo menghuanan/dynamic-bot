@@ -31,6 +31,7 @@ open class OneBot11Adapter(
             PlatformCapability.SEND_MESSAGE,
             PlatformCapability.SEND_IMAGES,
             PlatformCapability.REPLY,
+            PlatformCapability.LINK_RESOLVE,
         )
     }
 

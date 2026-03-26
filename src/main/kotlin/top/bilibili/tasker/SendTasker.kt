@@ -10,6 +10,8 @@ import top.bilibili.BiliData
 import top.bilibili.DynamicFilter
 import top.bilibili.DynamicFilterType
 import top.bilibili.FilterMode
+import top.bilibili.connector.CapabilityGuard
+import top.bilibili.connector.CapabilityGuardResult
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformCapabilityService
@@ -74,13 +76,13 @@ object SendTasker : BiliTasker("SendTasker") {
             }
             try {
                 val gateway = top.bilibili.service.MessageGatewayProvider.require()
-                var success = gateway.sendMessage(contact, segments)
+                var success = gateway.sendMessageGuarded(contact, segments)
 
                 if (!success && contact.type == PlatformChatType.GROUP && containsAtAllSegment(segments)) {
                     val downgradedSegments = segments.filterNot { it is OutgoingPart.MentionAll }
                     if (downgradedSegments.isNotEmpty()) {
                         BiliBiliBot.logger.warn("检测到 @全体 发送失败，尝试降级重发: ${contact.toSubject()}")
-                        success = gateway.sendMessage(contact, downgradedSegments)
+                        success = gateway.sendMessageGuarded(contact, downgradedSegments)
                         if (success) {
                             notifyAtAllFallback(contact.id)
                         }
@@ -227,14 +229,19 @@ object SendTasker : BiliTasker("SendTasker") {
         val atAllEnabled = AtAllService.shouldAtAll(contactStr, message.mid, message)
         if (!atAllEnabled) return segments
 
-        val canAtAll = runCatching {
-            PlatformCapabilityService.canAtAllInContact(contact)
+        val atAllGuard = runCatching {
+            PlatformCapabilityService.guardAtAllInContact(contact)
         }.getOrElse {
             BiliBiliBot.logger.warn("检查群 {} 的 @全体 权限失败: {}", contact.id, it.message)
-            false
+            CapabilityGuard.unsupported("at-all guard failed: ${it.message}")
         }
 
-        if (!canAtAll) {
+        if (atAllGuard.stopCurrentOperation) {
+            BiliBiliBot.logger.warn(
+                "{}: 停止当前群 {} 的 @全体 注入分支",
+                atAllGuard.marker ?: CapabilityGuard.UNSUPPORTED_MESSAGE,
+                contact.id,
+            )
             notifyAtAllPermissionMissing(contact.id, message.mid)
             return segments
         }

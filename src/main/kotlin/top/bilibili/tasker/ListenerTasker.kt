@@ -4,8 +4,12 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.bilibili.BiliConfigManager
+import top.bilibili.connector.CapabilityGuard
 import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.CapabilityRequest
 import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformCapability
+import top.bilibili.connector.PlatformCapabilityService
 import top.bilibili.connector.PlatformInboundMessage
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.service.FeatureSwitchService
@@ -55,6 +59,31 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         val groupContact = event.chatContact
         val senderContact = event.senderContact
         val senderSubject = senderContact.toSubject()
+
+        val sendGuard = PlatformCapabilityService.guardMessageSend(groupContact)
+        if (sendGuard.stopCurrentOperation) {
+            logger.warn(
+                "{}: 停止当前群 {} 的链接解析事件处理",
+                sendGuard.marker ?: CapabilityGuard.UNSUPPORTED_MESSAGE,
+                groupContact.toSubject(),
+            )
+            return
+        }
+
+        val linkResolveGuard = PlatformCapabilityService.guardCapability(
+            CapabilityRequest(
+                capability = PlatformCapability.LINK_RESOLVE,
+                contact = groupContact,
+            ),
+        )
+        if (linkResolveGuard.stopCurrentOperation) {
+            logger.warn(
+                "{}: 停止当前群 {} 的链接解析能力分支",
+                linkResolveGuard.marker ?: CapabilityGuard.UNSUPPORTED_MESSAGE,
+                groupContact.toSubject(),
+            )
+            return
+        }
 
         if (top.bilibili.BiliData.linkParseBlacklistContacts.contains(senderSubject) ||
             senderContact.id.toLongOrNull()?.let(top.bilibili.BiliData.linkParseBlacklist::contains) == true
@@ -108,7 +137,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         }
 
         if (policyDecision.shouldWarnTooManyRequests) {
-            MessageGatewayProvider.require().sendMessage(
+            MessageGatewayProvider.require().sendMessageGuarded(
                 groupContact,
                 listOf(OutgoingPart.text(TOO_MANY_REQUESTS_NOTICE)),
             )
@@ -167,7 +196,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
                 }
 
                 if (imagePath == null) {
-                    MessageGatewayProvider.require().sendMessage(
+                    MessageGatewayProvider.require().sendMessageGuarded(
                         groupContact,
                         listOf(OutgoingPart.text("解析失败")),
                     )
@@ -189,7 +218,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
 
                 if (!success) {
                     logger.warn("链接解析结果发送失败")
-                    MessageGatewayProvider.require().sendMessage(
+                    MessageGatewayProvider.require().sendMessageGuarded(
                         groupContact,
                         listOf(OutgoingPart.text("图片上传失败")),
                     )
@@ -200,7 +229,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
                 }
             } catch (e: Exception) {
                 logger.error("解析链接时出错: ${e.message}", e)
-                MessageGatewayProvider.require().sendMessage(
+                MessageGatewayProvider.require().sendMessageGuarded(
                     groupContact,
                     listOf(OutgoingPart.text("解析失败: ${e.message}")),
                 )

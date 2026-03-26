@@ -1,5 +1,6 @@
 package top.bilibili.service
 
+import top.bilibili.connector.CapabilityGuardResult
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformCapabilityService
 import top.bilibili.connector.PlatformContact
@@ -9,14 +10,14 @@ import top.bilibili.utils.toSubject
  * 统一通过平台联系人发送纯文本，避免业务层继续区分群聊/私聊发送分支。
  */
 suspend fun sendText(contact: PlatformContact, text: String): Boolean {
-    return MessageGatewayProvider.require().sendMessage(contact, listOf(OutgoingPart.text(text)))
+    return MessageGatewayProvider.require().sendMessageGuarded(contact, listOf(OutgoingPart.text(text)))
 }
 
 /**
  * 统一通过平台联系人发送消息片段集合。
  */
 suspend fun sendParts(contact: PlatformContact, parts: List<OutgoingPart>): Boolean {
-    return MessageGatewayProvider.require().sendMessage(contact, parts)
+    return MessageGatewayProvider.require().sendMessageGuarded(contact, parts)
 }
 
 /**
@@ -37,11 +38,15 @@ suspend fun sendPartsWithCapabilityFallback(
         return sendParts(contact, parts)
     }
 
-    val canSendImages = runCatching {
-        PlatformCapabilityService.canSendImagesTo(contact, imageSources)
-    }.getOrDefault(false)
-    if (canSendImages) {
-        return sendParts(contact, parts)
+    val imageGuard = runCatching {
+        PlatformCapabilityService.guardImageSend(contact, imageSources)
+    }.getOrElse {
+        CapabilityGuardResult.Unsupported(reason = "image guard failed: ${it.message}")
+    }
+    when (imageGuard) {
+        CapabilityGuardResult.Supported -> return sendParts(contact, parts)
+        is CapabilityGuardResult.Unsupported -> return false
+        is CapabilityGuardResult.Degraded -> Unit
     }
 
     // 图片不可发送时只保留明确的文本降级内容，避免业务层自己到处判断平台差异。
