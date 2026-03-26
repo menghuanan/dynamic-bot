@@ -10,48 +10,41 @@ import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformInboundMessage
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.PlatformType
-import top.bilibili.napcat.MessageEvent
-import top.bilibili.napcat.MessageSegment
-import top.bilibili.napcat.NapCatClient
+import top.bilibili.connector.onebot11.core.OneBot11MessageEvent
+import top.bilibili.connector.onebot11.core.OneBot11MessageSegment
+import top.bilibili.connector.onebot11.core.OneBot11Transport
 import top.bilibili.utils.ImageCache
 import java.util.Base64
 
-class OneBot11Adapter(
-    private val napCatClient: NapCatClient,
+open class OneBot11Adapter(
+    private val transport: OneBot11Transport,
 ) : PlatformAdapter {
     override val eventFlow: Flow<PlatformInboundMessage> =
-        napCatClient.eventFlow.map(::normalize)
+        transport.eventFlow.map(::normalize)
 
     override fun start() {
-        napCatClient.start()
+        transport.start()
     }
 
     override fun stop() {
-        napCatClient.stop()
+        transport.stop()
     }
 
     override suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean {
         if (contact.platform != PlatformType.ONEBOT11) return false
         val numericId = contact.id.toLongOrNull() ?: return false
-        return when (contact.type) {
-            PlatformChatType.GROUP -> napCatClient.sendGroupMessage(numericId, toMessageSegments(message))
-            PlatformChatType.PRIVATE -> napCatClient.sendPrivateMessage(numericId, toMessageSegments(message))
-        }
+        return transport.sendMessage(contact.type, numericId, toMessageSegments(message))
     }
 
     override fun runtimeStatus(): PlatformRuntimeStatus {
-        return PlatformRuntimeStatus(
-            connected = napCatClient.isConnected(),
-            reconnectAttempts = napCatClient.getReconnectAttempts(),
-            sendQueueFull = napCatClient.isSendQueueFull(),
-        )
+        return transport.runtimeStatus()
     }
 
     override suspend fun isContactReachable(contact: PlatformContact): Boolean {
         if (contact.platform != PlatformType.ONEBOT11) return false
         if (contact.type != PlatformChatType.GROUP) return true
         val groupId = contact.id.toLongOrNull() ?: return false
-        return napCatClient.isBotInGroup(groupId)
+        return isGroupReachable(groupId)
     }
 
     override suspend fun canAtAll(contact: PlatformContact): Boolean {
@@ -59,16 +52,30 @@ class OneBot11Adapter(
             return false
         }
         val groupId = contact.id.toLongOrNull() ?: return false
-        return napCatClient.canAtAllInGroup(groupId)
+        return supportsAtAllInGroup(groupId)
     }
 
-    private fun toMessageSegments(parts: List<OutgoingPart>): List<MessageSegment> {
+    /**
+     * 通用 OneBot11 默认只假设群上下文存在；vendor 如能精确查询可覆写该入口。
+     */
+    override suspend fun isGroupReachable(groupId: Long): Boolean {
+        return true
+    }
+
+    /**
+     * 通用 OneBot11 默认不声明 @全体 能力；NapCat 等 vendor 在适配层显式覆写。
+     */
+    protected open suspend fun supportsAtAllInGroup(groupId: Long): Boolean {
+        return false
+    }
+
+    private fun toMessageSegments(parts: List<OutgoingPart>): List<OneBot11MessageSegment> {
         return parts.map { part ->
             when (part) {
-                is OutgoingPart.Text -> MessageSegment.text(part.text)
-                is OutgoingPart.Image -> MessageSegment.image(resolveImageFile(part.source))
-                is OutgoingPart.MentionAll -> MessageSegment.atAll()
-                is OutgoingPart.Reply -> MessageSegment.reply(part.messageId)
+                is OutgoingPart.Text -> OneBot11MessageSegment("text", mapOf("text" to part.text))
+                is OutgoingPart.Image -> OneBot11MessageSegment("image", mapOf("file" to resolveImageFile(part.source)))
+                is OutgoingPart.MentionAll -> OneBot11MessageSegment("at", mapOf("qq" to "all"))
+                is OutgoingPart.Reply -> OneBot11MessageSegment("reply", mapOf("id" to part.messageId.toString()))
             }
         }
     }
@@ -91,7 +98,7 @@ class OneBot11Adapter(
     }
 
     companion object {
-        fun normalize(event: MessageEvent): PlatformInboundMessage {
+        fun normalize(event: OneBot11MessageEvent): PlatformInboundMessage {
             val chatType = if (event.messageType == "group") {
                 PlatformChatType.GROUP
             } else {
@@ -131,7 +138,7 @@ class OneBot11Adapter(
             )
         }
 
-        private fun extractMiniAppUrl(messageSegments: List<MessageSegment>): String? {
+        private fun extractMiniAppUrl(messageSegments: List<OneBot11MessageSegment>): String? {
             val jsonData = messageSegments
                 .firstOrNull { it.type == "json" }
                 ?.data

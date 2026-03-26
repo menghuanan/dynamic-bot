@@ -135,4 +135,19 @@ class NapCatClientRegressionTest {
             "NapCatClient should keep the send timeout inlined when using the direct style",
         )
     }
+
+    // 约束 NapCat 特有的群能力映射必须留在 vendor 适配层，避免再次泄漏回通用 OneBot11 核心。
+    @Test
+    fun `napcat vendor adapter should keep napcat specific capability mapping`() {
+        val vendorPath = Path.of("src/main/kotlin/top/bilibili/connector/onebot11/vendors/napcat/NapCatAdapter.kt")
+        val coreSource = read("src/main/kotlin/top/bilibili/connector/onebot11/OneBot11Adapter.kt")
+
+        assertTrue(Files.exists(vendorPath), "NapCat vendor adapter should exist")
+        val vendorSource = Files.readString(vendorPath, StandardCharsets.UTF_8)
+        assertTrue(vendorSource.contains("NapCatClient"))
+        assertTrue(vendorSource.contains("isBotInGroup"))
+        assertTrue(vendorSource.contains("canAtAllInGroup"))
+        assertFalse(coreSource.contains("isBotInGroup"))
+        assertFalse(coreSource.contains("canAtAllInGroup"))
+    }
 }

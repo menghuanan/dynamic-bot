@@ -19,7 +19,8 @@ import top.bilibili.connector.PlatformAdapterKind
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformType
-import top.bilibili.connector.onebot11.OneBot11Adapter
+import top.bilibili.connector.onebot11.generic.GenericOneBot11Adapter
+import top.bilibili.connector.onebot11.vendors.napcat.NapCatAdapter
 import top.bilibili.connector.qqofficial.QQOfficialAdapter
 import top.bilibili.config.ConfigManager
 import top.bilibili.core.resource.LambdaResourcePartition
@@ -225,12 +226,12 @@ object BiliBiliBot : CoroutineScope {
                 PlatformAdapterKind.NAPCAT -> {
                     val oneBotConfig = config.selectedOneBot11Config()
                     napCat = NapCatClient(oneBotConfig)
-                    OneBot11Adapter(napCat)
+                    NapCatAdapter(napCat)
                 }
                 PlatformAdapterKind.ONEBOT11 -> {
                     val oneBotConfig = config.selectedOneBot11Config()
-                    // 在 vendor 拆分完成前，通用 OneBot11 仍沿用现有传输配置入口。
-                    OneBot11Adapter(NapCatClient(oneBotConfig))
+                    // 在引入新 vendor 前，通用 OneBot11 先通过显式传输桥接复用现有连接配置。
+                    GenericOneBot11Adapter(NapCatAdapter.transport(NapCatClient(oneBotConfig)))
                 }
                 PlatformAdapterKind.QQ_OFFICIAL -> QQOfficialAdapter(config.platform.qqOfficial)
             }
