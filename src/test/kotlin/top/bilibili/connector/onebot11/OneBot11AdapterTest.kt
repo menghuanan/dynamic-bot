@@ -1,16 +1,45 @@
 package top.bilibili.connector.onebot11
 
 import java.io.File
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import top.bilibili.connector.CapabilityGuardResult
+import top.bilibili.connector.CapabilityRequest
+import top.bilibili.connector.ImageSource
+import top.bilibili.connector.PlatformCapability
 import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformContact
+import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.PlatformType
 import top.bilibili.connector.onebot11.core.OneBot11MessageEvent
 import top.bilibili.connector.onebot11.core.OneBot11MessageSegment
+import top.bilibili.connector.onebot11.core.OneBot11Transport
+import top.bilibili.connector.onebot11.generic.GenericOneBot11Adapter
 
 class OneBot11AdapterTest {
+    // 使用最小传输桩隔离 generic adapter 的 capability 语义，避免测试退化成对 NapCat 行为的回归。
+    private class FakeTransport : OneBot11Transport {
+        override val eventFlow: Flow<OneBot11MessageEvent> = emptyFlow()
+
+        override fun start() = Unit
+
+        override fun stop() = Unit
+
+        override suspend fun sendMessage(
+            chatType: PlatformChatType,
+            targetId: Long,
+            message: List<OneBot11MessageSegment>,
+        ): Boolean = true
+
+        override fun runtimeStatus(): PlatformRuntimeStatus = PlatformRuntimeStatus(true, 0, false)
+    }
+
     @Test
     fun `message event should normalize into platform inbound message`() {
         val normalized = OneBot11Adapter.normalize(
@@ -59,5 +88,31 @@ class OneBot11AdapterTest {
         assertFalse(adapterSource.contains("NapCatClient"))
         assertTrue(genericAdapterFile.readText().contains("OneBot11Transport"))
         assertFalse(genericAdapterFile.readText().contains("NapCatClient"))
+    }
+
+    // 约束 generic OneBot11 要对本地图和 @全体给出显式 guard 结果，而不是继续模糊地返回发送失败。
+    @Test
+    fun `generic onebot11 should expose explicit unsupported reasons for local image and atall`() = runBlocking {
+        val adapter = GenericOneBot11Adapter(FakeTransport())
+        val contact = PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, "100")
+
+        val imageGuard = adapter.guardCapability(
+            CapabilityRequest(
+                capability = PlatformCapability.SEND_IMAGES,
+                contact = contact,
+                images = listOf(ImageSource.LocalFile("temp/demo.png")),
+            ),
+        )
+        val atAllGuard = adapter.guardCapability(
+            CapabilityRequest(
+                capability = PlatformCapability.AT_ALL,
+                contact = contact,
+            ),
+        )
+
+        val degradedImage = assertIs<CapabilityGuardResult.Degraded>(imageGuard)
+        assertTrue(degradedImage.reason.contains("remote image"), "generic image fallback reason should be explicit")
+        val unsupportedAtAll = assertIs<CapabilityGuardResult.Unsupported>(atAllGuard)
+        assertTrue(unsupportedAtAll.reason.contains("@全体"), "generic at-all reason should be explicit")
     }
 }

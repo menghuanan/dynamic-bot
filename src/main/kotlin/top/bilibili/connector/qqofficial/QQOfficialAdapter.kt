@@ -28,6 +28,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.flow.collect
 import org.slf4j.LoggerFactory
 import top.bilibili.config.QQOfficialConfig
+import top.bilibili.connector.CapabilityGuardResult
+import top.bilibili.connector.CapabilityRequest
 import top.bilibili.connector.ImageSource
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformAdapter
@@ -81,6 +83,22 @@ internal class QQOfficialAdapter(
             PlatformCapability.REPLY,
             PlatformCapability.LINK_RESOLVE,
         )
+    }
+
+    /**
+     * QQ 官方对 @全体与非公网图片给出显式 guard reason，避免上层只能收到模糊的 false。
+     */
+    override suspend fun guardCapability(request: CapabilityRequest): CapabilityGuardResult {
+        if (request.capability == PlatformCapability.AT_ALL) {
+            return CapabilityGuardResult.Unsupported(reason = "QQ Official does not support @全体")
+        }
+        if (
+            request.capability == PlatformCapability.SEND_IMAGES &&
+            request.images.any { image -> image is ImageSource.LocalFile || image is ImageSource.Binary }
+        ) {
+            return CapabilityGuardResult.Degraded(reason = "QQ Official only supports public remote image URLs")
+        }
+        return super.guardCapability(request)
     }
 
     override fun start() {

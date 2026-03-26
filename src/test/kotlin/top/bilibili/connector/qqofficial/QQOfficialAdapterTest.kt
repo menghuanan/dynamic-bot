@@ -21,10 +21,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import top.bilibili.config.QQOfficialConfig
+import top.bilibili.connector.CapabilityGuardResult
+import top.bilibili.connector.CapabilityRequest
 import top.bilibili.connector.ImageSource
 import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.PlatformCapability
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformType
@@ -250,6 +254,39 @@ class QQOfficialAdapterTest {
                 ),
             )
             assertFalse(transport.requests.any { it.url.endsWith("/v2/groups/group_openid_demo/messages") })
+        } finally {
+            adapter.stop()
+        }
+    }
+
+    @Test
+    fun `guard capability should expose explicit unsupported reason for local image and atall`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+
+        try {
+            transport.emitGatewayText(groupMessageFrame())
+            waitForReachable(adapter, groupContact)
+
+            val imageGuard = adapter.guardCapability(
+                CapabilityRequest(
+                    capability = PlatformCapability.SEND_IMAGES,
+                    contact = groupContact,
+                    images = listOf(ImageSource.LocalFile("temp/demo.png")),
+                ),
+            )
+            val atAllGuard = adapter.guardCapability(
+                CapabilityRequest(
+                    capability = PlatformCapability.AT_ALL,
+                    contact = groupContact,
+                ),
+            )
+
+            val degradedImage = assertIs<CapabilityGuardResult.Degraded>(imageGuard)
+            assertTrue(degradedImage.reason.contains("public remote image"), "qq official image reason should be explicit")
+            val unsupportedAtAll = assertIs<CapabilityGuardResult.Unsupported>(atAllGuard)
+            assertTrue(unsupportedAtAll.reason.contains("@全体"), "qq official at-all reason should be explicit")
         } finally {
             adapter.stop()
         }
