@@ -13,6 +13,7 @@ import top.bilibili.service.LinkResolvePolicyService
 import top.bilibili.service.MessageGatewayProvider
 import top.bilibili.service.ResolvedLinkInfo
 import top.bilibili.service.TriggerMode
+import top.bilibili.service.sendPartsWithCapabilityFallback
 import top.bilibili.service.matchingAllRegular
 import top.bilibili.utils.toSubject
 import top.bilibili.utils.logger
@@ -180,7 +181,11 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
                     replySegments.add(OutgoingPart.text("\n$standardLink"))
                 }
 
-                val success = MessageGatewayProvider.require().sendMessage(groupContact, replySegments)
+                val success = sendPartsWithCapabilityFallback(
+                    groupContact,
+                    replySegments,
+                    fallbackText = standardLink,
+                )
 
                 if (!success) {
                     logger.warn("链接解析结果发送失败")

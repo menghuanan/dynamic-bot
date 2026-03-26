@@ -233,6 +233,64 @@ class QQOfficialAdapterTest {
         }
     }
 
+    @Test
+    fun `pure local image should fail explicitly when no text fallback exists`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+
+        try {
+            transport.emitGatewayText(groupMessageFrame())
+            waitForReachable(adapter, groupContact)
+
+            assertFalse(
+                adapter.sendMessage(
+                    groupContact,
+                    listOf(OutgoingPart.Image(ImageSource.LocalFile("temp/demo.png"))),
+                ),
+            )
+            assertFalse(transport.requests.any { it.url.endsWith("/v2/groups/group_openid_demo/messages") })
+        } finally {
+            adapter.stop()
+        }
+    }
+
+    @Test
+    fun `group manage events should toggle send capability`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(transport)
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+
+        try {
+            assertFalse(adapter.canSendMessage(groupContact))
+
+            transport.emitGatewayText(
+                manageGroupFrame(
+                    eventType = "GROUP_ADD_ROBOT",
+                    groupOpenId = "group_openid_demo",
+                ),
+            )
+            waitForReachable(adapter, groupContact)
+            assertTrue(adapter.canSendMessage(groupContact))
+
+            transport.emitGatewayText(
+                manageGroupFrame(
+                    eventType = "GROUP_DEL_ROBOT",
+                    groupOpenId = "group_openid_demo",
+                ),
+            )
+
+            withTimeout(1_000) {
+                while (adapter.canSendMessage(groupContact)) {
+                    delay(10)
+                }
+            }
+            assertFalse(adapter.canSendMessage(groupContact))
+        } finally {
+            adapter.stop()
+        }
+    }
+
     // 启动测试适配器时，预置 Hello/Ready 帧，确保启动路径能完成首轮网关握手。
     private fun createStartedAdapter(transport: FakeTransport): QQOfficialAdapter {
         val adapter = QQOfficialAdapter(
@@ -286,6 +344,19 @@ class QQOfficialAdapterTest {
                 put("author", buildJsonObject {
                     put("user_openid", "user_openid_demo")
                 })
+            })
+        }.toString()
+    }
+
+    // 构造群管理事件，覆盖机器人被加入/移出群时的可达性切换路径。
+    private fun manageGroupFrame(eventType: String, groupOpenId: String): String {
+        return buildJsonObject {
+            put("op", 0)
+            put("s", 4)
+            put("t", eventType)
+            put("id", "evt-manage-$eventType")
+            put("d", buildJsonObject {
+                put("group_openid", groupOpenId)
             })
         }.toString()
     }

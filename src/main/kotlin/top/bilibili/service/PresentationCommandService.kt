@@ -76,8 +76,11 @@ object PresentationCommandService {
         val imageSent = runCatching {
             val imagePath = getHelpImagePath(imageName)
             if (imagePath != null) {
-                val imageSegments = listOf(OutgoingPart.image(imagePath))
-                MessageGatewayProvider.require().sendMessage(chatContact, imageSegments)
+                sendPartsWithCapabilityFallback(
+                    chatContact,
+                    listOf(OutgoingPart.image(imagePath)),
+                    fallbackText = msg,
+                )
             } else {
                 false
             }

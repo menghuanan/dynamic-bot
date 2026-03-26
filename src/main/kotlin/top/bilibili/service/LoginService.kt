@@ -54,12 +54,17 @@ object LoginService {
                 }
                 qrImage.close()
 
-                sendMessage(
+                sendPartsWithCapabilityFallback(
                     contact,
                     listOf(
                         OutgoingPart.text("请使用 BiliBili 手机 APP 扫码登录（3 分钟有效）"),
                         OutgoingPart.image(qrImageFile.absolutePath),
                     ),
+                    fallbackText = buildString {
+                        appendLine("当前平台不支持直接发送登录二维码图片。")
+                        appendLine("请复制下面的二维码链接到浏览器打开后完成扫码登录：")
+                        append(loginData.url)
+                    },
                 )
 
                 runCatching {
