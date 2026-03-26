@@ -6,6 +6,8 @@ import top.bilibili.DynamicFilter
 import top.bilibili.DynamicFilterType
 import top.bilibili.FilterMode
 import top.bilibili.FilterType
+import top.bilibili.utils.findEquivalentSubjectKey
+import top.bilibili.utils.normalizeContactSubject
 
 object FilterService {
     private val mutex = Mutex()
@@ -24,17 +26,18 @@ object FilterService {
 
     suspend fun addFilter(type: FilterType, mode: FilterMode?, regex: String?, uid: Long, subject: String) =
         mutex.withLock {
-            if (!isFollow(uid, subject)) return@withLock "还未订阅此人哦"
+            val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
+            if (!isFollow(uid, normalizedSubject)) return@withLock "还未订阅此人哦"
 
-            if (!filter.containsKey(subject)) filter[subject] = mutableMapOf()
-            if (!filter[subject]!!.containsKey(uid)) filter[subject]!![uid] = DynamicFilter()
+            if (!filter.containsKey(normalizedSubject)) filter[normalizedSubject] = mutableMapOf()
+            if (!filter[normalizedSubject]!!.containsKey(uid)) filter[normalizedSubject]!![uid] = DynamicFilter()
 
-            val dynamicFilter = filter[subject]!![uid]!!
+            val dynamicFilter = filter[normalizedSubject]!![uid]!!
             when (type) {
                 FilterType.TYPE -> {
                     if (mode != null) dynamicFilter.typeSelect.mode = mode
-                    if (regex != null && regex != "") {
-                        val t = when (regex) {
+                    if (!regex.isNullOrEmpty()) {
+                        val mapped = when (regex) {
                             "动态" -> DynamicFilterType.DYNAMIC
                             "转发动态" -> DynamicFilterType.FORWARD
                             "视频" -> DynamicFilterType.VIDEO
@@ -43,31 +46,30 @@ object FilterService {
                             "直播" -> DynamicFilterType.LIVE
                             else -> return@withLock "没有这个类型 $regex"
                         }
-                        dynamicFilter.typeSelect.list.add(t)
+                        dynamicFilter.typeSelect.list.add(mapped)
                     }
                 }
                 FilterType.REGULAR -> {
                     if (mode != null) dynamicFilter.regularSelect.mode = mode
-                    if (regex != null && regex != "") dynamicFilter.regularSelect.list.add(regex)
+                    if (!regex.isNullOrEmpty()) dynamicFilter.regularSelect.list.add(regex)
                 }
             }
             "设置成功"
         }
 
     suspend fun listFilter(uid: Long, subject: String) = mutex.withLock {
-        if (!isFollow(uid, subject)) return@withLock "还未订阅此人哦"
+        val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
+        if (!isFollow(uid, normalizedSubject)) return@withLock "还未订阅此人哦"
+        val storedSubject = findEquivalentSubjectKey(filter.keys, normalizedSubject) ?: normalizedSubject
+        if (!(filter.containsKey(storedSubject) && filter[storedSubject]!!.containsKey(uid))) return@withLock "当前目标没有过滤器"
 
-        if (!(filter.containsKey(subject) && filter[subject]!!.containsKey(uid))) return@withLock "目标没有过滤器"
-
-        val dynamicFilter = filter[subject]!![uid]!!
+        val dynamicFilter = filter[storedSubject]!![uid]!!
         if (dynamicFilter.typeSelect.list.isEmpty() && dynamicFilter.regularSelect.list.isEmpty()) {
-            cleanupEmptyFilter(subject, uid)
+            cleanupEmptyFilter(storedSubject, uid)
             return@withLock "当前目标没有过滤器"
         }
 
         val text = buildString {
-            //appendLine("当前目标过滤器: ")
-            //appendLine()
             val typeSelect = dynamicFilter.typeSelect
             if (typeSelect.list.isNotEmpty()) {
                 append("动态类型过滤器: ")
@@ -87,29 +89,29 @@ object FilterService {
     }
 
     suspend fun delFilter(index: String, uid: Long, subject: String) = mutex.withLock {
-        if (!isFollow(uid, subject)) return@withLock "还未订阅此人哦"
-        if (!(filter.containsKey(subject) && filter[subject]!!.containsKey(uid))) return@withLock "当前目标没有过滤器"
+        val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
+        if (!isFollow(uid, normalizedSubject)) return@withLock "还未订阅此人哦"
+        val storedSubject = findEquivalentSubjectKey(filter.keys, normalizedSubject) ?: normalizedSubject
+        if (!(filter.containsKey(storedSubject) && filter[storedSubject]!!.containsKey(uid))) return@withLock "当前目标没有过滤器"
 
-        var i = 0
-        runCatching {
-            i = index.substring(1).toInt()
-        }.onFailure {
-            return@withLock "索引错误"
-        }
+        val i = index.substring(1).toIntOrNull() ?: return@withLock "索引错误"
         if (i < 0) return@withLock "索引超出范围"
-        var flag = false
-        val selectedList = if (index[0] == 't') {
-            flag = true
-            filter[subject]!![uid]!!.typeSelect.list
-        } else if (index[0] == 'r') {
-            filter[subject]!![uid]!!.regularSelect.list
-        } else return@withLock "索引类型错误"
-        if (selectedList.size <= i) return@withLock "索引超出范围"
-        val t = selectedList[i]
-        selectedList.removeAt(i)
-        cleanupEmptyFilter(subject, uid)
 
-        if (flag) "已删除 ${(t as DynamicFilterType).value} 类型过滤"
-        else "已删除 ${(t as String)} 正则过滤"
+        val selectedList = when (index.firstOrNull()) {
+            't' -> filter[storedSubject]!![uid]!!.typeSelect.list
+            'r' -> filter[storedSubject]!![uid]!!.regularSelect.list
+            else -> return@withLock "索引类型错误"
+        }
+        if (selectedList.size <= i) return@withLock "索引超出范围"
+
+        val removed = selectedList[i]
+        selectedList.removeAt(i)
+        cleanupEmptyFilter(storedSubject, uid)
+
+        if (removed is DynamicFilterType) {
+            "已删除 ${removed.value} 类型过滤"
+        } else {
+            "已删除 ${removed as String} 正则过滤"
+        }
     }
 }

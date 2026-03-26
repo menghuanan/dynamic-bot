@@ -9,6 +9,7 @@ import top.bilibili.data.DynamicMessage
 import top.bilibili.data.DynamicType
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
+import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parseContactId
 
 object TemplateService {
@@ -57,10 +58,11 @@ object TemplateService {
         val templates = templateMap(type) ?: return "类型错误 d:动态 l:直播 le:直播结束"
         val selected = templates[template] ?: return "没有这个模板: $template"
         val contact = parseContactId(subject) ?: return "联系人格式错误"
-        val sampleMessage = buildSampleMessage(type, subject) ?: return "类型错误 d:动态 l:直播 le:直播结束"
+        val normalizedSubject = normalizeContactSubject(subject) ?: return "联系人格式错误"
+        val sampleMessage = buildSampleMessage(type, normalizedSubject) ?: return "类型错误 d:动态 l:直播 le:直播结束"
         val renderedSegments = TemplateRenderService.buildSegments(
             message = sampleMessage,
-            contactStr = subject,
+            contactStr = normalizedSubject,
             overrideTemplate = selected,
         )
 
@@ -98,7 +100,7 @@ object TemplateService {
         val templates = templateMap(type) ?: return "类型错误 d:动态 l:直播 le:直播结束"
         val bindings = pushBindingMap(type) ?: return "类型错误 d:动态 l:直播 le:直播结束"
         val byUidBindings = pushBindingByUidMap(type) ?: return "类型错误 d:动态 l:直播 le:直播结束"
-        parseContactId(subject) ?: return "联系人格式错误"
+        val normalizedSubject = normalizeContactSubject(subject) ?: return "联系人格式错误"
 
         if (!templates.containsKey(template)) {
             return "没有这个模板: $template"
@@ -106,13 +108,13 @@ object TemplateService {
 
         if (uid != null) {
             if (uid <= 0L) return "UID 格式错误"
-            if (!isFollow(uid, subject)) return "该群未订阅 UID: $uid"
-            byUidBindings.getOrPut(subject) { mutableMapOf() }[uid] = template
+            if (!isFollow(uid, normalizedSubject)) return "该群未订阅 UID: $uid"
+            byUidBindings.getOrPut(normalizedSubject) { mutableMapOf() }[uid] = template
             return "配置完成"
         }
 
-        bindings.forEach { (_, users) -> users.remove(subject) }
-        bindings.getOrPut(template) { mutableSetOf() }.add(subject)
+        bindings.forEach { (_, users) -> users.remove(normalizedSubject) }
+        bindings.getOrPut(template) { mutableSetOf() }.add(normalizedSubject)
         return "配置完成"
     }
 

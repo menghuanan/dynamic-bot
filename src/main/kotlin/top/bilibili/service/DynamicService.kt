@@ -11,6 +11,8 @@ import top.bilibili.api.unfollow
 import top.bilibili.api.userInfo
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.utils.actionNotify
+import top.bilibili.utils.containsEquivalentSubject
+import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parseContactId
 
 object DynamicService {
@@ -47,12 +49,7 @@ object DynamicService {
     }
 
     private fun normalizeSubject(subject: String): String? {
-        val contact = parseContactId(subject) ?: return null
-        return when (contact.type) {
-            "group" -> "group:${contact.id}"
-            "private" -> "private:${contact.id}"
-            else -> null
-        }
+        return normalizeContactSubject(subject)
     }
 
     private fun directSourceRef(subject: String): String = "$DIRECT_PREFIX$subject"
@@ -186,7 +183,7 @@ object DynamicService {
         return segments.joinToString(";")
     }
 
-    @Deprecated("Use subject-scoped color binding")
+    @Deprecated("请使用目标作用域主题色绑定")
     suspend fun setColor(uid: Long, color: String) = mutex.withLock {
         dynamic[uid] ?: return@withLock "没有订阅过 UID: $uid"
         normalizeColorInput(color)
@@ -357,19 +354,23 @@ object DynamicService {
             appendLine()
             appendLine("UP主: ")
             val c = dynamic.count { (uid, sub) ->
-                if (subject in sub.contacts) {
+                if (containsEquivalentSubject(sub.contacts, subject)) {
                     appendLine("${sub.name}@$uid")
                     true
-                } else false
+                } else {
+                    false
+                }
             }
             if (c == 0) appendLine("无")
             appendLine()
             appendLine("番剧: ")
             val cc = bangumi.count { (ssid, sub) ->
-                if (subject in sub.contacts) {
+                if (containsEquivalentSubject(sub.contacts, subject)) {
                     appendLine("${sub.title}@ss$ssid")
                     true
-                } else false
+                } else {
+                    false
+                }
             }
             if (cc == 0) appendLine("无")
             appendLine()

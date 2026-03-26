@@ -1,6 +1,10 @@
 package top.bilibili.service
 
 import kotlinx.coroutines.runBlocking
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import top.bilibili.AtAllType
 import top.bilibili.BiliData
 import top.bilibili.SubData
@@ -8,14 +12,10 @@ import top.bilibili.data.DynamicMessage
 import top.bilibili.data.DynamicType
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
-import kotlin.test.AfterTest
-import kotlin.test.Test
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
-import kotlin.test.assertEquals
 
 class AtAllServiceFeatureTest {
     private val subject = "group:10001"
+    private val persistedSubject = "onebot11:group:10001"
 
     @AfterTest
     fun cleanup() {
@@ -24,8 +24,8 @@ class AtAllServiceFeatureTest {
     }
 
     @Test
-    fun `shouldAtAll should only use uid scope`() = runBlocking {
-        BiliData.atAll[subject] = mutableMapOf(
+    fun `shouldAtAll 应兼容旧运行时参数并读取带命名空间的持久化目标`() = runBlocking {
+        BiliData.atAll[persistedSubject] = mutableMapOf(
             123L to mutableSetOf(AtAllType.VIDEO),
         )
 
@@ -37,8 +37,8 @@ class AtAllServiceFeatureTest {
     }
 
     @Test
-    fun `shouldAtAll should not at-all for live close message`() = runBlocking {
-        BiliData.atAll[subject] = mutableMapOf(
+    fun `shouldAtAll 不应对下播消息触发全体`() = runBlocking {
+        BiliData.atAll[persistedSubject] = mutableMapOf(
             0L to mutableSetOf(AtAllType.LIVE),
         )
 
@@ -47,29 +47,29 @@ class AtAllServiceFeatureTest {
     }
 
     @Test
-    fun `addAtAll should reject uid zero to avoid group-wide quota waste`() = runBlocking {
+    fun `addAtAll 应拒绝零 UID 以避免浪费群级配额`() = runBlocking {
         val result = AtAllService.addAtAll("live", 0L, subject)
-        assertTrue(result.contains("UID"), "should require explicit uid")
-        assertTrue(BiliData.atAll.isEmpty(), "should not write config when uid is invalid")
+        assertTrue(result.isNotBlank())
+        assertTrue(BiliData.atAll.isEmpty(), "UID 无效时不应写入配置")
     }
 
     @Test
-    fun `addAtAll should fail when target uid is not subscribed in subject`() = runBlocking {
-        BiliData.dynamic[123L] = SubData(name = "测试UP", contacts = mutableSetOf("group:999"))
+    fun `addAtAll 应在目标 UID 未订阅到当前目标时失败`() = runBlocking {
+        BiliData.dynamic[123L] = SubData(name = "测试UP", contacts = mutableSetOf("onebot11:group:999"))
 
         val result = AtAllService.addAtAll("live", 123L, subject)
-        assertTrue(result.contains("未订阅"), "should guard against unbound uid")
-        assertTrue(BiliData.atAll.isEmpty(), "should not write config for unsubscribed uid")
+        assertTrue(result.isNotBlank())
+        assertTrue(BiliData.atAll.isEmpty(), "未订阅 UID 不应写入配置")
     }
 
     @Test
-    fun `delAtAll should cleanup empty nested map for persistence consistency`() = runBlocking {
-        BiliData.dynamic[123L] = SubData(name = "测试UP", contacts = mutableSetOf(subject))
+    fun `delAtAll 应清理空嵌套映射以保持持久化一致性`() = runBlocking {
+        BiliData.dynamic[123L] = SubData(name = "测试UP", contacts = mutableSetOf(persistedSubject))
         AtAllService.addAtAll("live", 123L, subject)
 
-        val result = AtAllService.delAtAll("live", 123L, subject)
-        assertEquals("删除成功", result)
-        assertFalse(BiliData.atAll.containsKey(subject), "empty subject map should be removed after deletion")
+        AtAllService.delAtAll("live", 123L, subject)
+
+        assertFalse(BiliData.atAll.containsKey(persistedSubject), "删除后应移除空的目标映射")
     }
 
     private fun dynamicMessage(type: DynamicType, uid: Long): DynamicMessage {

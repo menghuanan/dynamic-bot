@@ -222,7 +222,7 @@ object BiliBiliBot : CoroutineScope {
                     napCat = NapCatClient(oneBotConfig)
                     OneBot11Adapter(napCat)
                 }
-                PlatformType.QQ_OFFICIAL -> QQOfficialAdapter()
+                PlatformType.QQ_OFFICIAL -> QQOfficialAdapter(config.platform.qqOfficial)
             }
             MessageGatewayProvider.register(
                 NapCatMessageGateway(
@@ -460,7 +460,7 @@ object BiliBiliBot : CoroutineScope {
                 stopAction = {
                     val report = BiliTasker.cancelAll(timeoutMs = 10_000)
                     if (!report.success) {
-                        error("taskers failed to stop: ${report.failures}")
+                        error("任务器停止失败: ${report.failures}")
                     }
                 },
             ),

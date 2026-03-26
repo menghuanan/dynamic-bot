@@ -9,6 +9,7 @@ import top.bilibili.data.DynamicMessage
 import top.bilibili.data.DynamicType
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
+import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parseContactId
 
 object AtAllService {
@@ -27,12 +28,13 @@ object AtAllService {
 
     suspend fun addAtAll(type: String, uid: Long = 0L, subject: String): String = mutex.withLock {
         val atAllType = toAtAllType(type) ?: return@withLock "没有这个类型哦 [$type]"
-        val contact = parseContactId(subject) ?: return@withLock "联系人格式错误: $subject"
+        val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
+        val contact = parseContactId(normalizedSubject) ?: return@withLock "联系人格式错误: $subject"
         if (contact.type != "group") return@withLock "仅群聊支持 @全体 策略"
-        validateUidScope(uid, subject)?.let { return@withLock it }
+        validateUidScope(uid, normalizedSubject)?.let { return@withLock it }
 
         val list = BiliData.atAll
-            .getOrPut(subject) { mutableMapOf() }
+            .getOrPut(normalizedSubject) { mutableMapOf() }
             .getOrPut(uid) { mutableSetOf() }
 
         if (list.isEmpty()) {
@@ -64,9 +66,10 @@ object AtAllService {
 
     suspend fun delAtAll(type: String, uid: Long = 0L, subject: String): String = mutex.withLock {
         val atAllType = toAtAllType(type) ?: return@withLock "没有这个类型哦 [$type]"
-        validateUidScope(uid, subject)?.let { return@withLock it }
+        val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
+        validateUidScope(uid, normalizedSubject)?.let { return@withLock it }
 
-        val subjectMap = BiliData.atAll[subject] ?: return@withLock "删除失败"
+        val subjectMap = BiliData.atAll[normalizedSubject] ?: return@withLock "删除失败"
         val uidMap = subjectMap[uid] ?: return@withLock "删除失败"
         val removed = uidMap.remove(atAllType)
         if (!removed) return@withLock "删除失败"
@@ -75,14 +78,15 @@ object AtAllService {
             subjectMap.remove(uid)
         }
         if (subjectMap.isEmpty()) {
-            BiliData.atAll.remove(subject)
+            BiliData.atAll.remove(normalizedSubject)
         }
         "删除成功"
     }
 
     suspend fun listAtAll(uid: Long = 0L, subject: String): String = mutex.withLock {
+        val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
         if (uid == 0L) {
-            val all = BiliData.atAll[subject]
+            val all = BiliData.atAll[normalizedSubject]
             if (all.isNullOrEmpty()) return@withLock "没有At全体项哦"
             return@withLock buildString {
                 all.toSortedMap().forEach { (scopeUid, items) ->
@@ -91,14 +95,15 @@ object AtAllService {
             }.trim()
         }
 
-        validateUidScope(uid, subject)?.let { return@withLock it }
-        val list = BiliData.atAll[subject]?.get(uid)
+        validateUidScope(uid, normalizedSubject)?.let { return@withLock it }
+        val list = BiliData.atAll[normalizedSubject]?.get(uid)
         if (list.isNullOrEmpty()) return@withLock "没有At全体项哦"
         buildString { list.forEach { appendLine(it.value) } }.trim()
     }
 
     suspend fun shouldAtAll(subject: String, uid: Long, message: BiliMessage): Boolean = mutex.withLock {
-        val list = BiliData.atAll[subject]?.get(uid) ?: return@withLock false
+        val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock false
+        val list = BiliData.atAll[normalizedSubject]?.get(uid) ?: return@withLock false
         if (list.isEmpty()) return@withLock false
         if (AtAllType.ALL in list) return@withLock true
 

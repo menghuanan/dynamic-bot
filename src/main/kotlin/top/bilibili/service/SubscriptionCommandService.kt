@@ -3,10 +3,11 @@ package top.bilibili.service
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.api.getEpisodeInfo
-import top.bilibili.connector.PlatformCapabilityService
-import top.bilibili.core.BiliBiliBot
 import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.PlatformCapabilityService
 import top.bilibili.utils.biliClient
+import top.bilibili.utils.containsEquivalentSubject
+import top.bilibili.utils.groupIdFromSubject
 
 object SubscriptionCommandService {
     suspend fun handleAdd(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
@@ -59,13 +60,13 @@ object SubscriptionCommandService {
         if (args.size == 1) {
             val contact = if (isGroup) "group:$contactId" else "private:$contactId"
             val userSubs = BiliData.dynamic
-                .filter { contact in it.value.contacts }
+                .filter { containsEquivalentSubject(it.value.contacts, contact) }
                 .map { "${it.value.name} (UID: ${it.key})" }
             val bangumiSubs = BiliData.bangumi
-                .filter { contact in it.value.contacts }
+                .filter { containsEquivalentSubject(it.value.contacts, contact) }
                 .map { "${it.value.title} (ss${it.value.seasonId})" }
             val subs = userSubs + bangumiSubs
-            val msg = if (subs.isEmpty()) "当前群没有任何订阅" else "订阅列表:\n${subs.joinToString("\n")}" 
+            val msg = if (subs.isEmpty()) "当前会话没有任何订阅" else "订阅列表:\n${subs.joinToString("\n")}"
             send(contactId, isGroup, msg)
             return
         }
@@ -101,7 +102,7 @@ object SubscriptionCommandService {
                     if (bangumi == null) {
                         "没有订阅过番剧 ${idType}${idValue}"
                     } else {
-                        val groups = bangumi.contacts.filter { it.startsWith("group:") }.map { it.removePrefix("group:") }
+                        val groups = bangumi.contacts.mapNotNull { groupIdFromSubject(it)?.toString() }
                         if (groups.isEmpty()) {
                             "${bangumi.title} (ss${bangumi.seasonId})\n没有推送到任何群"
                         } else {
@@ -127,7 +128,7 @@ object SubscriptionCommandService {
             return
         }
 
-        val groups = subData.contacts.filter { it.startsWith("group:") }.map { it.removePrefix("group:") }
+        val groups = subData.contacts.mapNotNull { groupIdFromSubject(it)?.toString() }
         val msg = if (groups.isEmpty()) {
             "${subData.name} (UID: $uid)\n没有推送到任何群"
         } else {
@@ -141,12 +142,14 @@ object SubscriptionCommandService {
         userId: Long,
         args: List<String>,
         isGroup: Boolean,
-        action: String
+        action: String,
     ): String? {
         if (args.size == 2) {
             return if (CommandPermission.isSuperAdmin(userId) || (isGroup && CommandPermission.isGroupAdmin(contactId, userId))) {
                 if (isGroup) "group:$contactId" else "private:$contactId"
-            } else null
+            } else {
+                null
+            }
         }
 
         if (!CommandPermission.isSuperAdmin(userId)) {
@@ -177,7 +180,10 @@ object SubscriptionCommandService {
     }
 
     private suspend fun send(contactId: Long, isGroup: Boolean, msg: String) {
-        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
-        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
+        if (isGroup) {
+            MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
+        } else {
+            MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
+        }
     }
 }

@@ -4,18 +4,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import top.bilibili.BiliConfigManager
 import top.bilibili.Group
+import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parseContactId
 
 object GroupService {
     private val mutex = Mutex()
 
     private fun normalizeSubject(subject: String): String? {
-        val contact = parseContactId(subject) ?: return null
-        return when (contact.type) {
-            "group" -> "group:${contact.id}"
-            "private" -> "private:${contact.id}"
-            else -> null
-        }
+        return normalizeContactSubject(subject)
     }
 
     suspend fun createGroup(name: String, operator: Long) = mutex.withLock {
@@ -23,7 +19,9 @@ object GroupService {
             if (name.matches("^[0-9]*$".toRegex())) return@withLock "分组名不能全为数字"
             group[name] = Group(name, operator)
             "创建成功"
-        } else "分组名称重复"
+        } else {
+            "分组名称重复"
+        }
     }
 
     suspend fun delGroup(name: String, operator: Long) = mutex.withLock {
@@ -63,7 +61,9 @@ object GroupService {
                 null
             } else {
                 val contact = parseContactId(normalized)
-                if (contact?.type == "private") contact.id else {
+                if (contact?.type == "private") {
+                    contact.id
+                } else {
                     failMsg += "$raw(仅支持私聊管理员), "
                     null
                 }
@@ -103,7 +103,9 @@ object GroupService {
             if (normalized == null) {
                 failMsg += "$raw, "
                 null
-            } else normalized
+            } else {
+                normalized
+            }
         }.toSet())
 
         if (failMsg.isEmpty()) "添加成功" else "[$failMsg] 添加失败"
@@ -119,7 +121,9 @@ object GroupService {
             if (normalized == null) {
                 failMsg += "$raw, "
                 null
-            } else normalized
+            } else {
+                normalized
+            }
         }.toSet())
 
         if (failMsg.isEmpty()) "删除成功" else "[$failMsg] 删除失败"

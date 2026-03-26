@@ -5,6 +5,7 @@ import kotlinx.coroutines.sync.withLock
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.BiliData
 import top.bilibili.client.BiliClient
+import top.bilibili.utils.subjectsEquivalent
 
 internal val logger by BiliBiliBot::logger
 
@@ -44,7 +45,7 @@ val bangumi by BiliData::bangumi
 val atAll by BiliData::atAll
 
 fun isFollow(uid: Long, subject: String) =
-    uid == 0L || (dynamic.containsKey(uid) && dynamic[uid]!!.contacts.contains(subject))
+    uid == 0L || (dynamic.containsKey(uid) && dynamic[uid]!!.contacts.any { subjectsEquivalent(it, subject) })
 
 /**
  * NapCat 会话状态仓库，用于替代 Mirai whileSelectMessages 的基础能力。

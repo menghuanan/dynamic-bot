@@ -10,6 +10,7 @@ import top.bilibili.data.DynamicMessage
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
 import top.bilibili.utils.ImageCache
+import top.bilibili.utils.normalizeContactSubject
 
 object TemplateRenderService {
     suspend fun buildSegments(
@@ -59,6 +60,7 @@ object TemplateRenderService {
 
     private fun resolveTemplate(config: BiliConfig, contactStr: String, mid: Long, type: String): String {
         val data = BiliData
+        val normalizedContact = normalizeContactSubject(contactStr) ?: contactStr
 
         val templateMap = when (type) {
             "dynamic" -> data.dynamicPushTemplate
@@ -68,14 +70,14 @@ object TemplateRenderService {
         }
 
         val uidTemplate = when (type) {
-            "dynamic" -> data.dynamicPushTemplateByUid[contactStr]?.get(mid)
-            "live" -> data.livePushTemplateByUid[contactStr]?.get(mid)
-            "liveClose" -> data.liveCloseTemplateByUid[contactStr]?.get(mid)
+            "dynamic" -> data.dynamicPushTemplateByUid[normalizedContact]?.get(mid)
+            "live" -> data.livePushTemplateByUid[normalizedContact]?.get(mid)
+            "liveClose" -> data.liveCloseTemplateByUid[normalizedContact]?.get(mid)
             else -> null
         }
 
         val customTemplate = templateMap.entries.find { (_, contacts) ->
-            contactStr in contacts
+            normalizedContact in contacts
         }?.key
 
         val templateName = uidTemplate ?: customTemplate ?: when (type) {
@@ -88,7 +90,7 @@ object TemplateRenderService {
         return when (type) {
             "dynamic" -> config.templateConfig.dynamicPush[templateName] ?: "{draw}\n{name}@{type}\n{link}"
             "live" -> config.templateConfig.livePush[templateName] ?: "{draw}\n{name}@直播\n{link}"
-            "liveClose" -> config.templateConfig.liveClose[templateName] ?: "{name} 直播结束啦\n直播时长: {duration}"
+            "liveClose" -> config.templateConfig.liveClose[templateName] ?: "{name} 直播结束啦!\n直播时长: {duration}"
             else -> ""
         }
     }

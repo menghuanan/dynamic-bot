@@ -4,17 +4,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import top.bilibili.BiliData
 import top.bilibili.core.BiliBiliBot
-import top.bilibili.utils.parseContactId
+import top.bilibili.utils.normalizeContactSubject
 
 private val colorBindingMutex = Mutex()
 
 private fun normalizeColorBindingSubject(subject: String?): String? {
-    val contact = subject?.let(::parseContactId) ?: return null
-    return when (contact.type) {
-        "group" -> "group:${contact.id}"
-        "private" -> "private:${contact.id}"
-        else -> null
-    }
+    return normalizeContactSubject(subject)
 }
 
 object ColorBindingService {
@@ -60,7 +55,7 @@ object ColorBindingService {
         runCatching {
             DrawCacheMaintenanceService.clearSubjectScopedDrawCaches(uid, normalizedSubject)
         }.onFailure {
-            BiliBiliBot.logger.warn("Failed to clear scoped draw cache for uid=$uid, subject=$normalizedSubject", it)
+            BiliBiliBot.logger.warn("清理目标作用域绘图缓存失败: uid=$uid, subject=$normalizedSubject", it)
         }
 
         ColorBindingResult(

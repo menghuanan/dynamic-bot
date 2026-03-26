@@ -3,9 +3,11 @@ package top.bilibili.service
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.Group
-import top.bilibili.connector.PlatformCapabilityService
-import top.bilibili.core.BiliBiliBot
 import top.bilibili.connector.OutgoingPart
+import top.bilibili.connector.PlatformCapabilityService
+import top.bilibili.utils.containsEquivalentSubject
+import top.bilibili.utils.groupIdFromSubject
+import top.bilibili.utils.normalizeContactSubject
 
 object GroupCommandService {
     suspend fun handle(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
@@ -34,9 +36,7 @@ object GroupCommandService {
         val msg = if (groups.isEmpty()) {
             "当前没有任何分组"
         } else {
-            val groupList = groups.map { (name, group) ->
-                "$name (${group.contacts.size} 个群)"
-            }.joinToString("\n")
+            val groupList = groups.map { (name, group) -> "$name (${group.contacts.size} 个群)" }.joinToString("\n")
             "分组列表:\n$groupList\n\n使用 /bili group list <分组名> 查看详情"
         }
         send(contactId, isGroup, msg)
@@ -58,7 +58,7 @@ object GroupCommandService {
             name = groupName,
             creator = userId,
             admin = mutableSetOf(userId),
-            contacts = mutableSetOf()
+            contacts = mutableSetOf(),
         )
         BiliConfigManager.saveData()
         send(contactId, isGroup, "成功创建分组: $groupName")
@@ -106,8 +106,8 @@ object GroupCommandService {
             return
         }
 
-        val contactStr = "group:$targetGroupId"
-        if (contactStr in group.contacts) {
+        val contactStr = normalizeContactSubject("group:$targetGroupId")!!
+        if (containsEquivalentSubject(group.contacts, contactStr)) {
             send(contactId, isGroup, "群 $targetGroupId 已在分组 $groupName 中")
             return
         }
@@ -133,8 +133,8 @@ object GroupCommandService {
             send(contactId, isGroup, "分组 $groupName 不存在")
             return
         }
-        val contactStr = "group:$targetGroupId"
-        if (contactStr !in group.contacts) {
+        val contactStr = normalizeContactSubject("group:$targetGroupId")!!
+        if (!containsEquivalentSubject(group.contacts, contactStr)) {
             send(contactId, isGroup, "群 $targetGroupId 不在分组 $groupName 中")
             return
         }
@@ -156,13 +156,13 @@ object GroupCommandService {
             return
         }
 
-        val groups = group.contacts.filter { it.startsWith("group:") }.map { it.removePrefix("group:") }
+        val groups = group.contacts.mapNotNull { groupIdFromSubject(it)?.toString() }
         val subscriptions = group.contacts.flatMap { contact ->
             val userSubscriptions = BiliData.dynamic
-                .filter { contact in it.value.contacts }
+                .filter { containsEquivalentSubject(it.value.contacts, contact) }
                 .map { "${it.value.name} (UID: ${it.key})" }
             val bangumiSubscriptions = BiliData.bangumi
-                .filter { contact in it.value.contacts }
+                .filter { containsEquivalentSubject(it.value.contacts, contact) }
                 .map { "${it.value.title} (ss${it.value.seasonId})" }
             userSubscriptions + bangumiSubscriptions
         }.distinct()
@@ -210,9 +210,9 @@ object GroupCommandService {
         for (contact in group.contacts) {
             try {
                 val result = PgcService.followPgc(id, contact)
-                if (!result.contains("订阅过") && (result.contains("成功") || (!result.contains("失败") && !result.contains("错误")))) {
+                if (!result.contains("失败") && !result.contains("错误")) {
                     addedCount++
-                } else if (firstError == null && result.contains("失败")) {
+                } else if (firstError == null) {
                     firstError = result
                 }
             } catch (e: Exception) {
@@ -295,7 +295,10 @@ object GroupCommandService {
     }
 
     private suspend fun send(contactId: Long, isGroup: Boolean, msg: String) {
-        if (isGroup) MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
-        else MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
+        if (isGroup) {
+            MessageGatewayProvider.require().sendGroupMessage(contactId, listOf(OutgoingPart.text(msg)))
+        } else {
+            MessageGatewayProvider.require().sendPrivateMessage(contactId, listOf(OutgoingPart.text(msg)))
+        }
     }
 }

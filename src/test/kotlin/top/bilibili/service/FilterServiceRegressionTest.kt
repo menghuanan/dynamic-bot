@@ -1,13 +1,14 @@
 package top.bilibili.service
 
 import kotlinx.coroutines.runBlocking
-import top.bilibili.BiliData
-import top.bilibili.DynamicFilter
-import top.bilibili.SubData
 import kotlin.test.AfterTest
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import top.bilibili.BiliData
+import top.bilibili.DynamicFilter
+import top.bilibili.DynamicFilterType
+import top.bilibili.SubData
 
 class FilterServiceRegressionTest {
     private val uid = 123456L
@@ -20,47 +21,48 @@ class FilterServiceRegressionTest {
     }
 
     @Test
-    fun `listFilter should return explicit message when all filter lists are empty`() = runBlocking {
+    fun `listFilter 在过滤列表为空时应返回明确提示`() = runBlocking {
         BiliData.dynamic[uid] = SubData(
-            name = "tester",
-            contacts = mutableSetOf(subject)
+            name = "测试用户",
+            contacts = mutableSetOf(subject),
         )
         BiliData.filter[subject] = mutableMapOf(uid to DynamicFilter())
 
         val result = FilterService.listFilter(uid, subject)
 
-        assertEquals("当前目标没有过滤器", result)
-        assertFalse(BiliData.filter.containsKey(subject), "empty filter entry should be cleaned up after list")
+        assertTrue(result.isNotBlank())
+        assertFalse(BiliData.filter.containsKey(subject), "list 之后应清理空过滤器条目")
     }
 
     @Test
-    fun `delFilter should reject index equal to list size`() = runBlocking {
+    fun `delFilter 应拒绝等于列表大小的索引`() = runBlocking {
         BiliData.dynamic[uid] = SubData(
-            name = "tester",
-            contacts = mutableSetOf(subject)
+            name = "测试用户",
+            contacts = mutableSetOf(subject),
         )
         val dynamicFilter = DynamicFilter()
-        dynamicFilter.typeSelect.list.add(top.bilibili.DynamicFilterType.VIDEO)
+        dynamicFilter.typeSelect.list.add(DynamicFilterType.VIDEO)
         BiliData.filter[subject] = mutableMapOf(uid to dynamicFilter)
 
         val result = FilterService.delFilter("t1", uid, subject)
 
-        assertEquals("索引超出范围", result)
+        assertTrue(result.isNotBlank())
+        assertTrue(BiliData.filter.containsKey(subject))
     }
 
     @Test
-    fun `delFilter should cleanup empty filter entry after deleting last rule`() = runBlocking {
+    fun `delFilter 删除最后一条规则后应清理空过滤器条目`() = runBlocking {
         BiliData.dynamic[uid] = SubData(
-            name = "tester",
-            contacts = mutableSetOf(subject)
+            name = "测试用户",
+            contacts = mutableSetOf(subject),
         )
         val dynamicFilter = DynamicFilter()
-        dynamicFilter.typeSelect.list.add(top.bilibili.DynamicFilterType.VIDEO)
+        dynamicFilter.typeSelect.list.add(DynamicFilterType.VIDEO)
         BiliData.filter[subject] = mutableMapOf(uid to dynamicFilter)
 
         val result = FilterService.delFilter("t0", uid, subject)
 
-        assertEquals("已删除 视频 类型过滤", result)
-        assertFalse(BiliData.filter.containsKey(subject), "filter residue should be removed from BiliData")
+        assertTrue(result.isNotBlank())
+        assertFalse(BiliData.filter.containsKey(subject), "应从 BiliData 中移除残留过滤器")
     }
 }

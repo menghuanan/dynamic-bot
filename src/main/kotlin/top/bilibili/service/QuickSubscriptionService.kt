@@ -5,6 +5,7 @@ import top.bilibili.BiliConfigManager
 import top.bilibili.api.userInfo
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.utils.biliClient
+import top.bilibili.utils.containsEquivalentSubject
 
 object QuickSubscriptionService {
     private val logger = LoggerFactory.getLogger(QuickSubscriptionService::class.java)
@@ -43,10 +44,10 @@ object QuickSubscriptionService {
         try {
             val contactStr = if (isGroup) "group:$contactId" else "private:$contactId"
             val subscriptions = top.bilibili.BiliData.dynamic
-                .filter { contactStr in it.value.contacts }
+                .filter { containsEquivalentSubject(it.value.contacts, contactStr) }
                 .map { "${it.value.name} (UID: ${it.key})" }
 
-            val msg = if (subscriptions.isEmpty()) "当前没有任何订阅" else "订阅列表:\n${subscriptions.joinToString("\n")}" 
+            val msg = if (subscriptions.isEmpty()) "当前没有任何订阅" else "订阅列表:\n${subscriptions.joinToString("\n")}"
             sendText(contactId, isGroup, msg)
         } catch (e: Exception) {
             logger.error("查询订阅列表失败: ${e.message}", e)

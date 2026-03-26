@@ -5,21 +5,22 @@ import top.bilibili.api.followPgc
 import top.bilibili.api.getEpisodeInfo
 import top.bilibili.api.getMediaInfo
 import top.bilibili.api.getSeasonInfo
+import top.bilibili.utils.normalizeContactSubject
 
 val pgcRegex = """^((?:ss)|(?:md)|(?:ep))(\d{4,10})$""".toRegex()
 
 object PgcService {
-
     suspend fun followPgc(id: String, subject: String): String {
         val regex = pgcRegex.find(id) ?: return "ID 格式错误 例(ss11111, md22222, ep33333)"
+        val normalizedSubject = normalizeContactSubject(subject) ?: subject
 
         val type = regex.destructured.component1()
         val parsedId = regex.destructured.component2().toLong()
 
         return when (type) {
-            "ss" -> followPgcBySsid(parsedId, subject)
-            "md" -> followPgcByMdid(parsedId, subject)
-            "ep" -> followPgcByEpid(parsedId, subject)
+            "ss" -> followPgcBySsid(parsedId, normalizedSubject)
+            "md" -> followPgcByMdid(parsedId, normalizedSubject)
+            "ep" -> followPgcByEpid(parsedId, normalizedSubject)
             else -> "额(⊙﹏⊙)"
         }
     }
@@ -27,11 +28,11 @@ object PgcService {
     suspend fun followPgcBySsid(ssid: Long, subject: String): String {
         client.followPgc(ssid) ?: return "追番失败"
         bangumi.getOrPut(ssid) {
-            val season = client.getSeasonInfo(ssid) ?: return "获取番剧信息失败, 如果是港澳台番剧请用 media id (md11111) 订阅"
+            val season = client.getSeasonInfo(ssid) ?: return "获取番剧信息失败，如果是港澳台番剧请用 media id (md11111) 订阅"
             Bangumi(season.title, season.seasonId, season.mediaId, type(season.type))
         }.apply {
             contacts.add(subject)
-            return "追番成功( •̀ ω •́ )✧ [$title]"
+            return "追番成功 [$title]"
         }
     }
 
@@ -43,41 +44,44 @@ object PgcService {
             Bangumi(season.media.title, ssid, season.media.mediaId, season.media.typeName)
         }.apply {
             contacts.add(subject)
-            return "追番成功( •̀ ω •́ )✧ [$title]"
+            return "追番成功 [$title]"
         }
     }
 
     suspend fun followPgcByEpid(epid: Long, subject: String): String {
-        val season = client.getEpisodeInfo(epid) ?: return "获取番剧信息失败, 如果是港澳台番剧请用 media id (md11111) 订阅"
+        val season = client.getEpisodeInfo(epid) ?: return "获取番剧信息失败，如果是港澳台番剧请用 media id (md11111) 订阅"
         client.followPgc(season.seasonId) ?: return "追番失败"
         bangumi.getOrPut(season.seasonId) {
             Bangumi(season.title, season.seasonId, season.mediaId, type(season.type))
         }.apply {
             contacts.add(subject)
-            return "追番成功( •̀ ω •́ )✧ [$title]"
+            return "追番成功 [$title]"
         }
     }
 
     suspend fun delPgc(id: String, subject: String): String {
         val regex = pgcRegex.find(id) ?: return "ID 格式错误 例(ss11111, md22222, ep33333)"
+        val normalizedSubject = normalizeContactSubject(subject) ?: subject
 
         val type = regex.destructured.component1()
         val parsedId = regex.destructured.component2().toLong()
 
         return when (type) {
-            "ss" -> removeBySsid(parsedId, subject)
+            "ss" -> removeBySsid(parsedId, normalizedSubject)
             "md" -> {
                 val pgc = bangumi.filter { it.value.mediaId == parsedId }.values
                 if (pgc.isEmpty()) return "没有这个番剧哦"
                 val contacts = pgc.first().contacts
-                if (contacts.remove(subject)) {
+                if (contacts.remove(normalizedSubject)) {
                     if (contacts.isEmpty()) bangumi.remove(pgc.first().seasonId)
                     "删除成功"
-                } else "没有订阅这个番剧哦"
+                } else {
+                    "没有订阅这个番剧哦"
+                }
             }
             "ep" -> {
                 val season = client.getEpisodeInfo(parsedId) ?: return "获取番剧信息失败"
-                removeBySsid(season.seasonId, subject)
+                removeBySsid(season.seasonId, normalizedSubject)
             }
             else -> "额(⊙﹏⊙)"
         }

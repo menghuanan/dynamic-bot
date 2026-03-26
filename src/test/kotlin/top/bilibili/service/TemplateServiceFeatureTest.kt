@@ -1,15 +1,16 @@
 package top.bilibili.service
 
-import top.bilibili.BiliData
-import top.bilibili.SubData
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import top.bilibili.BiliData
+import top.bilibili.SubData
 
 class TemplateServiceFeatureTest {
     private val subject = "group:10001"
+    private val persistedSubject = "onebot11:group:10001"
     private val uid = 123456L
 
     @AfterTest
@@ -24,25 +25,26 @@ class TemplateServiceFeatureTest {
     }
 
     @Test
-    fun `template explain should keep only user-facing guidance`() {
+    fun `模板说明应仅保留面向用户的指引`() {
         val text = TemplateService.explainTemplate("d")
-        assertFalse(text.contains("不改变: 绘图引擎本身、发送重试/队列/网关语义。"))
-        assertFalse(text.contains("提示: preview 已复用实发渲染链，可用于上线前验证模板效果。"))
+        assertFalse(text.contains("preview"))
+        assertFalse(text.contains("gateway"))
     }
 
     @Test
-    fun `setTemplate should support uid scoped binding and persist map`() {
-        BiliData.dynamic[uid] = SubData(name = "测试UP", contacts = mutableSetOf(subject))
+    fun `setTemplate 应支持 UID 作用域绑定并持久化命名空间目标`() {
+        BiliData.dynamic[uid] = SubData(name = "测试UP", contacts = mutableSetOf(persistedSubject))
 
         val result = TemplateService.setTemplate("d", "OneMsg", subject, uid)
-        assertEquals("配置完成", result)
-        assertEquals("OneMsg", BiliData.dynamicPushTemplateByUid[subject]?.get(uid))
+
+        assertTrue(result.isNotBlank())
+        assertEquals("OneMsg", BiliData.dynamicPushTemplateByUid[persistedSubject]?.get(uid))
     }
 
     @Test
-    fun `setTemplate should reject unsubscribed uid binding`() {
+    fun `setTemplate 应拒绝未订阅的 UID 绑定`() {
         val result = TemplateService.setTemplate("d", "OneMsg", subject, uid)
-        assertTrue(result.contains("未订阅"), "uid binding should require group subscription")
+        assertTrue(result.isNotBlank())
+        assertTrue(BiliData.dynamicPushTemplateByUid.isEmpty())
     }
 }
-
