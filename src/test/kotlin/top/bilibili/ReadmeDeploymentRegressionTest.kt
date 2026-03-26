@@ -33,8 +33,8 @@ class ReadmeDeploymentRegressionTest {
         assertTrue(readme.contains("type: onebot11"), "README 应展示平台类型选择")
         assertTrue(readme.contains("qq_official:"), "README 应包含 QQ 官方配置占位")
         assertTrue(
-            readme.contains("QQ 官方") && (readme.contains("骨架") || readme.contains("尚未实现实际收发")),
-            "README 应说明当前 QQ 官方适配器的限制",
+            readme.contains("QQ 官方") && (readme.contains("@全体") || readme.contains("公网图片")),
+            "README 应说明当前 QQ 官方适配器的能力边界",
         )
 
         assertTrue(sampleConfig.contains("platform:"), "示例配置应使用 platform 段")

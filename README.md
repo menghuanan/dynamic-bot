@@ -6,7 +6,7 @@
 
 由 [bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin) 改造而来。  
 代码部分由 [claude](https://github.com/claude) 主刀构建改造后的主体框架， GPT-5系列模型（GPT-5.2-Codex、GPT-5.3-Codex、GPT-5.4） 协助完善功能细则与日常修复bug。  
-这是一个基于 NapCat 的 QQ 机器人，支持哔哩哔哩动态订阅、直播通知与链接解析等功能。
+这是一个支持多平台连接器的 B 站动态推送 Bot，当前默认推荐使用 NapCat / OneBot11，QQ 官方适配器也提供了基础收发能力与显式降级处理。
 
 ## 文档目录
 
@@ -163,7 +163,7 @@ logs/
 ```
 #### 注意！以下是必须修改的配置项：
 - 首次后需要在运行目录配置 `/config/bot.yml` 与 `/config/BiliConfig.yml` 文件后再重新启动bot。
-- `/config/bot.yml` 配置 NapCat 连接信息
+- `/config/bot.yml` 通过平台化结构配置连接器；默认 `type: onebot11` 走 NapCat / OneBot11，切到 `type: qq_official` 时需补齐 QQ 官方凭据。
 ```bash
 docker-compose down
 ```
@@ -171,13 +171,21 @@ docker-compose down
 > 先停止正在运行的容器，再编辑挂载到宿主机的配置文件，避免运行中的旧进程在退出时把配置写回旧值。
 
 ```yaml
-napcat:
-  host: "NapCat WebSocket 服务器地址"  
-  port: 3001    #默认3001
-  token: ""     #如果有则填入，没有不填
-  send_mode: "base64"  # 图片发送模式：file 或 base64
+platform:
+  type: onebot11  # 可选: onebot11 / qq_official
+  onebot11:
+    host: "NapCat WebSocket 服务器地址"
+    port: 3001
+    token: ""
+    send_mode: "base64"  # 图片发送模式：file 或 base64
+  qq_official:
+    app_id: ""
+    app_secret: ""
+    bot_token: ""
 ```
 #### 如果不清楚两种图片发送模式的区别，建议直接使用 `base64`，兼容性更好，也能避免路径或权限问题。
+
+> QQ 官方适配器当前支持基础文本/公网图片收发与链接解析，但 `@全体` 不支持，本地/二进制图片会按能力 guard 显式降级。
 
 - `/config/BiliConfig.yml` 配置管理员信息
 ```yaml
@@ -318,17 +326,23 @@ admin: "管理员QQ号"
 ### bot.yml 示例
 
 ```yaml
-napcat:
-  host: "127.0.0.1"          # NapCat WebSocket 主机地址
-  port: 3001                 # NapCat WebSocket 端口
-  token: ""                  # NapCat WebSocket 访问令牌（如有）
-  use_tls: false             # 是否使用 TLS 加密
-  send_mode: "base64"        # 图片发送模式：file 或 base64
-  heartbeat_interval: 30000  # 心跳间隔（毫秒）
-  reconnect_interval: 5000   # 重连间隔（毫秒）
-  message_format: "array"    # 消息格式：array
-  max_reconnect_attempts: -1 # 最大重连尝试次数（-1 表示无限次）
-  connect_timeout: 10000     # 连接超时（毫秒）
+platform:
+  type: onebot11             # 可选: onebot11 / qq_official
+  onebot11:
+    host: "127.0.0.1"        # NapCat / OneBot11 WebSocket 主机地址
+    port: 3001               # NapCat / OneBot11 WebSocket 端口
+    token: ""                # WebSocket 访问令牌（如有）
+    use_tls: false           # 是否使用 TLS 加密
+    send_mode: "base64"      # 图片发送模式：file 或 base64
+    heartbeat_interval: 30000
+    reconnect_interval: 5000
+    message_format: "array"
+    max_reconnect_attempts: -1
+    connect_timeout: 10000
+  qq_official:
+    app_id: ""
+    app_secret: ""
+    bot_token: ""
 targets: []                  # 预留字段，当前版本未启用
 admins: []                   # 群普通管理员配置
 first_run_flag: 0            # 首次运行标记，程序自动维护

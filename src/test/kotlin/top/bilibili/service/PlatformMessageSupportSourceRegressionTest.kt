@@ -14,7 +14,8 @@ class PlatformMessageSupportSourceRegressionTest {
         val source = read("src/main/kotlin/top/bilibili/service/PlatformMessageSupport.kt")
 
         assertTrue(source.contains("suspend fun sendPartsWithCapabilityFallback("))
-        assertTrue(source.contains("PlatformCapabilityService.canSendImagesTo"))
+        assertTrue(source.contains("PlatformCapabilityService.guardImageSend"))
+        assertTrue(source.contains("CapabilityGuardResult.Degraded"))
         assertTrue(source.contains("fallbackText"))
     }
 
