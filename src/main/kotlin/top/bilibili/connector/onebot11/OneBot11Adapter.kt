@@ -6,6 +6,7 @@ import top.bilibili.connector.ImageSource
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformAdapter
 import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformCapability
 import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformInboundMessage
 import top.bilibili.connector.PlatformRuntimeStatus
@@ -21,6 +22,17 @@ open class OneBot11Adapter(
 ) : PlatformAdapter {
     override val eventFlow: Flow<PlatformInboundMessage> =
         transport.eventFlow.map(::normalize)
+
+    /**
+     * 通用 OneBot11 核心先声明基础发送能力；vendor 扩展能力在各自适配层覆写追加。
+     */
+    override fun declaredCapabilities(): Set<PlatformCapability> {
+        return setOf(
+            PlatformCapability.SEND_MESSAGE,
+            PlatformCapability.SEND_IMAGES,
+            PlatformCapability.REPLY,
+        )
+    }
 
     override fun start() {
         transport.start()

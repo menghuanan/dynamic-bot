@@ -51,6 +51,19 @@ class PlatformWiringSourceRegressionTest {
         assertTrue(botSource.contains("PlatformAdapterKind.ONEBOT11"))
     }
 
+    // 约束能力判断必须统一收口到 capability guard，而不是继续散落在 service 里拼布尔判断。
+    @Test
+    fun `platform capability service should route through unified capability guard`() {
+        val adapterSource = File("src/main/kotlin/top/bilibili/connector/PlatformAdapter.kt").readText()
+        val serviceSource = File("src/main/kotlin/top/bilibili/connector/PlatformCapabilityService.kt").readText()
+
+        assertTrue(adapterSource.contains("declaredCapabilities"))
+        assertTrue(adapterSource.contains("guardCapability"))
+        assertTrue(serviceSource.contains("CapabilityGuard"))
+        assertTrue(serviceSource.contains("CapabilityRequest"))
+        assertTrue(serviceSource.contains("guardMessageSend"))
+    }
+
     @Test
     fun `main ingress should only rely on neutral inbound fields`() {
         val dispatchSource = File("src/main/kotlin/top/bilibili/service/MessageEventDispatchService.kt").readText()

@@ -3,6 +3,7 @@ package top.bilibili.connector.onebot11.vendors.napcat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformCapability
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.onebot11.OneBot11Adapter
 import top.bilibili.connector.onebot11.core.OneBot11MessageEvent
@@ -15,6 +16,13 @@ import top.bilibili.napcat.NapCatClient
 class NapCatAdapter(
     private val napCatClient: NapCatClient,
 ) : OneBot11Adapter(NapCatTransport(napCatClient)) {
+    /**
+     * NapCat 在通用 OneBot11 基础上额外声明 @全体能力，后续链路据此决定是否允许进入专用分支。
+     */
+    override fun declaredCapabilities(): Set<PlatformCapability> {
+        return super.declaredCapabilities() + PlatformCapability.AT_ALL
+    }
+
     /**
      * 由 NapCat vendor 适配层保留群可达性查询，避免该能力再次泄漏回通用协议核心。
      */

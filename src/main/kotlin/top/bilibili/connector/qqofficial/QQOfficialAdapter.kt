@@ -32,6 +32,7 @@ import top.bilibili.connector.ImageSource
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformAdapter
 import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformCapability
 import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformInboundMessage
 import top.bilibili.connector.PlatformRuntimeStatus
@@ -69,6 +70,17 @@ internal class QQOfficialAdapter(
     private var selfOpenId: String = ""
 
     override val eventFlow: Flow<PlatformInboundMessage> = _eventFlow.asSharedFlow()
+
+    /**
+     * QQ 官方显式声明仅支持基础发送/图片/回复能力，@全体等特性继续通过 guard 走降级或停止。
+     */
+    override fun declaredCapabilities(): Set<PlatformCapability> {
+        return setOf(
+            PlatformCapability.SEND_MESSAGE,
+            PlatformCapability.SEND_IMAGES,
+            PlatformCapability.REPLY,
+        )
+    }
 
     override fun start() {
         if (!started.compareAndSet(false, true)) {

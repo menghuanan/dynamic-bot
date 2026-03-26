@@ -10,6 +10,18 @@ interface PlatformAdapter {
     fun stop()
 
     /**
+     * 显式声明当前适配器实现支持的能力集合，供统一 guard 先做实现级筛选。
+     */
+    fun declaredCapabilities(): Set<PlatformCapability>
+
+    /**
+     * 统一返回请求级能力判断结果，避免业务层继续散落 capability 分支。
+     */
+    suspend fun guardCapability(request: CapabilityRequest): CapabilityGuardResult {
+        return CapabilityGuard.evaluate(this, request)
+    }
+
+    /**
      * 统一的平台发送入口；业务层不再直接依赖 Long 型联系人。
      */
     suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean
