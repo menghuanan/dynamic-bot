@@ -43,7 +43,7 @@ class IdeCompatibilitySourceRegressionTest {
 
     @Test
     fun `napcat client should use reified json encoding for message segments`() {
-        val source = read("src/main/kotlin/top/bilibili/napcat/NapCatClient.kt")
+        val source = read("src/main/kotlin/top/bilibili/connector/onebot11/vendors/napcat/NapCatClient.kt")
 
         assertTrue(source.contains("json.encodeToJsonElement(segmentsToSend)"))
         assertFalse(source.contains("ListSerializer(MessageSegment.serializer())"))
@@ -79,7 +79,7 @@ class IdeCompatibilitySourceRegressionTest {
 
     @Test
     fun `napcat and utility search helpers should avoid warning patterns`() {
-        val napcat = read("src/main/kotlin/top/bilibili/napcat/NapCatClient.kt")
+        val napcat = read("src/main/kotlin/top/bilibili/connector/onebot11/vendors/napcat/NapCatClient.kt")
         val general = read("src/main/kotlin/top/bilibili/utils/General.kt")
 
         assertFalse(napcat.contains("as List<MessageSegment>"))

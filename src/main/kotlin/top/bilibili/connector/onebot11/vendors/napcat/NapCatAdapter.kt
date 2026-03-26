@@ -9,10 +9,6 @@ import top.bilibili.connector.onebot11.OneBot11Adapter
 import top.bilibili.connector.onebot11.core.OneBot11MessageEvent
 import top.bilibili.connector.onebot11.core.OneBot11MessageSegment
 import top.bilibili.connector.onebot11.core.OneBot11Transport
-import top.bilibili.napcat.MessageEvent
-import top.bilibili.napcat.MessageSegment
-import top.bilibili.napcat.NapCatClient
-
 class NapCatAdapter(
     private val napCatClient: NapCatClient,
 ) : OneBot11Adapter(NapCatTransport(napCatClient)) {

@@ -1,6 +1,6 @@
 package top.bilibili.service
 
-import top.bilibili.napcat.MessageSegment
+import top.bilibili.connector.onebot11.vendors.napcat.MessageSegment
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

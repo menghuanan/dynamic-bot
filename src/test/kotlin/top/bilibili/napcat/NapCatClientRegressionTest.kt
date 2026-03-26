@@ -1,4 +1,4 @@
-package top.bilibili.napcat
+package top.bilibili.connector.onebot11.vendors.napcat
 
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.Json
@@ -102,7 +102,7 @@ class NapCatClientRegressionTest {
 
     @Test
     fun `stop should close websocket before cancelling scope and suppress shutdown cancellation noise`() {
-        val source = read("src/main/kotlin/top/bilibili/napcat/NapCatClient.kt")
+        val source = read("src/main/kotlin/top/bilibili/connector/onebot11/vendors/napcat/NapCatClient.kt")
 
         assertTrue(
             source.contains("private val stopping = AtomicBoolean(false)"),
@@ -124,7 +124,7 @@ class NapCatClientRegressionTest {
 
     @Test
     fun `send message timeout should be set to 20 seconds`() {
-        val source = read("src/main/kotlin/top/bilibili/napcat/NapCatClient.kt")
+        val source = read("src/main/kotlin/top/bilibili/connector/onebot11/vendors/napcat/NapCatClient.kt")
 
         assertTrue(
             source.contains("timeoutMillis = 20_000L"),

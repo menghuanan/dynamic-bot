@@ -1,4 +1,4 @@
-package top.bilibili.napcat
+package top.bilibili.connector.onebot11.vendors.napcat
 
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*

@@ -82,8 +82,10 @@ class OneBot11AdapterTest {
     fun `generic onebot11 adapter should depend on transport contract instead of napcat client`() {
         val adapterSource = File("src/main/kotlin/top/bilibili/connector/onebot11/OneBot11Adapter.kt").readText()
         val genericAdapterFile = File("src/main/kotlin/top/bilibili/connector/onebot11/generic/GenericOneBot11Adapter.kt")
+        val napCatClientFile = File("src/main/kotlin/top/bilibili/connector/onebot11/vendors/napcat/NapCatClient.kt")
 
         assertTrue(genericAdapterFile.exists(), "generic OneBot11 adapter should exist")
+        assertTrue(napCatClientFile.exists(), "NapCat client should live under the vendor directory")
         assertTrue(adapterSource.contains("OneBot11Transport"))
         assertFalse(adapterSource.contains("NapCatClient"))
         assertTrue(genericAdapterFile.readText().contains("OneBot11Transport"))

@@ -27,7 +27,7 @@ class SourceTextRegressionTest {
                 "Business lifecycle cleanup completed with failures",
                 "Business lifecycle session close failed",
             ),
-            "src/main/kotlin/top/bilibili/napcat/NapCatClient.kt" to listOf(
+            "src/main/kotlin/top/bilibili/connector/onebot11/vendors/napcat/NapCatClient.kt" to listOf(
                 "NapCat WebSocket client is already stopping",
                 "NapCat connect loop stopped during shutdown",
                 "NapCat receive loop stopped during shutdown",

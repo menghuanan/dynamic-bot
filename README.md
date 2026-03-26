@@ -47,11 +47,10 @@ dynamic-bot/
 │   ├── api/                          # B站 API 接口
 │   ├── client/                       # HTTP 客户端
 │   ├── config/                       # NapCat / Bot 配置
-│   ├── connector/                    # 连接器扩展预留目录
+│   ├── connector/                    # 平台连接器与 OneBot11 vendor 实现
 │   ├── core/                         # 核心启动与资源生命周期
 │   ├── data/                         # 数据模型
 │   ├── draw/                         # 图片渲染
-│   ├── napcat/                       # NapCat / OneBot 客户端
 │   ├── service/                      # 业务服务与命令处理
 │   ├── skia/                         # Skia 资源管理
 │   ├── tasker/                       # 定时任务与守护任务

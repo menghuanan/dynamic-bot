@@ -187,7 +187,7 @@ class CommandRegressionGuardTest {
 
     @Test
     fun `napcat send path should await api response instead of queue-only success`() {
-        val text = read("src/main/kotlin/top/bilibili/napcat/NapCatClient.kt")
+        val text = read("src/main/kotlin/top/bilibili/connector/onebot11/vendors/napcat/NapCatClient.kt")
         assertTrue(text.contains("sendActionAndAwaitResponse"), "send path should wait for OneBot response")
         assertTrue(text.contains("response.retcode"), "send path should check retcode before declaring success")
     }

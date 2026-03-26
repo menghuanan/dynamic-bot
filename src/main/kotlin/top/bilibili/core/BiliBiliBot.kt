@@ -32,7 +32,7 @@ import top.bilibili.data.BiliCookie
 import top.bilibili.data.BiliMessage
 import top.bilibili.data.DynamicDetail
 import top.bilibili.data.LiveDetail
-import top.bilibili.napcat.NapCatClient
+import top.bilibili.connector.onebot11.vendors.napcat.NapCatClient
 import top.bilibili.service.CacheMaintenanceService
 import top.bilibili.service.FirstRunService
 import top.bilibili.service.MessageEventDispatchService
