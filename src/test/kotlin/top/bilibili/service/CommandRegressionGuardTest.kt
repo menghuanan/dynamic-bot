@@ -197,4 +197,20 @@ class CommandRegressionGuardTest {
         val text = read("src/main/kotlin/top/bilibili/config/NapCatConfig.kt")
         assertTrue(text.contains("enable_link_parse") || text.contains("未启用"), "target config should explicitly mark link-parse config as not enabled")
     }
+
+    @Test
+    fun `business wording should stay platform neutral instead of hardcoding qq or napcat`() {
+        val router = read("src/main/kotlin/top/bilibili/service/MessageCommandRouterService.kt")
+        val admin = read("src/main/kotlin/top/bilibili/service/AdminCommandService.kt")
+        val blacklist = read("src/main/kotlin/top/bilibili/service/BlacklistCommandService.kt")
+        val help = read("src/main/kotlin/top/bilibili/service/PresentationCommandService.kt")
+        val gateway = read("src/main/kotlin/top/bilibili/service/MessageGateway.kt")
+        val policies = read("src/main/kotlin/top/bilibili/core/resource/TaskResourcePolicyRegistry.kt")
+
+        listOf(router, admin, blacklist, help).forEach { source ->
+            assertFalse(source.contains("QQ号"), "business command text should use neutral contact wording")
+        }
+        assertFalse(gateway.contains("NapCat"), "message gateway should stay connector-neutral")
+        assertFalse(policies.contains("NapCat 事件流"), "resource policy should not describe listener as NapCat-only")
+    }
 }

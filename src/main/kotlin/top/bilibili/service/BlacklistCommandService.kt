@@ -19,8 +19,8 @@ object BlacklistCommandService {
                 chatContact,
                 """
                 用法:
-                /bili blacklist add <QQ号> - 添加到链接解析黑名单
-                /bili blacklist remove <QQ号> - 从黑名单移除
+                /bili blacklist add <联系人> - 添加到链接解析黑名单
+                /bili blacklist remove <联系人> - 从黑名单移除
                 /bili blacklist list - 查看黑名单列表
                 """.trimIndent()
             )
@@ -67,12 +67,12 @@ object BlacklistCommandService {
 
     private suspend fun add(chatContact: PlatformContact, args: List<String>) {
         if (args.size < 3) {
-            sendText(chatContact, "用法: /bili blacklist add <QQ号>")
+            sendText(chatContact, "用法: /bili blacklist add <联系人>")
             return
         }
         val targetId = args[2].trim()
         if (targetId.isBlank()) {
-            sendText(chatContact, "QQ号格式错误")
+            sendText(chatContact, "联系人格式错误")
             return
         }
         quickAdd(chatContact, targetId)
@@ -80,12 +80,12 @@ object BlacklistCommandService {
 
     private suspend fun remove(chatContact: PlatformContact, args: List<String>) {
         if (args.size < 3) {
-            sendText(chatContact, "用法: /bili blacklist remove <QQ号>")
+            sendText(chatContact, "用法: /bili blacklist remove <联系人>")
             return
         }
         val targetId = args[2].trim()
         if (targetId.isBlank()) {
-            sendText(chatContact, "QQ号格式错误")
+            sendText(chatContact, "联系人格式错误")
             return
         }
         quickRemove(chatContact, targetId)

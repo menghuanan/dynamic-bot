@@ -16,15 +16,15 @@ object PresentationCommandService {
         val msg = if (isSuper) {
             """
             订阅管理:
-            /bili add <UID|ss|md|ep> [群号] - 添加订阅
-            /bili remove <UID|ss|md|ep> [群号] - 移除订阅
+            /bili add <UID|ss|md|ep> [群聊联系人] - 添加订阅
+            /bili remove <UID|ss|md|ep> [群聊联系人] - 移除订阅
             /bili list - 查看当前群的订阅
             /bili list <UID|ss|md|ep> - 查看订阅推送到哪些群
             分组管理:
             /bili group create <分组名> - 创建分组
             /bili group delete <分组名> - 删除分组
-            /bili group add <分组名> <群号> - 将群加入分组
-            /bili group remove <分组名> <群号> - 从分组移除群
+            /bili group add <分组名> <群聊联系人> - 将群加入分组
+            /bili group remove <分组名> <群聊联系人> - 从分组移除群
             /bili group list [分组名] - 查看分组信息
             /bili group subscribe <分组名> <UID|ss|md|ep> - 订阅到分组
             /bili group unsubscribe <分组名> <UID|ss|md|ep> - 从分组移除订阅
@@ -36,8 +36,8 @@ object PresentationCommandService {
             /bili filter list <UID> - 查看过滤器
             /bili filter del <UID> <索引> - 删除过滤器（如 t0, r1）
             管理员管理:
-            /bili admin add <QQ号> - 添加本群普通管理员
-            /bili admin remove <QQ号> - 移除本群普通管理员
+            /bili admin add <联系人> - 添加本群普通管理员
+            /bili admin remove <联系人> - 移除本群普通管理员
             /bili admin list - 查询本群管理员
             /bili admin all - 查询全部普通管理员
 
@@ -50,8 +50,8 @@ object PresentationCommandService {
             /add <UID> - 快速订阅
             /del <UID> - 快速取消订阅
             /list - 查看订阅列表
-            /black [QQ号] - 添加黑名单
-            /unblock [QQ号] - 取消黑名单
+            /black [联系人] - 添加黑名单
+            /unblock [联系人] - 取消黑名单
             /black list - 查看黑名单
             """.trimIndent()
         } else {

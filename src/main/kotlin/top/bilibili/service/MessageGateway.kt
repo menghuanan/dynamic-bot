@@ -19,7 +19,7 @@ interface MessageGateway {
     }
 
     /**
-     * 为仍在迁移中的 OneBot11 调用方保留数字群号入口。
+     * 为仍在迁移中的旧版数字群联系人调用方保留兼容入口。
      */
     @Deprecated(
         message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",
@@ -33,7 +33,7 @@ interface MessageGateway {
     }
 
     /**
-     * 为仍在迁移中的 OneBot11 调用方保留数字私聊入口。
+     * 为仍在迁移中的旧版数字私聊联系人调用方保留兼容入口。
      */
     @Deprecated(
         message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",

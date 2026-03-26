@@ -57,7 +57,7 @@ object MessageCommandRouterService {
                 message.startsWith("/black ") -> {
                     val targetId = message.removePrefix("/black ").trim()
                     if (targetId.isBlank()) {
-                        sendText(groupContact, "QQ号格式错误")
+                        sendText(groupContact, "联系人格式错误")
                     } else {
                         BlacklistCommandService.quickAdd(groupContact, targetId)
                     }
@@ -67,7 +67,7 @@ object MessageCommandRouterService {
                 message.startsWith("/unblock ") -> {
                     val targetId = message.removePrefix("/unblock ").trim()
                     if (targetId.isBlank()) {
-                        sendText(groupContact, "QQ号格式错误")
+                        sendText(groupContact, "联系人格式错误")
                     } else {
                         BlacklistCommandService.quickRemove(groupContact, targetId)
                     }

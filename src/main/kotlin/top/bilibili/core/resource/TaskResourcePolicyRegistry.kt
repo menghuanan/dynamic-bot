@@ -8,7 +8,7 @@ data class TaskResourcePolicy(
 
 object TaskResourcePolicyRegistry {
     private val policies = mapOf(
-        "ListenerTasker" to TaskResourcePolicy("ListenerTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "持续监听 NapCat 事件流"),
+        "ListenerTasker" to TaskResourcePolicy("ListenerTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "持续监听平台事件流"),
         "DynamicCheckTasker" to TaskResourcePolicy("DynamicCheckTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "周期轮询任务"),
         "LiveCheckTasker" to TaskResourcePolicy("LiveCheckTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "周期轮询任务"),
         "LiveCloseCheckTasker" to TaskResourcePolicy("LiveCloseCheckTasker", ResourceStrictness.RELAXED_LONG_RUNNING, "周期轮询任务"),

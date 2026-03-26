@@ -18,8 +18,8 @@ object AdminCommandService {
                 chatContact,
                 """
                 用法:
-                /bili admin add <QQ号> - 添加本群普通管理员
-                /bili admin remove <QQ号> - 移除本群普通管理员
+                /bili admin add <联系人> - 添加本群普通管理员
+                /bili admin remove <联系人> - 移除本群普通管理员
                 /bili admin list - 查询本群管理员
                 /bili admin all - 查询全部普通管理员
                 """.trimIndent()
@@ -42,7 +42,7 @@ object AdminCommandService {
             return
         }
         if (args.size < 3) {
-            sendText(chatContact, "用法: /bili admin add <QQ号>")
+            sendText(chatContact, "用法: /bili admin add <联系人>")
             return
         }
 
@@ -52,7 +52,7 @@ object AdminCommandService {
             defaultType = PlatformChatType.PRIVATE,
         )
         if (targetContact == null) {
-            sendText(chatContact, "QQ号格式错误")
+            sendText(chatContact, "联系人格式错误")
             return
         }
 
@@ -79,7 +79,7 @@ object AdminCommandService {
             return
         }
         if (args.size < 3) {
-            sendText(chatContact, "用法: /bili admin remove <QQ号>")
+            sendText(chatContact, "用法: /bili admin remove <联系人>")
             return
         }
 
@@ -89,7 +89,7 @@ object AdminCommandService {
             defaultType = PlatformChatType.PRIVATE,
         )
         if (targetContact == null) {
-            sendText(chatContact, "QQ号格式错误")
+            sendText(chatContact, "联系人格式错误")
             return
         }
 
