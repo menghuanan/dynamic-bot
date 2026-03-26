@@ -25,16 +25,16 @@ object ConfigManager {
         if (botConfigFile.exists()) {
             try {
                 val content = botConfigFile.readText()
-                botConfig = yaml.decodeFromString<BotConfig>(content)
+                botConfig = yaml.decodeFromString<BotConfig>(content).normalizedBotConfig()
                 logger.info("成功加载配置文件: ${botConfigFile.name}")
             } catch (e: Exception) {
                 logger.error("加载配置文件失败，使用默认配置: ${e.message}", e)
-                botConfig = BotConfig()
+                botConfig = BotConfig().normalizedBotConfig()
                 saveConfig()
             }
         } else {
             logger.info("配置文件不存在，创建默认配置")
-            botConfig = BotConfig()
+            botConfig = BotConfig().normalizedBotConfig()
             saveConfig()
         }
 
@@ -45,6 +45,7 @@ object ConfigManager {
 
     fun saveConfig() {
         try {
+            botConfig = botConfig.normalizedBotConfig()
             val content = yaml.encodeToString(botConfig)
             botConfigFile.writeText(content)
             logger.info("配置已保存到: ${botConfigFile.absolutePath}")

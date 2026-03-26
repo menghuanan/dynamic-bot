@@ -2,6 +2,7 @@ package top.bilibili.config
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.EncodeDefault
 import top.bilibili.connector.PlatformAdapterKind
 import top.bilibili.connector.PlatformType
 import top.bilibili.utils.normalizeContactSubject
@@ -118,8 +119,9 @@ data class QQOfficialConfig(
 @Serializable
 data class PlatformConfig(
     val type: PlatformType = PlatformType.ONEBOT11,
+    @EncodeDefault
     @SerialName("adapter")
-    val adapter: PlatformAdapterKind? = null,
+    val adapter: String = "onebot11",
     val onebot11: NapCatConfig = NapCatConfig(),
     @SerialName("qq_official")
     val qqOfficial: QQOfficialConfig = QQOfficialConfig(),
@@ -138,18 +140,35 @@ data class BotConfig(
     fun selectedPlatformType(): PlatformType = platform.type
 
     /**
-     * 为 OneBot11 路径返回显式适配器选择；旧配置未声明时继续回退到 NapCat，确保兼容历史部署。
+     * 统一将配置里的适配器文本归一为受支持的选择：
+     * - 缺失时优先回退到 generic onebot11
+     * - 仅在明确 legacy napcat 配置存在时推断为 napcat
+     * - 未知值统一回退到 generic onebot11
      */
     fun selectedAdapterKind(): PlatformAdapterKind {
         return when (selectedPlatformType()) {
             PlatformType.ONEBOT11 -> {
-                when (platform.adapter) {
-                    PlatformAdapterKind.ONEBOT11 -> PlatformAdapterKind.ONEBOT11
-                    else -> PlatformAdapterKind.NAPCAT
-                }
+                normalizeAdapterKind(platform.adapter)
             }
             PlatformType.QQ_OFFICIAL -> PlatformAdapterKind.QQ_OFFICIAL
         }
+    }
+
+    fun normalizedPlatformConfig(): PlatformConfig {
+        val normalizedAdapter = when (selectedPlatformType()) {
+            PlatformType.ONEBOT11 -> normalizeAdapterKind(platform.adapter).serialName()
+            PlatformType.QQ_OFFICIAL -> PlatformAdapterKind.QQ_OFFICIAL.serialName()
+        }
+        return if (platform.adapter == normalizedAdapter) {
+            platform
+        } else {
+            platform.copy(adapter = normalizedAdapter)
+        }
+    }
+
+    fun normalizedBotConfig(): BotConfig {
+        val normalizedPlatform = normalizedPlatformConfig()
+        return if (normalizedPlatform == platform) this else copy(platform = normalizedPlatform)
     }
 
     fun selectedOneBot11Config(): NapCatConfig {
@@ -169,4 +188,20 @@ data class BotConfig(
             }
         }
     }
+
+    private fun normalizeAdapterKind(rawAdapter: String?): PlatformAdapterKind {
+        val normalized = rawAdapter?.trim()?.lowercase().orEmpty()
+        return when {
+            normalized == PlatformAdapterKind.NAPCAT.serialName() -> PlatformAdapterKind.NAPCAT
+            normalized == PlatformAdapterKind.ONEBOT11.serialName() -> PlatformAdapterKind.ONEBOT11
+            normalized.isBlank() && napcat != NapCatConfig() && platform.onebot11 == NapCatConfig() -> PlatformAdapterKind.NAPCAT
+            else -> PlatformAdapterKind.ONEBOT11
+        }
+    }
+}
+
+private fun PlatformAdapterKind.serialName(): String = when (this) {
+    PlatformAdapterKind.NAPCAT -> "napcat"
+    PlatformAdapterKind.ONEBOT11 -> "onebot11"
+    PlatformAdapterKind.QQ_OFFICIAL -> "qq_official"
 }

@@ -12,6 +12,7 @@
 
 - [预览效果](#预览效果)
 - [项目结构](#项目结构)
+- [当前支持的协议与支持情况](#当前支持的协议与支持情况)
 - [快速开始](#快速开始)
 - [主要功能](#主要功能)
 - [配置说明](#配置说明)
@@ -80,6 +81,13 @@ dynamic-bot/
 └── LICENSE                           # 许可证
 
 ```
+
+## 当前支持的协议与支持情况
+
+- NapCat：`platform.type: onebot11` 且 `adapter: napcat`。当前能力最完整，推荐作为默认接入方案，现有底层业务以这条链路为基准验证。
+- 通用 OneBot11：`platform.type: onebot11` 且 `adapter: onebot11`。支持大部分协议通用能力；遇到适配器未实现或无法确认的能力时，会显式降级并输出日志，而不是让业务静默失效。
+- QQ 官方：`platform.type: qq_official`。当前定位为最低可用适配器，支持基础收发、回复、公网图片和链接解析；`@全体`、本地/二进制图片等不支持能力会显式降级并输出日志。
+- 配置要求：只要选择 OneBot11 协议，就必须显式填写 `adapter`。当前内置适配器只有 `napcat` 和 `onebot11`。
 
 ## 快速开始
 
@@ -173,6 +181,7 @@ docker-compose down
 ```yaml
 platform:
   type: onebot11  # 可选: onebot11 / qq_official
+  adapter: onebot11  # required for onebot11: onebot11 or napcat
   onebot11:
     host: "NapCat WebSocket 服务器地址"
     port: 3001
@@ -328,6 +337,7 @@ admin: "管理员QQ号"
 ```yaml
 platform:
   type: onebot11             # 可选: onebot11 / qq_official
+  adapter: onebot11  # required for onebot11: onebot11 or napcat
   onebot11:
     host: "127.0.0.1"        # NapCat / OneBot11 WebSocket 主机地址
     port: 3001               # NapCat / OneBot11 WebSocket 端口
@@ -1107,3 +1117,6 @@ docker logs -f dynamic-bot
 如果您有任何建议或功能请求和问题，欢迎在 Issue 中提出。
 
 如果你希望贡献代码或参与项目的开发，可以加入我的 QQ 群：1072150397
+
+
+

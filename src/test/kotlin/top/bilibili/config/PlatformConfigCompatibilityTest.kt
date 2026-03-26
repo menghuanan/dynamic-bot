@@ -2,10 +2,12 @@ package top.bilibili.config
 
 import com.charleskorn.kaml.Yaml
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import top.bilibili.connector.PlatformAdapterKind
 import top.bilibili.connector.PlatformType
 
 class PlatformConfigCompatibilityTest {
@@ -50,5 +52,48 @@ class PlatformConfigCompatibilityTest {
 
         assertFalse(invalidConfig.validateSelectedPlatform())
         assertTrue(validConfig.validateSelectedPlatform())
+    }
+
+    @Test
+    fun `default bot config should serialize explicit generic onebot11 adapter`() {
+        val content = yaml.encodeToString(BotConfig())
+
+        assertTrue(content.contains("adapter:"), content)
+        assertTrue(content.contains("onebot11"), content)
+    }
+
+    @Test
+    fun `missing adapter under onebot11 should fall back to generic onebot11 instead of napcat`() {
+        val config = yaml.decodeFromString<BotConfig>(
+            """
+            platform:
+              type: onebot11
+              onebot11:
+                host: "192.168.1.6"
+                port: 3020
+                token: "generic-token"
+            """.trimIndent(),
+        )
+
+        assertEquals(PlatformType.ONEBOT11, config.selectedPlatformType())
+        assertEquals(PlatformAdapterKind.ONEBOT11, config.selectedAdapterKind())
+    }
+
+    @Test
+    fun `unknown adapter under onebot11 should fall back to generic onebot11`() {
+        val config = yaml.decodeFromString<BotConfig>(
+            """
+            platform:
+              type: onebot11
+              adapter: custom_vendor
+              onebot11:
+                host: "192.168.1.7"
+                port: 3030
+                token: "custom-token"
+            """.trimIndent(),
+        )
+
+        assertEquals(PlatformType.ONEBOT11, config.selectedPlatformType())
+        assertEquals(PlatformAdapterKind.ONEBOT11, config.selectedAdapterKind())
     }
 }
