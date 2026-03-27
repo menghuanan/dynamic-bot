@@ -1,5 +1,9 @@
 # BiliBili 动态推送 Bot v1.8
 
+1.8版本还没有稳定测试，建议先使用v1.7.44版本
+
+docker 部署的latest标签为v1.8.0，建议使用v1.7.44版本
+
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
