@@ -128,18 +128,16 @@ internal class QQOfficialAdapter(
         }
     }
 
-    override fun stop() {
+    override suspend fun stop() {
         if (!started.compareAndSet(true, false)) {
             return
         }
         connected.set(false)
-        runBlocking {
-            reconnectJob?.cancelAndJoin()
-            heartbeatJob?.cancelAndJoin()
-            gatewayCloseWatchJob?.cancelAndJoin()
-            gatewayCollectJob?.cancelAndJoin()
-            gatewaySession?.close("adapter stop")
-        }
+        reconnectJob?.cancelAndJoin()
+        heartbeatJob?.cancelAndJoin()
+        gatewayCloseWatchJob?.cancelAndJoin()
+        gatewayCollectJob?.cancelAndJoin()
+        gatewaySession?.close("adapter stop")
         scope.cancel()
         transport.close()
     }

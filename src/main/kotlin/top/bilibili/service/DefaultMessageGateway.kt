@@ -4,14 +4,14 @@ import org.slf4j.Logger
 import top.bilibili.connector.CapabilityGuard
 import top.bilibili.connector.CapabilityGuardResult
 import top.bilibili.connector.OutgoingPart
-import top.bilibili.connector.PlatformAdapter
 import top.bilibili.connector.PlatformCapabilityService
 import top.bilibili.connector.PlatformContact
 import top.bilibili.utils.parsePlatformContact
 import top.bilibili.utils.toSubject
 
 class DefaultMessageGateway(
-    private val platformAdapterProvider: () -> PlatformAdapter,
+    // 网关只保留 connector-owned 发送入口，避免继续注入 raw adapter provider。
+    private val sendMessageEntryPoint: suspend (PlatformContact, List<OutgoingPart>) -> Boolean,
     private val adminContactProvider: () -> String?,
     private val logger: Logger,
 ) : MessageGateway {
@@ -26,7 +26,7 @@ class DefaultMessageGateway(
     }
 
     override suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean {
-        return platformAdapterProvider().sendMessage(contact, message)
+        return sendMessageEntryPoint.invoke(contact, message)
     }
 
     /**

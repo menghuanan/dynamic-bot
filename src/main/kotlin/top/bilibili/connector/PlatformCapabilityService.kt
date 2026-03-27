@@ -13,7 +13,7 @@ object PlatformCapabilityService {
         if (!BiliBiliBot.isPlatformAdapterInitialized()) {
             return CapabilityGuard.unsupported("platform adapter is not initialized")
         }
-        return BiliBiliBot.platformAdapter.guardCapability(request)
+        return BiliBiliBot.requireConnectorManager().guardCapability(request)
     }
 
     /**
@@ -123,7 +123,7 @@ object PlatformCapabilityService {
         if (!BiliBiliBot.isPlatformAdapterInitialized()) {
             return false
         }
-        return BiliBiliBot.platformAdapter.isGroupReachable(groupId)
+        return BiliBiliBot.requireConnectorManager().isGroupReachable(groupId)
     }
 
     /**
@@ -144,6 +144,6 @@ object PlatformCapabilityService {
         if (!BiliBiliBot.isPlatformAdapterInitialized()) {
             return false
         }
-        return BiliBiliBot.platformAdapter.canAtAll(groupId)
+        return BiliBiliBot.requireConnectorManager().canAtAll(groupId)
     }
 }

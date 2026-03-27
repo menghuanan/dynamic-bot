@@ -48,9 +48,7 @@ object BlacklistCommandService {
 
     suspend fun quickRemove(chatContact: PlatformContact, targetId: String) {
         val normalizedTarget = normalizeTarget(chatContact, targetId)
-        if (!BiliData.linkParseBlacklistContacts.contains(normalizedTarget) &&
-            targetId.toLongOrNull()?.let { !BiliData.linkParseBlacklist.contains(it) } != false
-        ) {
+        if (!BiliData.linkParseBlacklistContacts.contains(normalizedTarget)) {
             sendText(chatContact, "用户 $targetId 不在黑名单中")
             return
         }

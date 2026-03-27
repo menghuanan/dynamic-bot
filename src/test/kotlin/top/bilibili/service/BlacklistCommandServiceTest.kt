@@ -8,6 +8,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import top.bilibili.BiliData
 import top.bilibili.connector.OutgoingPart
@@ -84,5 +85,18 @@ class BlacklistCommandServiceTest {
 
         assertEquals(emptySet(), BiliData.linkParseBlacklistContacts)
         assertTrue(gateway.messages.any { it.contains("qq_official:private:user_openid_demo") })
+    }
+
+    @Test
+    fun `quick remove should only operate on normalized subject blacklist entries`() = runBlocking {
+        val chatContact = PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, "10001")
+
+        BiliData.linkParseBlacklist.add(20002L)
+
+        BlacklistCommandService.quickRemove(chatContact, "20002")
+
+        assertEquals(setOf(20002L), BiliData.linkParseBlacklist)
+        assertFalse(BiliData.linkParseBlacklistContacts.contains("onebot11:private:20002"))
+        assertTrue(gateway.messages.last().contains("用户 20002 不在黑名单中"))
     }
 }

@@ -124,4 +124,15 @@ class IdeCompatibilitySourceRegressionTest {
 
         assertTrue(init.contains("// 预留未使用变量 fontFolder: val fontFolder = BiliBiliBot.dataFolder.resolve(\"font\")"))
     }
+
+    @Test
+    fun `generic onebot11 shutdown path should stay suspend safe and vendor neutral`() {
+        val transport = read("src/main/kotlin/top/bilibili/connector/onebot11/core/KtorOneBot11Transport.kt")
+        val manager = read("src/main/kotlin/top/bilibili/connector/PlatformConnectorManager.kt")
+
+        assertFalse(transport.contains("runBlocking"))
+        assertTrue(manager.contains("suspend fun stop()"))
+        assertTrue(manager.contains("PlatformAdapterKind.NAPCAT"))
+        assertTrue(manager.contains("PlatformAdapterKind.ONEBOT11"))
+    }
 }

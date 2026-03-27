@@ -40,6 +40,11 @@ class QQOfficialAdapterTest {
     private val json = Json { ignoreUnknownKeys = true }
     private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
 
+    // 统一桥接适配器的 suspend 停机入口，避免每个 finally 重复包一层 runBlocking。
+    private fun stopAdapter(adapter: QQOfficialAdapter) = runBlocking {
+        adapter.stop()
+    }
+
     @Test
     fun `missing credentials should keep adapter unavailable`() {
         val transport = FakeTransport()
@@ -75,7 +80,7 @@ class QQOfficialAdapterTest {
             assertEquals(2, identifyPayload["op"]!!.jsonPrimitive.content.toInt())
             assertEquals("QQBot access-token-demo", identifyPayload["d"]!!.jsonObject["token"]!!.jsonPrimitive.content)
         } finally {
-            adapter.stop()
+            stopAdapter(adapter)
         }
     }
 
@@ -112,7 +117,7 @@ class QQOfficialAdapterTest {
             assertEquals("user_openid_demo", c2cEvent.senderContact.id)
             assertFalse(c2cEvent.hasMention)
         } finally {
-            adapter.stop()
+            stopAdapter(adapter)
         }
     }
 
@@ -140,7 +145,7 @@ class QQOfficialAdapterTest {
             assertEquals(0, privateRequest.body!!.jsonObject["msg_type"]!!.jsonPrimitive.content.toInt())
             assertEquals("私聊消息", privateRequest.body!!.jsonObject["content"]!!.jsonPrimitive.content)
         } finally {
-            adapter.stop()
+            stopAdapter(adapter)
         }
     }
 
@@ -173,7 +178,7 @@ class QQOfficialAdapterTest {
             assertEquals("带图消息", sendRequest.body!!.jsonObject["content"]!!.jsonPrimitive.content)
             assertEquals("file-info-demo", sendRequest.body!!.jsonObject["media"]!!.jsonObject["file_info"]!!.jsonPrimitive.content)
         } finally {
-            adapter.stop()
+            stopAdapter(adapter)
         }
     }
 
@@ -193,7 +198,7 @@ class QQOfficialAdapterTest {
             assertTrue(adapter.canReply(groupContact))
             assertFalse(adapter.canAtAll(groupContact))
         } finally {
-            adapter.stop()
+            stopAdapter(adapter)
         }
     }
 
@@ -210,7 +215,7 @@ class QQOfficialAdapterTest {
             assertFalse(adapter.sendMessage(groupContact, listOf(OutgoingPart.atAll(), OutgoingPart.text("公告"))))
             assertFalse(transport.requests.any { it.url.endsWith("/v2/groups/group_openid_demo/messages") })
         } finally {
-            adapter.stop()
+            stopAdapter(adapter)
         }
     }
 
@@ -241,7 +246,7 @@ class QQOfficialAdapterTest {
             assertEquals("42", sendRequest.body!!.jsonObject["msg_id"]!!.jsonPrimitive.content)
             assertFalse(sendRequest.body!!.jsonObject.containsKey("media"))
         } finally {
-            adapter.stop()
+            stopAdapter(adapter)
         }
     }
 
@@ -263,7 +268,7 @@ class QQOfficialAdapterTest {
             )
             assertFalse(transport.requests.any { it.url.endsWith("/v2/groups/group_openid_demo/messages") })
         } finally {
-            adapter.stop()
+            stopAdapter(adapter)
         }
     }
 
@@ -296,7 +301,7 @@ class QQOfficialAdapterTest {
             val unsupportedAtAll = assertIs<CapabilityGuardResult.Unsupported>(atAllGuard)
             assertTrue(unsupportedAtAll.reason.contains("@全体"), "qq official at-all reason should be explicit")
         } finally {
-            adapter.stop()
+            stopAdapter(adapter)
         }
     }
 
@@ -332,7 +337,7 @@ class QQOfficialAdapterTest {
             }
             assertFalse(adapter.canSendMessage(groupContact))
         } finally {
-            adapter.stop()
+            stopAdapter(adapter)
         }
     }
 

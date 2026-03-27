@@ -24,7 +24,9 @@ class PlatformWiringSourceRegressionTest {
         val source = read("src/main/kotlin/top/bilibili/tasker/ListenerTasker.kt")
 
         assertFalse(source.contains("BiliBiliBot.napCat.eventFlow"))
-        assertTrue(source.contains("platformAdapter.eventFlow") || source.contains("requirePlatformAdapter().eventFlow"))
+        // 监听入口必须消费 connector manager 暴露的事件流，而不是从 raw adapter 直接取流。
+        assertFalse(source.contains("requirePlatformAdapter().eventFlow"))
+        assertTrue(source.contains("requireConnectorManager().eventFlow") || source.contains("platformConnectorManager.eventFlow"))
     }
 
     @Test
@@ -64,12 +66,20 @@ class PlatformWiringSourceRegressionTest {
     fun `platform capability service should route through unified capability guard`() {
         val adapterSource = read("src/main/kotlin/top/bilibili/connector/PlatformAdapter.kt")
         val serviceSource = read("src/main/kotlin/top/bilibili/connector/PlatformCapabilityService.kt")
+        val guardianSource = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+        val gatewaySource = read("src/main/kotlin/top/bilibili/service/DefaultMessageGateway.kt")
 
         assertTrue(adapterSource.contains("declaredCapabilities"))
         assertTrue(adapterSource.contains("guardCapability"))
         assertTrue(serviceSource.contains("CapabilityGuard"))
         assertTrue(serviceSource.contains("CapabilityRequest"))
         assertTrue(serviceSource.contains("guardMessageSend"))
+        // 能力判断与运行状态查询都必须通过 connector manager，避免回退到 BiliBiliBot 暴露 raw adapter。
+        assertFalse(serviceSource.contains("BiliBiliBot.platformAdapter"))
+        assertFalse(guardianSource.contains("BiliBiliBot.platformAdapter"))
+        // 消息网关应依赖 connector 自己的发送入口，而不是注入 raw adapter provider。
+        assertFalse(gatewaySource.contains("PlatformAdapter"))
+        assertFalse(gatewaySource.contains("platformAdapterProvider"))
     }
 
     @Test

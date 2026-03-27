@@ -9,7 +9,10 @@ interface OneBot11Transport {
 
     fun start()
 
-    fun stop()
+    /**
+     * 统一提供可挂起的停机入口，避免 generic transport 关闭时再使用 runBlocking 桥接。
+     */
+    suspend fun stop()
 
     /**
      * 统一发送 OneBot11 消息段，避免上层继续感知具体 vendor 客户端。

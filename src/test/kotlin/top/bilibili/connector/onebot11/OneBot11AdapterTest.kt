@@ -35,7 +35,7 @@ class OneBot11AdapterTest {
 
         override fun start() = Unit
 
-        override fun stop() = Unit
+        override suspend fun stop() = Unit
 
         override suspend fun sendMessage(
             chatType: PlatformChatType,
@@ -107,6 +107,16 @@ class OneBot11AdapterTest {
         assertTrue(transportFile.exists(), "generic OneBot11 transport should exist")
         assertTrue(managerSource.contains("KtorOneBot11Transport("))
         assertFalse(managerSource.contains("GenericOneBot11Adapter(NapCatAdapter.transport("))
+    }
+
+    @Test
+    fun `generic onebot11 shutdown should use suspend safe transport stop path`() {
+        val transportSource = read("src/main/kotlin/top/bilibili/connector/onebot11/core/KtorOneBot11Transport.kt")
+        val managerSource = read("src/main/kotlin/top/bilibili/connector/PlatformConnectorManager.kt")
+
+        // generic transport 停机不得再用 runBlocking 桥接同步关闭，必须由上层 suspend 生命周期调用。
+        assertFalse(transportSource.contains("runBlocking"))
+        assertTrue(managerSource.contains("suspend fun stop()"))
     }
 
     // 约束 generic OneBot11 要对本地图和 @全体给出显式 guard 结果，而不是继续模糊地返回发送失败。

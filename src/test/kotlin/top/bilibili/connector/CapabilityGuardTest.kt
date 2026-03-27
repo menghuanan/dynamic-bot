@@ -22,7 +22,7 @@ class CapabilityGuardTest {
 
         override fun start() = Unit
 
-        override fun stop() = Unit
+        override suspend fun stop() = Unit
 
         override suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean = true
 

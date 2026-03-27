@@ -43,7 +43,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
     }
 
     private suspend fun listenMessages() {
-        BiliBiliBot.requirePlatformAdapter().eventFlow.collect { event ->
+        BiliBiliBot.requireConnectorManager().eventFlow.collect { event ->
             try {
                 if (event.chatType == PlatformChatType.GROUP) {
                     handleGroupMessage(event)
@@ -84,9 +84,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
             return
         }
 
-        if (top.bilibili.BiliData.linkParseBlacklistContacts.contains(senderSubject) ||
-            senderContact.id.toLongOrNull()?.let(top.bilibili.BiliData.linkParseBlacklist::contains) == true
-        ) {
+        if (top.bilibili.BiliData.linkParseBlacklistContacts.contains(senderSubject)) {
             logger.debug("忽略黑名单用户 {} 的链接解析请求", senderContact.id)
             return
         }

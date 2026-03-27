@@ -14,7 +14,6 @@ import kotlinx.coroutines.withTimeout
 import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfigManager
 import top.bilibili.connector.OutgoingPart
-import top.bilibili.connector.PlatformAdapter
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformConnectorManager
 import top.bilibili.connector.PlatformContact
@@ -81,9 +80,6 @@ object BiliBiliBot : CoroutineScope {
 
     private var connectorManager: PlatformConnectorManager? = null
 
-    val platformAdapter: PlatformAdapter
-        get() = requirePlatformAdapter()
-
     lateinit var config: top.bilibili.config.BotConfig
         private set
 
@@ -95,10 +91,6 @@ object BiliBiliBot : CoroutineScope {
     fun isConfigInitialized(): Boolean = ::config.isInitialized
 
     fun isStopping(): Boolean = lifecycleState.get() == BotLifecycleState.STOPPING
-
-    fun requirePlatformAdapter(): PlatformAdapter {
-        return requireConnectorManager().requirePlatformAdapter()
-    }
 
     fun requireConfig(): top.bilibili.config.BotConfig {
         require(::config.isInitialized) {
@@ -116,7 +108,10 @@ object BiliBiliBot : CoroutineScope {
     val messageChannel = Channel<BiliMessage>(20)
     val liveUsers = mutableMapOf<Long, Long>()
 
-    private fun requireConnectorManager(): PlatformConnectorManager {
+    /**
+     * 运行期统一通过 connector manager 访问平台能力，避免业务层再感知 raw adapter。
+     */
+    fun requireConnectorManager(): PlatformConnectorManager {
         return connectorManager ?: error("平台连接管理器尚未初始化，请先完成启动。")
     }
 
@@ -214,7 +209,7 @@ object BiliBiliBot : CoroutineScope {
             }
             MessageGatewayProvider.register(
                 DefaultMessageGateway(
-                    platformAdapterProvider = { requirePlatformAdapter() },
+                    sendMessageEntryPoint = { contact, message -> requireConnectorManager().sendMessage(contact, message) },
                     adminContactProvider = { BiliConfigManager.config.normalizedAdminSubject() },
                     logger = logger,
                 ),

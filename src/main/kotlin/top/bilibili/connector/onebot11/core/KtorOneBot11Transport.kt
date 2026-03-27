@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -92,21 +91,19 @@ class KtorOneBot11Transport(
         }
     }
 
-    override fun stop() {
+    override suspend fun stop() {
         if (!stopping.compareAndSet(false, true)) {
             return
         }
         connected.set(false)
-        runBlocking {
-            runCatching {
-                session?.close(CloseReason(CloseReason.Codes.NORMAL, "generic onebot11 transport stopping"))
-            }
+        runCatching {
+            session?.close(CloseReason(CloseReason.Codes.NORMAL, "generic onebot11 transport stopping"))
         }
-        runBlocking {
-            withTimeoutOrNull(5_000L) {
-                connectionJob?.cancelAndJoin()
-            }
+        withTimeoutOrNull(5_000L) {
+            connectionJob?.cancelAndJoin()
         }
+        connectionJob = null
+        session = null
         client.close()
     }
 

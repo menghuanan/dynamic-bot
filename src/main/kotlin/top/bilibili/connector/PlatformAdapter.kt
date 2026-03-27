@@ -7,7 +7,10 @@ interface PlatformAdapter {
 
     fun start()
 
-    fun stop()
+    /**
+     * 统一提供可挂起的停机入口，确保传输层关闭可沿用已有 suspend 生命周期。
+     */
+    suspend fun stop()
 
     /**
      * 显式声明当前适配器实现支持的能力集合，供统一 guard 先做实现级筛选。

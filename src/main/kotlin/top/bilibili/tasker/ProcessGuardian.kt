@@ -74,6 +74,9 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         // 1. 检查任务健康状态
         checkTaskerHealth(report)
 
+        // 1.5 对仍存活但已不健康的 tasker 走显式恢复路径，而不是只记录告警。
+        recoverUnhealthyTaskers()
+
         // 2. 检查内存使用
         checkMemoryUsage(report)
 
@@ -119,6 +122,24 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             report.hasTaskerIssue = false
             logger.debug("所有任务运行正常，活跃任务数: ${taskers.count { it.healthSnapshot().healthy }}")
         }
+    }
+
+    /**
+     * 基于 health snapshot 恢复仍存活但 worker 已失效的 tasker；已终止的 shell job 仍交给僵尸清理处理。
+     */
+    fun recoverUnhealthyTaskers(): List<String> {
+        val recoveredTaskers = taskers
+            .filter { it != this }
+            .map { tasker -> tasker to tasker.healthSnapshot() }
+            .filter { (_, snapshot) -> snapshot.active && !snapshot.healthy }
+            .mapNotNull { (tasker, snapshot) ->
+                if (tasker.recoverUnhealthyWorkers()) snapshot.taskerName else null
+            }
+
+        if (recoveredTaskers.isNotEmpty()) {
+            logger.warn("已触发异常任务恢复: {}", recoveredTaskers)
+        }
+        return recoveredTaskers
     }
 
     /**
@@ -279,7 +300,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             return
         }
 
-        val runtimeStatus = BiliBiliBot.platformAdapter.runtimeStatus()
+        val runtimeStatus = BiliBiliBot.requireConnectorManager().runtimeStatus()
         val isConnected = runtimeStatus.connected
         val reconnectAttempts = runtimeStatus.reconnectAttempts
 
@@ -344,7 +365,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         // 检查 BiliBiliBot 的 Channel
         try {
             if (BiliBiliBot.isPlatformAdapterInitialized()) {
-                val runtimeStatus = BiliBiliBot.platformAdapter.runtimeStatus()
+                val runtimeStatus = BiliBiliBot.requireConnectorManager().runtimeStatus()
                 if (runtimeStatus.outboundPressureActive) {
                     fullChannels.add("platform.outbound (dropped=${runtimeStatus.outboundDroppedEvents})")
                     logger.warn("平台出站背压已触发，可能存在消息积压")

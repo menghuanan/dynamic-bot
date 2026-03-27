@@ -102,6 +102,7 @@ abstract class BiliTasker(
 
     private var job: Job? = null
     private val managedWorkers = ConcurrentHashMap<String, ManagedWorkerState>()
+    private val managedWorkerDefinitions = ConcurrentHashMap<String, ManagedWorkerDefinition>()
 
     abstract var interval: Int
     open val unitTime: Long = 1000
@@ -122,16 +123,15 @@ abstract class BiliTasker(
         backoffPolicy: ConnectionBackoffPolicy = ConnectionBackoffPolicy(baseDelayMillis = 1_000L, maxDelayMillis = 30_000L),
         block: suspend () -> Unit,
     ): Job {
-        val parentJob = job ?: error("任务主协程尚未启动，无法注册受管 worker: $workerName")
-        val state = ManagedWorkerState(workerName = workerName)
-        val existing = managedWorkers.putIfAbsent(workerName, state)
+        val definition = ManagedWorkerDefinition(
+            workerName = workerName,
+            maxRestarts = maxRestarts,
+            backoffPolicy = backoffPolicy,
+            block = block,
+        )
+        val existing = managedWorkerDefinitions.putIfAbsent(workerName, definition)
         require(existing == null) { "重复注册受管 worker: $workerName" }
-
-        val workerJob = launch(parentJob + CoroutineName("$taskDisplayName.worker.$workerName")) {
-            runManagedWorkerLoop(state, maxRestarts, backoffPolicy, block)
-        }
-        state.job = workerJob
-        return workerJob
+        return launchManagedWorker(definition, allowReplace = false)
     }
 
     fun healthSnapshot(): TaskHealthSnapshot {
@@ -152,6 +152,34 @@ abstract class BiliTasker(
             active = job?.isActive == true,
             workerSnapshots = snapshots,
         )
+    }
+
+    /**
+     * 为守护进程提供 tasker 级恢复入口：仅重建当前 tasker 已注册的受管 worker，不重启整个 tasker 作业。
+     */
+    fun recoverUnhealthyWorkers(): Boolean {
+        val parentJob = job ?: return false
+        if (!parentJob.isActive || BiliBiliBot.isStopping()) {
+            return false
+        }
+
+        val snapshot = healthSnapshot()
+        if (snapshot.healthy || snapshot.workerSnapshots.isEmpty()) {
+            return false
+        }
+
+        // 仅重建已登记的受管 worker，保持 tasker 主生命周期和业务上下文不变。
+        managedWorkers.values.forEach { state ->
+            state.job?.cancel()
+        }
+        managedWorkers.clear()
+        managedWorkerDefinitions.values
+            .sortedBy { definition -> definition.workerName }
+            .forEach { definition ->
+                launchManagedWorker(definition, allowReplace = true)
+            }
+        BiliBiliBot.logger.warn("任务 {} 已触发受管 worker 恢复", taskDisplayName)
+        return true
     }
 
     protected suspend fun <T> runBusinessOperation(
@@ -362,4 +390,37 @@ abstract class BiliTasker(
         var lastFailureMessage: String? = null,
         var restartExhausted: Boolean = false,
     )
+
+    /**
+     * 保留 worker 的原始启动定义，供 guardian 恢复时按同样约束重新拉起。
+     */
+    private data class ManagedWorkerDefinition(
+        val workerName: String,
+        val maxRestarts: Int,
+        val backoffPolicy: ConnectionBackoffPolicy,
+        val block: suspend () -> Unit,
+    )
+
+    /**
+     * 统一按登记定义拉起 worker，恢复路径可复用这里而不必重复调用各 tasker 的 init。
+     */
+    private fun launchManagedWorker(
+        definition: ManagedWorkerDefinition,
+        allowReplace: Boolean,
+    ): Job {
+        val parentJob = job ?: error("任务主协程尚未启动，无法注册受管 worker: ${definition.workerName}")
+        val state = ManagedWorkerState(workerName = definition.workerName)
+        val existing = if (allowReplace) {
+            managedWorkers.put(definition.workerName, state)
+        } else {
+            managedWorkers.putIfAbsent(definition.workerName, state)
+        }
+        require(allowReplace || existing == null) { "重复注册受管 worker: ${definition.workerName}" }
+
+        val workerJob = launch(parentJob + CoroutineName("$taskDisplayName.worker.${definition.workerName}")) {
+            runManagedWorkerLoop(state, definition.maxRestarts, definition.backoffPolicy, definition.block)
+        }
+        state.job = workerJob
+        return workerJob
+    }
 }

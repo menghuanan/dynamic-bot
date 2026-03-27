@@ -54,5 +54,8 @@ class ConnectorBoundaryRegressionTest {
         val botSource = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
 
         assertFalse(botSource.contains("fun requireNapCat("))
+        // 运行期边界必须收口到 connector manager，业务层不能再取到 raw adapter。
+        assertFalse(botSource.contains("val platformAdapter"))
+        assertFalse(botSource.contains("fun requirePlatformAdapter("))
     }
 }

@@ -39,7 +39,7 @@ open class OneBot11Adapter(
         transport.start()
     }
 
-    override fun stop() {
+    override suspend fun stop() {
         transport.stop()
     }
 

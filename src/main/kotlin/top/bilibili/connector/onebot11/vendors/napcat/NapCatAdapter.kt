@@ -53,7 +53,7 @@ private class NapCatTransport(
         napCatClient.start()
     }
 
-    override fun stop() {
+    override suspend fun stop() {
         napCatClient.stop()
     }
 
