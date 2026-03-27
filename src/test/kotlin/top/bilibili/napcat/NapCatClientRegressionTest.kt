@@ -10,6 +10,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -206,6 +207,27 @@ class NapCatClientRegressionTest {
             !source.contains("SEND_MESSAGE_TIMEOUT_MS"),
             "NapCatClient should keep the send timeout inlined when using the direct style",
         )
+    }
+
+    @Test
+    fun `start should ignore duplicate request when connection loop is already active`() = runBlocking {
+        val client = NapCatClient(NapCatConfig())
+        val activeConnectionJob = launch {
+            awaitCancellation()
+        }
+
+        try {
+            setPrivateField(client, "connectionJob", activeConnectionJob)
+
+            client.start()
+
+            val field = NapCatClient::class.java.getDeclaredField("connectionJob")
+            field.isAccessible = true
+            val currentJob = field.get(client) as Job?
+            assertTrue(currentJob === activeConnectionJob, "duplicate start should keep the original connection job")
+        } finally {
+            activeConnectionJob.cancel()
+        }
     }
 
     @Test

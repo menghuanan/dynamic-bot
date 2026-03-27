@@ -342,6 +342,56 @@ class QQOfficialAdapterTest {
     }
 
     @Test
+    fun `reachable contacts should expire after configured ttl`() = runBlocking {
+        var now = 1_000L
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(
+            transport = transport,
+            currentTimeMillis = { now },
+            reachableContactTtlMillis = 1_000L,
+        )
+        val groupContact = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_demo")
+
+        try {
+            transport.emitGatewayText(groupMessageFrame())
+            waitForReachable(adapter, groupContact)
+
+            now += 1_001L
+
+            assertFalse(adapter.canSendMessage(groupContact))
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
+    fun `reachable contacts should evict oldest entries when capacity is exceeded`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = createStartedAdapter(
+            transport = transport,
+            reachableContactsMaxSize = 2,
+        )
+        val first = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_1")
+        val second = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_2")
+        val third = PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, "group_openid_3")
+
+        try {
+            transport.emitGatewayText(manageGroupFrame(eventType = "GROUP_ADD_ROBOT", groupOpenId = first.id))
+            waitForReachable(adapter, first)
+            transport.emitGatewayText(manageGroupFrame(eventType = "GROUP_ADD_ROBOT", groupOpenId = second.id))
+            waitForReachable(adapter, second)
+            transport.emitGatewayText(manageGroupFrame(eventType = "GROUP_ADD_ROBOT", groupOpenId = third.id))
+            waitForReachable(adapter, third)
+
+            assertFalse(adapter.canSendMessage(first))
+            assertTrue(adapter.canSendMessage(second))
+            assertTrue(adapter.canSendMessage(third))
+        } finally {
+            stopAdapter(adapter)
+        }
+    }
+
+    @Test
     fun `qq official adapter should expose inbound overflow through neutral runtime status`() {
         val source = read("src/main/kotlin/top/bilibili/connector/qqofficial/QQOfficialAdapter.kt")
 
@@ -364,13 +414,21 @@ class QQOfficialAdapterTest {
     }
 
     // 启动测试适配器时，预置 Hello/Ready 帧，确保启动路径能完成首轮网关握手。
-    private fun createStartedAdapter(transport: FakeTransport): QQOfficialAdapter {
+    private fun createStartedAdapter(
+        transport: FakeTransport,
+        currentTimeMillis: () -> Long = { System.currentTimeMillis() },
+        reachableContactTtlMillis: Long = QQOfficialAdapter.DEFAULT_REACHABLE_CONTACT_TTL_MILLIS,
+        reachableContactsMaxSize: Int = QQOfficialAdapter.DEFAULT_REACHABLE_CONTACTS_MAX_SIZE,
+    ): QQOfficialAdapter {
         val adapter = QQOfficialAdapter(
             config = QQOfficialConfig(
                 appId = "demo-app",
                 appSecret = "demo-secret",
             ),
             transport = transport,
+            currentTimeMillis = currentTimeMillis,
+            reachableContactTtlMillis = reachableContactTtlMillis,
+            reachableContactsMaxSize = reachableContactsMaxSize,
         )
         adapter.start()
         return adapter

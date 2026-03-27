@@ -41,7 +41,7 @@ import top.bilibili.connector.PlatformInboundMessage
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.PlatformType
 import top.bilibili.utils.toSubject
-import java.util.concurrent.ConcurrentHashMap
+import java.util.LinkedHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -50,10 +50,13 @@ internal class QQOfficialAdapter(
     internal val transport: QQOfficialTransport = KtorQQOfficialTransport(),
     private val imageUrlResolver: suspend (ImageSource) -> String? = ::defaultImageUrlResolver,
     private val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
+    internal val reachableContactTtlMillis: Long = DEFAULT_REACHABLE_CONTACT_TTL_MILLIS,
+    internal val reachableContactsMaxSize: Int = DEFAULT_REACHABLE_CONTACTS_MAX_SIZE,
 ) : PlatformAdapter {
     private val logger = LoggerFactory.getLogger(QQOfficialAdapter::class.java)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val authMutex = Mutex()
+    private val reachableContactsMutex = Mutex()
     private val connected = AtomicBoolean(false)
     private val started = AtomicBoolean(false)
     private val reconnectGuard = AtomicBoolean(false)
@@ -64,7 +67,9 @@ internal class QQOfficialAdapter(
     )
     private val inboundPressureActive = AtomicBoolean(false)
     private val inboundDroppedEvents = AtomicInteger(0)
-    private val reachableContacts = ConcurrentHashMap.newKeySet<String>()
+    private val effectiveReachableContactTtlMillis = reachableContactTtlMillis.coerceAtLeast(1L)
+    private val effectiveReachableContactsMaxSize = reachableContactsMaxSize.coerceAtLeast(1)
+    private val reachableContacts = LinkedHashMap<String, Long>()
     private val _eventFlow = MutableSharedFlow<PlatformInboundMessage>(replay = 0, extraBufferCapacity = 64)
     private var gatewaySession: QQOfficialGatewaySession? = null
     private var gatewayCollectJob: Job? = null
@@ -138,6 +143,7 @@ internal class QQOfficialAdapter(
         gatewayCloseWatchJob?.cancelAndJoin()
         gatewayCollectJob?.cancelAndJoin()
         gatewaySession?.close("adapter stop")
+        clearReachableContacts()
         scope.cancel()
         transport.close()
     }
@@ -211,7 +217,10 @@ internal class QQOfficialAdapter(
     override suspend fun isContactReachable(contact: PlatformContact): Boolean {
         if (contact.platform != PlatformType.QQ_OFFICIAL) return false
         if (!connected.get()) return false
-        return reachableContacts.contains(contact.toSubject())
+        return reachableContactsMutex.withLock {
+            pruneReachableContactsLocked(currentTimeMillis())
+            reachableContacts.containsKey(contact.toSubject())
+        }
     }
 
     /**
@@ -626,15 +635,59 @@ internal class QQOfficialAdapter(
     /**
      * 记录已接受主动消息的联系人，供能力判断和后续发送入口复用。
      */
-    private fun markReachable(contact: PlatformContact) {
-        reachableContacts += contact.toSubject()
+    private suspend fun markReachable(contact: PlatformContact) {
+        val subject = contact.toSubject()
+        val now = currentTimeMillis()
+        reachableContactsMutex.withLock {
+            // 先清掉已过期条目，再刷新当前联系人，避免 7x24 运行时缓存无界增长。
+            pruneReachableContactsLocked(now)
+            reachableContacts.remove(subject)
+            reachableContacts[subject] = now
+            enforceReachableContactLimitLocked()
+        }
     }
 
     /**
      * 在群退群/拒收等事件到来时移除联系人，避免继续误发主动消息。
      */
-    private fun markUnreachable(contact: PlatformContact) {
-        reachableContacts -= contact.toSubject()
+    private suspend fun markUnreachable(contact: PlatformContact) {
+        reachableContactsMutex.withLock {
+            reachableContacts.remove(contact.toSubject())
+        }
+    }
+
+    /**
+     * 停机时显式清空联系人缓存，避免当前代 adapter 退场后仍短暂持有大批历史联系人状态。
+     */
+    private suspend fun clearReachableContacts() {
+        reachableContactsMutex.withLock {
+            reachableContacts.clear()
+        }
+    }
+
+    /**
+     * 在同一把锁内统一执行过期回收与容量裁剪，保证联系人缓存始终受 TTL 和上限双重约束。
+     */
+    private fun pruneReachableContactsLocked(now: Long) {
+        val expireBefore = now - effectiveReachableContactTtlMillis
+        val iterator = reachableContacts.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (entry.value <= expireBefore) {
+                iterator.remove()
+            }
+        }
+        enforceReachableContactLimitLocked()
+    }
+
+    /**
+     * 缓存超上限时按最旧活跃时间淘汰，确保主动发送能力只保留最近接触的联系人。
+     */
+    private fun enforceReachableContactLimitLocked() {
+        while (reachableContacts.size > effectiveReachableContactsMaxSize) {
+            val oldestSubject = reachableContacts.entries.firstOrNull()?.key ?: return
+            reachableContacts.remove(oldestSubject)
+        }
     }
 
     /**
@@ -705,6 +758,11 @@ internal class QQOfficialAdapter(
             PlatformChatType.GROUP -> "$QQ_OFFICIAL_API_BASE/v2/groups/${contact.id}/files"
             PlatformChatType.PRIVATE -> "$QQ_OFFICIAL_API_BASE/v2/users/${contact.id}/files"
         }
+    }
+
+    companion object {
+        internal const val DEFAULT_REACHABLE_CONTACT_TTL_MILLIS: Long = 24L * 60L * 60L * 1000L
+        internal const val DEFAULT_REACHABLE_CONTACTS_MAX_SIZE: Int = 10_000
     }
 }
 

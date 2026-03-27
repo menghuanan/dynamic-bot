@@ -79,6 +79,7 @@ class NapCatClient(
     val eventFlow = _eventFlow.asSharedFlow()
 
     private var session: DefaultClientWebSocketSession? = null
+    private var connectionJob: Job? = null
     private var livenessWatchJob: Job? = null
     private val sendChannelCapacity = 200
     private val sendChannel = Channel<QueuedOutgoingPayload>(capacity = sendChannelCapacity)  // ✅ P1修复: 从1000降低到200，降低内存占用
@@ -109,10 +110,14 @@ class NapCatClient(
 
     /** 启动客户端 */
     fun start() {
+        if (connectionJob?.isActive == true) {
+            logger.info("NapCat WebSocket 客户端已在运行中，忽略重复启动")
+            return
+        }
         stopping.set(false)
         logger.info("正在启动 NapCat WebSocket 客户端...")
         logger.info("目标地址: ${config.getWebSocketUrl()}")
-        scope.launch {
+        connectionJob = scope.launch {
             connectLoop()
         }
     }
@@ -139,6 +144,12 @@ class NapCatClient(
 
         // 关闭发送通道（触发发送协程退出）
         sendChannel.close()
+
+        // 显式等待连接循环退出，避免重复 start 期间叠出第二条长期重连协程。
+        withTimeoutOrNull(5_000L) {
+            connectionJob?.cancelAndJoin()
+        }
+        connectionJob = null
 
         // ✅ 挂起等待协程结束（带超时），避免在停机链路里重新桥接回阻塞式关闭。
         withTimeoutOrNull(5_000L) {
