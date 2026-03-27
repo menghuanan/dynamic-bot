@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfreetype6 \
     libfontconfig1 \
     libharfbuzz0b \
+    libxrender1 \
     libpng16-16 \
     libjpeg-turbo8 \
     libwebp7 \
