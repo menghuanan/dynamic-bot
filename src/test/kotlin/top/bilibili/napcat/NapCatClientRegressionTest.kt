@@ -1,11 +1,26 @@
 package top.bilibili.connector.onebot11.vendors.napcat
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import top.bilibili.config.NapCatConfig
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -13,6 +28,15 @@ import kotlin.test.assertTrue
 
 class NapCatClientRegressionTest {
     private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
+
+    /**
+     * 通过反射注入停机阶段依赖，确保回归测试可以稳定复现 NapCatClient 的真实 shutdown 调度行为。
+     */
+    private fun setPrivateField(instance: Any, fieldName: String, value: Any?) {
+        val field = instance::class.java.getDeclaredField(fieldName)
+        field.isAccessible = true
+        field.set(instance, value)
+    }
 
     @Test
     fun `isSendQueueFull should not enqueue probe payload`() {
@@ -98,6 +122,54 @@ class NapCatClientRegressionTest {
         )
 
         assertEquals("hello[\u56fe\u7247][\u6233\u4e00\u6233][Markdown]", preview)
+    }
+
+    @Test
+    fun `stop should release caller dispatcher while waiting for liveness shutdown`() = runBlocking {
+        val client = NapCatClient(NapCatConfig())
+        val callerDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        val shutdownScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val callerScope = CoroutineScope(callerDispatcher + SupervisorJob())
+
+        try {
+            // 构造一个带非取消清理阶段的 watcher，模拟 stop() 等待慢清理任务时的真实场景。
+            val slowLivenessWatcher = shutdownScope.launch {
+                try {
+                    awaitCancellation()
+                } finally {
+                    withContext(NonCancellable) {
+                        delay(300)
+                    }
+                }
+            }
+            setPrivateField(client, "livenessWatchJob", slowLivenessWatcher)
+
+            val peerCoroutineObserved = AtomicBoolean(false)
+            val stopFinished = CompletableDeferred<Unit>()
+
+            val stopJob = callerScope.launch {
+                launch {
+                    delay(50)
+                    peerCoroutineObserved.set(true)
+                }
+                client.stop()
+                stopFinished.complete(Unit)
+            }
+
+            withTimeout(150) {
+                while (!peerCoroutineObserved.get()) {
+                    delay(5)
+                }
+            }
+            withTimeout(1_000) {
+                stopFinished.await()
+            }
+            stopJob.join()
+        } finally {
+            callerScope.cancel()
+            shutdownScope.cancel()
+            callerDispatcher.close()
+        }
     }
 
     @Test

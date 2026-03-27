@@ -118,7 +118,7 @@ class NapCatClient(
     }
 
     /** 停止客户端 */
-    fun stop() {
+    suspend fun stop() {
         if (!stopping.compareAndSet(false, true)) {
             logger.info("NapCat WebSocket 客户端已在停止中")
             return
@@ -128,25 +128,23 @@ class NapCatClient(
 
         // 标记为未连接状态
         isConnected.set(false)
-        runBlocking {
-            try {
-                session?.close(CloseReason(CloseReason.Codes.NORMAL, "客户端停止"))
+        try {
+            session?.close(CloseReason(CloseReason.Codes.NORMAL, "客户端停止"))
+            withTimeoutOrNull(5_000L) {
                 livenessWatchJob?.cancelAndJoin()
-            } catch (e: Exception) {
-                logger.warn("关闭 WebSocket 会话失败", e)
-            }
+            } ?: logger.warn("等待 NapCat 存活检测协程结束超时，继续执行停机")
+        } catch (e: Exception) {
+            logger.warn("关闭 WebSocket 会话失败", e)
         }
 
         // 关闭发送通道（触发发送协程退出）
         sendChannel.close()
 
-        // ✅ 阻塞等待协程结束（带超时）
-        runBlocking {
-            withTimeoutOrNull(5000) {
-                scope.coroutineContext[Job]?.cancelAndJoin()
-                logger.info("NapCat 协程已正常结束")
-            } ?: logger.warn("等待 NapCat 协程结束超时，强制取消")
-        }
+        // ✅ 挂起等待协程结束（带超时），避免在停机链路里重新桥接回阻塞式关闭。
+        withTimeoutOrNull(5_000L) {
+            scope.coroutineContext[Job]?.cancelAndJoin()
+            logger.info("NapCat 协程已正常结束")
+        } ?: logger.warn("等待 NapCat 协程结束超时，强制取消")
 
         // 关闭 WebSocket 会话
         failPendingResponses("NapCat 客户端已停止")
