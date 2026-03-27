@@ -47,17 +47,19 @@ class PlatformWiringSourceRegressionTest {
 
     // 约束启动选择必须显式区分 NapCat 与通用 OneBot11，避免继续把供应商实现藏在协议类型后面。
     @Test
-    fun `bot startup should distinguish napcat from generic onebot11 adapter selection`() {
+    fun `bot startup should distinguish napcat llbot and generic onebot11 adapter selection`() {
         val modelSource = read("src/main/kotlin/top/bilibili/connector/PlatformModels.kt")
         val configSource = read("src/main/kotlin/top/bilibili/config/NapCatConfig.kt")
         val connectorManagerSource = read("src/main/kotlin/top/bilibili/connector/PlatformConnectorManager.kt")
 
         assertTrue(modelSource.contains("enum class PlatformAdapterKind"))
         assertTrue(modelSource.contains("NAPCAT"))
+        assertTrue(modelSource.contains("LLBOT"))
         assertTrue(modelSource.contains("ONEBOT11"))
         assertTrue(configSource.contains("selectedAdapterKind"))
         assertTrue(connectorManagerSource.contains("config.selectedAdapterKind()"))
         assertTrue(connectorManagerSource.contains("PlatformAdapterKind.NAPCAT"))
+        assertTrue(connectorManagerSource.contains("PlatformAdapterKind.LLBOT"))
         assertTrue(connectorManagerSource.contains("PlatformAdapterKind.ONEBOT11"))
     }
 
@@ -130,6 +132,7 @@ class PlatformWiringSourceRegressionTest {
         assertTrue(botSource.contains("PlatformConnectorManager"), "bot startup should depend on PlatformConnectorManager")
         assertFalse(botSource.contains("NapCatClient("), "bot startup should not construct NapCatClient directly")
         assertFalse(botSource.contains("NapCatAdapter("), "bot startup should not construct NapCatAdapter directly")
+        assertFalse(botSource.contains("LlBotAdapter("), "bot startup should not construct LlBotAdapter directly")
         assertFalse(botSource.contains("GenericOneBot11Adapter("), "bot startup should not construct GenericOneBot11Adapter directly")
         assertFalse(botSource.contains("QQOfficialAdapter("), "bot startup should not construct QQOfficialAdapter directly")
     }

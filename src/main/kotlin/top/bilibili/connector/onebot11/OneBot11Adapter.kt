@@ -131,7 +131,7 @@ open class OneBot11Adapter(
             val searchTexts = buildList {
                 if (textContent.isNotEmpty()) {
                     add(textContent)
-                } else if (event.rawMessage.isNotBlank()) {
+                } else if (shouldUseRawMessageForSearch(event.rawMessage)) {
                     add(event.rawMessage.trim())
                 }
                 extractMiniAppUrl(event.message)?.let(::add)
@@ -173,6 +173,17 @@ open class OneBot11Adapter(
                         .replace("&#44;", ",")
                 }
                 .firstOrNull()
+        }
+
+        /**
+         * 原始 CQ 串只用于日志展示，不应回流到搜索文本；否则图片/回复等非文本消息会误触发链接解析。
+         */
+        private fun shouldUseRawMessageForSearch(rawMessage: String): Boolean {
+            val normalized = rawMessage.trim()
+            if (normalized.isBlank()) {
+                return false
+            }
+            return !normalized.contains("[CQ:")
         }
     }
 }

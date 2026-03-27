@@ -100,6 +100,25 @@ class PlatformConfigCompatibilityTest {
     }
 
     @Test
+    fun `llbot adapter under onebot11 should resolve into explicit llbot selection`() {
+        val config = yaml.decodeFromString<BotConfig>(
+            """
+            platform:
+              type: onebot11
+              adapter: llbot
+              onebot11:
+                host: "192.168.1.8"
+                port: 3040
+                token: "llbot-token"
+            """.trimIndent(),
+        )
+
+        assertEquals(PlatformType.ONEBOT11, config.selectedPlatformType())
+        assertEquals("LLBOT", config.selectedAdapterKind().name)
+        assertEquals("llbot", config.normalizedPlatformConfig().adapter)
+    }
+
+    @Test
     fun `legacy numeric blacklist data should migrate into namespaced contacts only once`() {
         BiliData.linkParseBlacklist.clear()
         BiliData.linkParseBlacklistContacts.clear()
