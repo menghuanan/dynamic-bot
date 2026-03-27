@@ -551,9 +551,6 @@ docker-compose logs -f
 docker logs -f dynamic-bot
 ```
 
-#### 可用标签
-
-
 ### 方式二：从源码构建部署
 
 如果需要自定义修改，可以从源码构建镜像。
