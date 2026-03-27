@@ -27,6 +27,11 @@ object AtAllService {
             else -> null
         }
 
+    /**
+     * 统一暴露 @全体 类型词判断，避免命令解析和策略写入维护两份映射表。
+     */
+    internal fun supportsType(type: String): Boolean = toAtAllType(type) != null
+
     suspend fun addAtAll(type: String, uid: Long = 0L, subject: String): String = mutex.withLock {
         val atAllType = toAtAllType(type) ?: return@withLock "没有这个类型哦 [$type]"
         val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"

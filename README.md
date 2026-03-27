@@ -307,6 +307,7 @@ admin: "管理员QQ号"
 
     At全体管理（超管 / 群普通管理员，功能仅群聊生效）:
     /bili atall|aa add <类型> <uid> - 添加 @全体 策略
+    /bili atall|aa <类型> <uid> - 兼容旧写法，等价于 add
     /bili atall|aa del|remove|rm <类型> <uid> - 删除 @全体 策略
     /bili atall|aa list|ls [uid] - 查看 @全体 策略
     类型支持: 全部/all/a, 全部动态/dynamic/d, 直播/live/l, 视频/video/v, 音乐/music/m, 专栏/article

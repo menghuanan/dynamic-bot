@@ -10,6 +10,35 @@ import top.bilibili.utils.findLocalIdOrName
 import top.bilibili.utils.toSubject
 
 object SettingsCommandService {
+    /**
+     * 统一收敛 atall 子命令解析，兼容旧 set 别名和“/bili atall <类型> <uid>”旧式快捷写法。
+     */
+    internal data class AtAllParsedCommand(
+        val action: String,
+        val type: String? = null,
+        val uidArg: String? = null,
+        val rawCommand: String,
+    )
+
+    /**
+     * 仅在 atall 命令入口把原始参数归一化，后续执行链统一按 add/del/list 三类分支处理。
+     */
+    internal fun parseAtAllCommandArgs(args: List<String>): AtAllParsedCommand? {
+        val rawCommand = args.getOrNull(1)?.trim()?.lowercase() ?: return null
+        return when (rawCommand) {
+            "add", "set" -> AtAllParsedCommand("add", args.getOrNull(2), args.getOrNull(3), rawCommand)
+            "del", "remove", "rm" -> AtAllParsedCommand("del", args.getOrNull(2), args.getOrNull(3), rawCommand)
+            "list", "ls" -> AtAllParsedCommand("list", uidArg = args.getOrNull(2), rawCommand = rawCommand)
+            else -> {
+                if (AtAllService.supportsType(rawCommand)) {
+                    AtAllParsedCommand("add", rawCommand, args.getOrNull(2), rawCommand)
+                } else {
+                    AtAllParsedCommand("unknown", rawCommand = rawCommand)
+                }
+            }
+        }
+    }
+
     suspend fun handleAtAll(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         val isGroup = chatContact.type == PlatformChatType.GROUP
         if (!CommandPermission.isSuperAdmin(senderContact) && (!isGroup || !CommandPermission.isGroupAdmin(chatContact, senderContact))) return
@@ -19,20 +48,33 @@ object SettingsCommandService {
             sendText(chatContact, """
                 用法:
                 /bili atall add <类型> <uid>
+                /bili atall <类型> <uid> 兼容旧写法，等价于 add
                 /bili atall del <类型> <uid>
                 /bili atall list [uid]
             """.trimIndent())
             return
         }
 
-        val command = args[1].lowercase()
+        val parsedCommand = parseAtAllCommandArgs(args)
+        if (parsedCommand == null) {
+            sendText(chatContact, """
+                用法:
+                /bili atall add <类型> <uid>
+                /bili atall <类型> <uid> 兼容旧写法，等价于 add
+                /bili atall del <类型> <uid>
+                /bili atall list [uid]
+            """.trimIndent())
+            return
+        }
+
+        val command = parsedCommand.action
         val result = when (command) {
             "add" -> {
-                val type = args.getOrNull(2)
+                val type = parsedCommand.type
                 if (type == null) {
                     "用法: /bili atall add <类型> <uid>"
                 } else {
-                    val uid = parseUidArg(args.getOrNull(3))
+                    val uid = parseUidArg(parsedCommand.uidArg)
                     if (uid == null) {
                         sendText(chatContact, "UID 格式错误，请输入纯数字")
                         return
@@ -49,11 +91,11 @@ object SettingsCommandService {
                 }
             }
             "del", "remove", "rm" -> {
-                val type = args.getOrNull(2)
+                val type = parsedCommand.type
                 if (type == null) {
                     "用法: /bili atall del <类型> <uid>"
                 } else {
-                    val uid = parseUidArg(args.getOrNull(3))
+                    val uid = parseUidArg(parsedCommand.uidArg)
                     if (uid == null) {
                         sendText(chatContact, "UID 格式错误，请输入纯数字")
                         return
@@ -61,8 +103,8 @@ object SettingsCommandService {
                     AtAllService.delAtAll(type, uid, subject)
                 }
             }
-            "list", "ls" -> {
-                val rawUid = args.getOrNull(2)
+            "list" -> {
+                val rawUid = parsedCommand.uidArg
                 val uid = if (rawUid == null) {
                     0L
                 } else {
@@ -75,10 +117,10 @@ object SettingsCommandService {
                 }
                 AtAllService.listAtAll(uid, subject)
             }
-            else -> "未知艾特全体命令: ${args[1]}"
+            else -> "未知艾特全体命令: ${parsedCommand.rawCommand}"
         }
 
-        if ((command == "add" || command == "del" || command == "remove" || command == "rm") &&
+        if ((command == "add" || command == "del") &&
             (result == "添加成功" || result == "删除成功")
         ) {
             BiliConfigManager.saveData()
