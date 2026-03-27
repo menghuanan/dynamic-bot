@@ -15,13 +15,10 @@ import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfigManager
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformAdapter
-import top.bilibili.connector.PlatformAdapterKind
 import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformConnectorManager
 import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformType
-import top.bilibili.connector.onebot11.generic.GenericOneBot11Adapter
-import top.bilibili.connector.onebot11.vendors.napcat.NapCatAdapter
-import top.bilibili.connector.qqofficial.QQOfficialAdapter
 import top.bilibili.config.ConfigManager
 import top.bilibili.core.resource.LambdaResourcePartition
 import top.bilibili.core.resource.ResourceStopReport
@@ -32,12 +29,11 @@ import top.bilibili.data.BiliCookie
 import top.bilibili.data.BiliMessage
 import top.bilibili.data.DynamicDetail
 import top.bilibili.data.LiveDetail
-import top.bilibili.connector.onebot11.vendors.napcat.NapCatClient
 import top.bilibili.service.CacheMaintenanceService
+import top.bilibili.service.DefaultMessageGateway
 import top.bilibili.service.FirstRunService
 import top.bilibili.service.MessageEventDispatchService
 import top.bilibili.service.MessageGatewayProvider
-import top.bilibili.service.NapCatMessageGateway
 import top.bilibili.service.StartupDataInitService
 import top.bilibili.service.TaskBootstrapService
 import top.bilibili.service.closeServiceClient
@@ -83,11 +79,10 @@ object BiliBiliBot : CoroutineScope {
 
     var cookie = BiliCookie()
 
-    lateinit var napCat: NapCatClient
-        private set
+    private var connectorManager: PlatformConnectorManager? = null
 
-    lateinit var platformAdapter: PlatformAdapter
-        private set
+    val platformAdapter: PlatformAdapter
+        get() = requirePlatformAdapter()
 
     lateinit var config: top.bilibili.config.BotConfig
         private set
@@ -95,26 +90,14 @@ object BiliBiliBot : CoroutineScope {
     private var eventCollectorJob: Job? = null
     private val resourceSupervisor = ResourceSupervisor()
 
-    fun isNapCatInitialized(): Boolean = ::napCat.isInitialized
-
-    fun isPlatformAdapterInitialized(): Boolean = ::platformAdapter.isInitialized
+    fun isPlatformAdapterInitialized(): Boolean = connectorManager?.isInitialized() == true
 
     fun isConfigInitialized(): Boolean = ::config.isInitialized
 
     fun isStopping(): Boolean = lifecycleState.get() == BotLifecycleState.STOPPING
 
-    fun requireNapCat(): NapCatClient {
-        require(::napCat.isInitialized) {
-            "NapCat 客户端尚未初始化，请先完成启动。"
-        }
-        return napCat
-    }
-
     fun requirePlatformAdapter(): PlatformAdapter {
-        require(::platformAdapter.isInitialized) {
-            "平台适配器尚未初始化，请先完成启动。"
-        }
-        return platformAdapter
+        return requireConnectorManager().requirePlatformAdapter()
     }
 
     fun requireConfig(): top.bilibili.config.BotConfig {
@@ -132,6 +115,10 @@ object BiliBiliBot : CoroutineScope {
     val liveChannel = Channel<LiveDetail>(20)
     val messageChannel = Channel<BiliMessage>(20)
     val liveUsers = mutableMapOf<Long, Long>()
+
+    private fun requireConnectorManager(): PlatformConnectorManager {
+        return connectorManager ?: error("平台连接管理器尚未初始化，请先完成启动。")
+    }
 
     @Deprecated("使用 useResourceAsStream 或 getResourceBytes 替代", ReplaceWith("useResourceAsStream(path) { it.readBytes() }"))
     fun getResourceAsStream(path: String): InputStream? {
@@ -221,22 +208,12 @@ object BiliBiliBot : CoroutineScope {
             }
 
             logger.info("正在初始化平台适配器...")
-            // 启动期先按显式适配器选择分发，后续任务再把通用 OneBot11 传输与 NapCat 实现彻底拆开。
-            platformAdapter = when (config.selectedAdapterKind()) {
-                PlatformAdapterKind.NAPCAT -> {
-                    val oneBotConfig = config.selectedOneBot11Config()
-                    napCat = NapCatClient(oneBotConfig)
-                    NapCatAdapter(napCat)
-                }
-                PlatformAdapterKind.ONEBOT11 -> {
-                    val oneBotConfig = config.selectedOneBot11Config()
-                    // 在引入新 vendor 前，通用 OneBot11 先通过显式传输桥接复用现有连接配置。
-                    GenericOneBot11Adapter(NapCatAdapter.transport(NapCatClient(oneBotConfig)))
-                }
-                PlatformAdapterKind.QQ_OFFICIAL -> QQOfficialAdapter(config.platform.qqOfficial)
+            // 启动入口只依赖 connector manager，由其统一封装平台选择、适配器组装与生命周期。
+            connectorManager = PlatformConnectorManager(config).also { manager ->
+                manager.initialize()
             }
             MessageGatewayProvider.register(
-                NapCatMessageGateway(
+                DefaultMessageGateway(
                     platformAdapterProvider = { requirePlatformAdapter() },
                     adminContactProvider = { BiliConfigManager.config.normalizedAdminSubject() },
                     logger = logger,
@@ -244,7 +221,7 @@ object BiliBiliBot : CoroutineScope {
             )
 
             eventCollectorJob = launch {
-                platformAdapter.eventFlow.collect { event ->
+                requireConnectorManager().eventFlow.collect { event ->
                     try {
                         withTimeout(5_000) {
                             MessageEventDispatchService.handleMessageEvent(event)
@@ -261,7 +238,7 @@ object BiliBiliBot : CoroutineScope {
                 }
             }
 
-            platformAdapter.start()
+            requireConnectorManager().start()
 
             registerResourcePartitions()
 
@@ -346,7 +323,7 @@ object BiliBiliBot : CoroutineScope {
         return lifecycleState.get() == BotLifecycleState.RUNNING &&
             isRunning.get() &&
             job?.isActive == true &&
-            ::platformAdapter.isInitialized
+            isPlatformAdapterInitialized()
     }
 
     fun getUptimeSeconds(): Long {
@@ -500,13 +477,14 @@ object BiliBiliBot : CoroutineScope {
         resourceSupervisor.register(
             LambdaResourcePartition(
                 id = "gateway-platform",
-                owns = listOf("PlatformAdapter", "MessageGatewayProvider"),
+                owns = listOf("PlatformConnectorManager", "MessageGatewayProvider"),
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
                 shutdownPhase = ShutdownPhase.INGRESS,
                 stopAction = {
-                    if (::platformAdapter.isInitialized) {
-                        platformAdapter.stop()
+                    if (isPlatformAdapterInitialized()) {
+                        requireConnectorManager().stop()
                     }
+                    connectorManager = null
                     MessageGatewayProvider.unregister()
                 },
             ),
@@ -543,9 +521,10 @@ object BiliBiliBot : CoroutineScope {
 
     private suspend fun fallbackStopResources() {
         runCatching {
-            if (::platformAdapter.isInitialized) {
-                platformAdapter.stop()
+            if (isPlatformAdapterInitialized()) {
+                requireConnectorManager().stop()
             }
+            connectorManager = null
             MessageGatewayProvider.unregister()
         }.onFailure {
             logger.warn("兜底停止入口资源失败: ${it.message}", it)

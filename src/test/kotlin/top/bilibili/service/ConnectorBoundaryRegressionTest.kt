@@ -44,8 +44,15 @@ class ConnectorBoundaryRegressionTest {
         assertFalse(Files.exists(Path.of("src/main/kotlin/top/bilibili/service/NapCatMessageGateway.kt")))
         assertTrue(Files.exists(Path.of("src/main/kotlin/top/bilibili/service/DefaultMessageGateway.kt")))
 
-        val providerSource = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
-        assertFalse(providerSource.contains("NapCatMessageGateway("))
-        assertTrue(providerSource.contains("DefaultMessageGateway("))
+        val botSource = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
+        assertFalse(botSource.contains("NapCatMessageGateway("))
+        assertTrue(botSource.contains("DefaultMessageGateway("))
+    }
+
+    @Test
+    fun `bot should not expose vendor specific runtime accessors`() {
+        val botSource = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
+
+        assertFalse(botSource.contains("fun requireNapCat("))
     }
 }

@@ -28,16 +28,19 @@ class PlatformWiringSourceRegressionTest {
     }
 
     @Test
-    fun `bot startup should select adapter from platform config and start through adapter`() {
+    fun `bot startup should select adapter from platform config and start through connector manager`() {
         val botSource = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
         val configSource = read("src/main/kotlin/top/bilibili/config/NapCatConfig.kt")
-        val managerSource = read("src/main/kotlin/top/bilibili/config/ConfigManager.kt")
+        val configManagerSource = read("src/main/kotlin/top/bilibili/config/ConfigManager.kt")
+        val connectorManagerSource = read("src/main/kotlin/top/bilibili/connector/PlatformConnectorManager.kt")
 
-        assertTrue(botSource.contains("platformAdapter.start()"))
+        assertTrue(botSource.contains("requireConnectorManager().start()"))
+        assertFalse(botSource.contains("platformAdapter.start()"))
         assertFalse(botSource.contains("napCat.start()"))
+        assertTrue(connectorManagerSource.contains("selectedAdapterKind"))
         assertTrue(configSource.contains("val platform"))
         assertTrue(configSource.contains("qqOfficial"))
-        assertTrue(managerSource.contains("selectedPlatformType"))
+        assertTrue(configManagerSource.contains("selectedPlatformType"))
     }
 
     // 约束启动选择必须显式区分 NapCat 与通用 OneBot11，避免继续把供应商实现藏在协议类型后面。
@@ -45,15 +48,15 @@ class PlatformWiringSourceRegressionTest {
     fun `bot startup should distinguish napcat from generic onebot11 adapter selection`() {
         val modelSource = read("src/main/kotlin/top/bilibili/connector/PlatformModels.kt")
         val configSource = read("src/main/kotlin/top/bilibili/config/NapCatConfig.kt")
-        val botSource = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
+        val connectorManagerSource = read("src/main/kotlin/top/bilibili/connector/PlatformConnectorManager.kt")
 
         assertTrue(modelSource.contains("enum class PlatformAdapterKind"))
         assertTrue(modelSource.contains("NAPCAT"))
         assertTrue(modelSource.contains("ONEBOT11"))
         assertTrue(configSource.contains("selectedAdapterKind"))
-        assertTrue(botSource.contains("config.selectedAdapterKind()"))
-        assertTrue(botSource.contains("PlatformAdapterKind.NAPCAT"))
-        assertTrue(botSource.contains("PlatformAdapterKind.ONEBOT11"))
+        assertTrue(connectorManagerSource.contains("config.selectedAdapterKind()"))
+        assertTrue(connectorManagerSource.contains("PlatformAdapterKind.NAPCAT"))
+        assertTrue(connectorManagerSource.contains("PlatformAdapterKind.ONEBOT11"))
     }
 
     // 约束能力判断必须统一收口到 capability guard，而不是继续散落在 service 里拼布尔判断。
