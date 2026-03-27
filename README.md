@@ -10,7 +10,7 @@ docker 部署的latest标签为v1.8.0，建议使用v1.7.44版本
 
 由 [bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin) 改造而来。  
 代码部分由 [claude](https://github.com/claude) 主刀构建改造后的主体框架， GPT-5系列模型（GPT-5.2-Codex、GPT-5.3-Codex、GPT-5.4） 协助完善功能细则与日常修复bug。  
-这是一个支持多平台连接器的 B 站动态推送 Bot，当前默认推荐使用 NapCat / OneBot11，QQ 官方适配器也提供了基础收发能力与显式降级处理。
+这是一个支持多平台连接器的 B 站动态推送 Bot，当前默认推荐使用 NapCat / llbot / OneBot11，QQ 官方适配器也提供了基础收发能力与显式降级处理。
 
 ## 文档目录
 
@@ -88,9 +88,10 @@ dynamic-bot/
 ## 当前支持的协议与支持情况
 
 - NapCat：`platform.type: onebot11` 且 `adapter: napcat`。当前能力最完整，推荐作为默认接入方案，现有底层业务以这条链路为基准验证。
+- llbot：`platform.type: onebot11` 且 `adapter: llbot`。保持 OneBot11 通用消息链路，并补齐当前业务需要的群可达性、`@全体` 和本地/二进制图片能力，适合作为 LuckyLilliaBot 接入路径。
 - 通用 OneBot11：`platform.type: onebot11` 且 `adapter: onebot11`。支持大部分协议通用能力；遇到适配器未实现或无法确认的能力时，会显式降级并输出日志，而不是让业务静默失效。
 - QQ 官方：`platform.type: qq_official`。当前定位为最低可用适配器，支持基础收发、回复、公网图片和链接解析；`@全体`、本地/二进制图片等不支持能力会显式降级并输出日志。
-- 配置要求：只要选择 OneBot11 协议，就必须显式填写 `adapter`。当前内置适配器只有 `napcat` 和 `onebot11`。
+- 配置要求：只要选择 OneBot11 协议，就必须显式填写 `adapter`。当前内置适配器包括 `napcat`、`llbot` 和 `onebot11`。
 
 ## 快速开始
 
@@ -174,7 +175,7 @@ logs/
 ```
 #### 注意！以下是必须修改的配置项：
 - 首次后需要在运行目录配置 `/config/bot.yml` 与 `/config/BiliConfig.yml` 文件后再重新启动bot。
-- `/config/bot.yml` 通过平台化结构配置连接器；默认 `type: onebot11` 走 NapCat / OneBot11，切到 `type: qq_official` 时需补齐 QQ 官方凭据。
+- `/config/bot.yml` 通过平台化结构配置连接器；默认 `type: onebot11` 走 NapCat / llbot / OneBot11 三类适配器，切到 `type: qq_official` 时需补齐 QQ 官方凭据。
 ```bash
 docker-compose down
 ```
@@ -184,9 +185,9 @@ docker-compose down
 ```yaml
 platform:
   type: onebot11  # 可选: onebot11 / qq_official
-  adapter: onebot11  # required for onebot11: onebot11 or napcat
+  adapter: onebot11  # required for onebot11: onebot11, llbot or napcat
   onebot11:
-    host: "NapCat WebSocket 服务器地址"
+    host: "NapCat / llbot / OneBot11 WebSocket 服务器地址"
     port: 3001
     token: ""
     send_mode: "base64"  # 图片发送模式：file 或 base64
@@ -341,10 +342,10 @@ admin: "管理员QQ号"
 ```yaml
 platform:
   type: onebot11             # 可选: onebot11 / qq_official
-  adapter: onebot11  # required for onebot11: onebot11 or napcat
+  adapter: onebot11  # required for onebot11: onebot11, llbot or napcat
   onebot11:
-    host: "127.0.0.1"        # NapCat / OneBot11 WebSocket 主机地址
-    port: 3001               # NapCat / OneBot11 WebSocket 端口
+    host: "127.0.0.1"        # NapCat / llbot / OneBot11 WebSocket 主机地址
+    port: 3001               # NapCat / llbot / OneBot11 WebSocket 端口
     token: ""                # WebSocket 访问令牌（如有）
     use_tls: false           # 是否使用 TLS 加密
     send_mode: "base64"      # 图片发送模式：file 或 base64

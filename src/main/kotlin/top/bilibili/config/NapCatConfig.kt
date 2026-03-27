@@ -193,6 +193,7 @@ data class BotConfig(
         val normalized = rawAdapter?.trim()?.lowercase().orEmpty()
         return when {
             normalized == PlatformAdapterKind.NAPCAT.serialName() -> PlatformAdapterKind.NAPCAT
+            normalized == PlatformAdapterKind.LLBOT.serialName() -> PlatformAdapterKind.LLBOT
             normalized == PlatformAdapterKind.ONEBOT11.serialName() -> PlatformAdapterKind.ONEBOT11
             normalized.isBlank() && napcat != NapCatConfig() && platform.onebot11 == NapCatConfig() -> PlatformAdapterKind.NAPCAT
             else -> PlatformAdapterKind.ONEBOT11
@@ -202,6 +203,7 @@ data class BotConfig(
 
 private fun PlatformAdapterKind.serialName(): String = when (this) {
     PlatformAdapterKind.NAPCAT -> "napcat"
+    PlatformAdapterKind.LLBOT -> "llbot"
     PlatformAdapterKind.ONEBOT11 -> "onebot11"
     PlatformAdapterKind.QQ_OFFICIAL -> "qq_official"
 }

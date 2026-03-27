@@ -83,6 +83,31 @@ class OneBot11AdapterTest {
         )
     }
 
+    @Test
+    fun `image only cq raw payload should not be forwarded into searchable texts`() {
+        val normalized = OneBot11Adapter.normalize(
+            OneBot11MessageEvent(
+                messageType = "group",
+                messageId = 2,
+                userId = 201L,
+                message = listOf(
+                    OneBot11MessageSegment(
+                        "image",
+                        mapOf(
+                            "file" to "0ACE5C07EAF2D150E305AE5D59F46BF6.jpg",
+                            "url" to "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=demo",
+                        ),
+                    ),
+                ),
+                rawMessage = "[CQ:image,file=0ACE5C07EAF2D150E305AE5D59F46BF6.jpg,subType=1,url=https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=demo,file_size=1283]",
+                groupId = 101L,
+                selfId = 300L,
+            ),
+        )
+
+        assertTrue(normalized.searchTexts.isEmpty(), "image-only CQ payload should not leak into link resolution search texts")
+    }
+
     // 约束通用 OneBot11 适配核心必须只依赖新的传输契约，避免继续把 NapCatClient 绑死在协议层。
     @Test
     fun `generic onebot11 adapter should depend on transport contract instead of napcat client`() {
@@ -117,6 +142,18 @@ class OneBot11AdapterTest {
         // generic transport 停机不得再用 runBlocking 桥接同步关闭，必须由上层 suspend 生命周期调用。
         assertFalse(transportSource.contains("runBlocking"))
         assertTrue(managerSource.contains("suspend fun stop()"))
+    }
+
+    @Test
+    fun `llbot vendor adapter should exist separately from generic and napcat`() {
+        val managerSource = read("src/main/kotlin/top/bilibili/connector/PlatformConnectorManager.kt")
+        val llBotAdapterFile = File("src/main/kotlin/top/bilibili/connector/onebot11/vendors/llbot/LlBotAdapter.kt")
+        val llBotClientFile = File("src/main/kotlin/top/bilibili/connector/onebot11/vendors/llbot/LlBotClient.kt")
+
+        assertTrue(llBotAdapterFile.exists(), "llbot adapter should exist under the llbot vendor directory")
+        assertTrue(llBotClientFile.exists(), "llbot client should exist under the llbot vendor directory")
+        assertTrue(managerSource.contains("LlBotAdapter("))
+        assertTrue(managerSource.contains("PlatformAdapterKind.LLBOT"))
     }
 
     // 约束 generic OneBot11 要对本地图和 @全体给出显式 guard 结果，而不是继续模糊地返回发送失败。

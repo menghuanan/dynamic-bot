@@ -15,6 +15,8 @@ enum class PlatformType {
 enum class PlatformAdapterKind {
     @SerialName("napcat")
     NAPCAT,
+    @SerialName("llbot")
+    LLBOT,
     @SerialName("onebot11")
     ONEBOT11,
     @SerialName("qq_official")
