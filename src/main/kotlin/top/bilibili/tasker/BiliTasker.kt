@@ -246,7 +246,8 @@ abstract class BiliTasker(
         TaskResourcePolicyRegistry.policyOf(taskDisplayName)
             ?: error("任务未声明资源策略: $taskDisplayName")
 
-        job = launch(coroutineContext) {
+        // 先以 LAZY 方式创建主任务协程并发布 job，再进入 init，避免受管 worker 在初始化阶段读到空父 Job。
+        val taskJob = launch(coroutineContext, start = kotlinx.coroutines.CoroutineStart.LAZY) {
             var consecutiveErrors = 0
             val maxErrors = 10
 
@@ -302,6 +303,8 @@ abstract class BiliTasker(
                 BiliBiliBot.logger.info("${this::class.simpleName} 已停止")
             }
         }
+        job = taskJob
+        taskJob.start()
 
         return taskers.add(this)
     }

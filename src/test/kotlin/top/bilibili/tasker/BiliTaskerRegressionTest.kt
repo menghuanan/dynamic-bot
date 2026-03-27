@@ -1,6 +1,9 @@
 package top.bilibili.tasker
 
 import kotlinx.coroutines.CompletableDeferred
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
@@ -16,6 +19,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class BiliTaskerRegressionTest {
+    private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
+
     private class DummyTasker(name: String) : BiliTasker(name) {
         override var interval: Int = -1
         override suspend fun main() {}
@@ -143,5 +148,23 @@ class BiliTaskerRegressionTest {
         assertTrue(snapshot.workerSnapshots.single().active)
 
         tasker.cancel()
+    }
+
+    @Test
+    fun `start should assign task job before init can register managed workers`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/BiliTasker.kt")
+
+        assertTrue(
+            source.contains("start = kotlinx.coroutines.CoroutineStart.LAZY"),
+            "BiliTasker.start should create the task coroutine lazily so init cannot run before job is assigned",
+        )
+        assertTrue(
+            source.contains("job = taskJob"),
+            "BiliTasker.start should publish the task job before starting execution",
+        )
+        assertTrue(
+            source.contains("taskJob.start()"),
+            "BiliTasker.start should explicitly start the task job after publishing it",
+        )
     }
 }
