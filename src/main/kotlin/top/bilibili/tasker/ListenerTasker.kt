@@ -2,7 +2,6 @@ package top.bilibili.tasker
 
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import top.bilibili.BiliConfigManager
 import top.bilibili.connector.CapabilityGuard
 import top.bilibili.connector.OutgoingPart
@@ -34,7 +33,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
     override fun init() {
         BiliBiliBot.logger.info("ListenerTasker 已启动")
 
-        launch {
+        launchManagedWorker("listener-loop") {
             listenMessages()
         }
     }

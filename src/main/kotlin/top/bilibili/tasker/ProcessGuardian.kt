@@ -99,15 +99,25 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
      * 检查任务健康状态
      */
     private fun checkTaskerHealth(report: MonitorReport) {
-        val deadTaskers = taskers.filter { it != this && !it.isActive }
+        val unhealthyTaskers = taskers
+            .filter { it != this }
+            .map { tasker -> tasker.healthSnapshot() }
+            .filter { snapshot -> !snapshot.healthy }
 
-        if (deadTaskers.isNotEmpty()) {
+        if (unhealthyTaskers.isNotEmpty()) {
             report.hasTaskerIssue = true
-            report.deadTaskerNames = deadTaskers.mapNotNull { it::class.simpleName }
-            logger.warn("发现 ${deadTaskers.size} 个已停止的任务: ${report.deadTaskerNames}")
+            report.deadTaskerNames = unhealthyTaskers.map { snapshot ->
+                val workerSummary = snapshot.workerSnapshots
+                    .filter { worker -> worker.restartExhausted || worker.lastFailureMessage != null }
+                    .joinToString(separator = ",") { worker ->
+                        "${worker.workerName}:${worker.lastFailureMessage ?: "inactive"}"
+                    }
+                if (workerSummary.isBlank()) snapshot.taskerName else "${snapshot.taskerName}[$workerSummary]"
+            }
+            logger.warn("发现 ${unhealthyTaskers.size} 个异常任务: ${report.deadTaskerNames}")
         } else {
             report.hasTaskerIssue = false
-            logger.debug("所有任务运行正常，活跃任务数: ${taskers.count { it.isActive }}")
+            logger.debug("所有任务运行正常，活跃任务数: ${taskers.count { it.healthSnapshot().healthy }}")
         }
     }
 

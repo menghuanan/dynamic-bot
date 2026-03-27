@@ -18,12 +18,13 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.ClosedSendChannelException
+import top.bilibili.connector.ConnectionBackoffPolicy
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.core.resource.BusinessLifecycleManager
 import top.bilibili.core.resource.BusinessLifecycleSession
 import top.bilibili.core.resource.TaskResourcePolicyRegistry
-import top.bilibili.utils.logger
 import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.CoroutineContext
 
 data class TaskerStopFailure(
@@ -39,12 +40,32 @@ data class TaskerStopReport(
     val failures: List<TaskerStopFailure>,
 )
 
+data class TaskWorkerSnapshot(
+    val workerName: String,
+    val active: Boolean,
+    val restartCount: Int,
+    val lastFailureMessage: String?,
+    val restartExhausted: Boolean,
+)
+
+data class TaskHealthSnapshot(
+    val taskerName: String,
+    val active: Boolean,
+    val workerSnapshots: List<TaskWorkerSnapshot>,
+) {
+    val healthy: Boolean
+        get() = active && workerSnapshots.none { it.restartExhausted || (!it.active && it.lastFailureMessage != null) }
+}
+
 @OptIn(InternalForInheritanceCoroutinesApi::class)
 abstract class BiliTasker(
     private val taskerName: String? = null,
 ) : CoroutineScope, CompletableJob by SupervisorJob(BiliBiliBot.coroutineContext[Job]) {
     override val coroutineContext: CoroutineContext
         get() = this + CoroutineName(taskerName ?: this::class.simpleName ?: "Tasker")
+
+    private val taskDisplayName: String
+        get() = taskerName ?: this::class.simpleName ?: "UnknownTasker"
 
     companion object {
         private const val DEFAULT_STOP_TIMEOUT_MS = 10_000L
@@ -80,6 +101,7 @@ abstract class BiliTasker(
     }
 
     private var job: Job? = null
+    private val managedWorkers = ConcurrentHashMap<String, ManagedWorkerState>()
 
     abstract var interval: Int
     open val unitTime: Long = 1000
@@ -91,15 +113,55 @@ abstract class BiliTasker(
     protected abstract suspend fun main()
     protected open fun after() {}
 
+    /**
+     * 为长生命周期子循环注册受管 worker，统一追踪运行状态、失败原因和有限次自愈重启。
+     */
+    protected fun launchManagedWorker(
+        workerName: String,
+        maxRestarts: Int = Int.MAX_VALUE,
+        backoffPolicy: ConnectionBackoffPolicy = ConnectionBackoffPolicy(baseDelayMillis = 1_000L, maxDelayMillis = 30_000L),
+        block: suspend () -> Unit,
+    ): Job {
+        val parentJob = job ?: error("任务主协程尚未启动，无法注册受管 worker: $workerName")
+        val state = ManagedWorkerState(workerName = workerName)
+        val existing = managedWorkers.putIfAbsent(workerName, state)
+        require(existing == null) { "重复注册受管 worker: $workerName" }
+
+        val workerJob = launch(parentJob + CoroutineName("$taskDisplayName.worker.$workerName")) {
+            runManagedWorkerLoop(state, maxRestarts, backoffPolicy, block)
+        }
+        state.job = workerJob
+        return workerJob
+    }
+
+    fun healthSnapshot(): TaskHealthSnapshot {
+        val snapshots = managedWorkers.values
+            .sortedBy { it.workerName }
+            .map { state ->
+                TaskWorkerSnapshot(
+                    workerName = state.workerName,
+                    active = state.running && state.job?.isActive == true,
+                    restartCount = state.restartCount,
+                    lastFailureMessage = state.lastFailureMessage,
+                    restartExhausted = state.restartExhausted,
+                )
+            }
+
+        return TaskHealthSnapshot(
+            taskerName = taskDisplayName,
+            active = job?.isActive == true,
+            workerSnapshots = snapshots,
+        )
+    }
+
     protected suspend fun <T> runBusinessOperation(
         operation: String,
         block: suspend BusinessLifecycleSession.() -> T,
     ): T {
-        val taskName = this::class.simpleName ?: "UnknownTasker"
-        val policy = TaskResourcePolicyRegistry.policyOf(taskName)
-            ?: error("任务未声明资源策略: $taskName")
+        val policy = TaskResourcePolicyRegistry.policyOf(taskDisplayName)
+            ?: error("任务未声明资源策略: $taskDisplayName")
         return BusinessLifecycleManager.run(
-            owner = taskName,
+            owner = taskDisplayName,
             operation = operation,
             strictness = policy.strictness,
             block = block,
@@ -127,7 +189,6 @@ abstract class BiliTasker(
     }
 
     private suspend fun awaitStop(timeoutMs: Long): TaskerStopFailure? {
-        val taskName = this::class.simpleName ?: "UnknownTasker"
         val currentJob = job
 
         if (currentJob == null) {
@@ -140,23 +201,22 @@ abstract class BiliTasker(
             }
             null
         } catch (_: TimeoutCancellationException) {
-            TaskerStopFailure(taskerName = taskName, error = "停止超时(${timeoutMs}ms)")
+            TaskerStopFailure(taskerName = taskDisplayName, error = "停止超时(${timeoutMs}ms)")
         } catch (e: CancellationException) {
             if (BiliBiliBot.isStopping() || !currentJob.isActive) {
                 null
             } else {
-                TaskerStopFailure(taskerName = taskName, error = e.message ?: e::class.simpleName.orEmpty())
+                TaskerStopFailure(taskerName = taskDisplayName, error = e.message ?: e::class.simpleName.orEmpty())
             }
         } catch (e: Exception) {
-            TaskerStopFailure(taskerName = taskName, error = e.message ?: e::class.simpleName.orEmpty())
+            TaskerStopFailure(taskerName = taskDisplayName, error = e.message ?: e::class.simpleName.orEmpty())
         }
     }
 
     override fun start(): Boolean {
-        val taskName = this::class.simpleName ?: "UnknownTasker"
-        // 预留未使用变量 policy: val policy = TaskResourcePolicyRegistry.policyOf(taskName)
-        TaskResourcePolicyRegistry.policyOf(taskName)
-            ?: error("任务未声明资源策略: $taskName")
+        // 预留未使用变量 policy: val policy = TaskResourcePolicyRegistry.policyOf(taskDisplayName)
+        TaskResourcePolicyRegistry.policyOf(taskDisplayName)
+            ?: error("任务未声明资源策略: $taskDisplayName")
 
         job = launch(coroutineContext) {
             var consecutiveErrors = 0
@@ -165,7 +225,7 @@ abstract class BiliTasker(
             try {
                 init()
             } catch (e: Exception) {
-                logger.error("任务 ${this::class.simpleName} 初始化失败", e)
+                BiliBiliBot.logger.error("任务 ${this::class.simpleName} 初始化失败", e)
                 return@launch
             }
 
@@ -174,9 +234,9 @@ abstract class BiliTasker(
                     executeIteration("run-once")
                 }.onFailure { e ->
                     if (isExpectedShutdownThrowable(e) && BiliBiliBot.isStopping()) {
-                        logger.info("${this::class.simpleName} 在停机期间已停止")
+                        BiliBiliBot.logger.info("${this::class.simpleName} 在停机期间已停止")
                     } else {
-                        logger.error("一次性任务 ${this::class.simpleName} 执行失败", e)
+                        BiliBiliBot.logger.error("一次性任务 ${this::class.simpleName} 执行失败", e)
                     }
                 }
             } else {
@@ -188,15 +248,15 @@ abstract class BiliTasker(
                     if (result.isFailure) {
                         val failure = result.exceptionOrNull()
                         if (failure != null && isExpectedShutdownThrowable(failure) && (BiliBiliBot.isStopping() || !isActive)) {
-                            logger.info("${this::class.simpleName} 在停机期间已停止")
+                            BiliBiliBot.logger.info("${this::class.simpleName} 在停机期间已停止")
                             break
                         }
 
                         consecutiveErrors++
-                        logger.error("任务 ${this::class.simpleName} 执行失败 ($consecutiveErrors/$maxErrors)", failure)
+                        BiliBiliBot.logger.error("任务 ${this::class.simpleName} 执行失败 ($consecutiveErrors/$maxErrors)", failure)
 
                         if (consecutiveErrors >= maxErrors) {
-                            logger.error("任务 ${this::class.simpleName} 连续失败 $maxErrors 次，停止任务")
+                            BiliBiliBot.logger.error("任务 ${this::class.simpleName} 连续失败 $maxErrors 次，停止任务")
                             break
                         }
 
@@ -211,7 +271,7 @@ abstract class BiliTasker(
             }
 
             if (!isActive) {
-                logger.info("${this::class.simpleName} 已停止")
+                BiliBiliBot.logger.info("${this::class.simpleName} 已停止")
             }
         }
 
@@ -219,8 +279,87 @@ abstract class BiliTasker(
     }
 
     override fun cancel(cause: CancellationException?) {
+        managedWorkers.values.forEach { state ->
+            state.job?.cancel(cause)
+        }
         job?.cancel(cause)
         coroutineContext.cancelChildren(cause)
         taskers.remove(this)
     }
+
+    /**
+     * 统一驱动 worker 自愈循环；仅在明确失败或异常退出时做有限次重启。
+     */
+    private suspend fun runManagedWorkerLoop(
+        state: ManagedWorkerState,
+        maxRestarts: Int,
+        backoffPolicy: ConnectionBackoffPolicy,
+        block: suspend () -> Unit,
+    ) {
+        while (job?.isActive == true && !BiliBiliBot.isStopping()) {
+            state.running = true
+            try {
+                block()
+                state.running = false
+                if (job?.isActive == true && !BiliBiliBot.isStopping()) {
+                    recordWorkerFailure(state, "worker exited unexpectedly", maxRestarts, backoffPolicy)
+                    if (state.restartExhausted) {
+                        return
+                    }
+                    continue
+                }
+                return
+            } catch (e: CancellationException) {
+                state.running = false
+                if (BiliBiliBot.isStopping() || job?.isActive != true) {
+                    return
+                }
+                throw e
+            } catch (e: Exception) {
+                state.running = false
+                recordWorkerFailure(state, e.message ?: e::class.simpleName.orEmpty(), maxRestarts, backoffPolicy)
+                if (state.restartExhausted) {
+                    return
+                }
+            }
+        }
+    }
+
+    /**
+     * 记录 worker 故障并按退避策略延迟重启；超过预算后将健康状态标记为失败。
+     */
+    private suspend fun recordWorkerFailure(
+        state: ManagedWorkerState,
+        message: String,
+        maxRestarts: Int,
+        backoffPolicy: ConnectionBackoffPolicy,
+    ) {
+        state.lastFailureMessage = message
+        if (state.restartCount >= maxRestarts) {
+            state.restartExhausted = true
+            BiliBiliBot.logger.error("任务 ${this::class.simpleName} 的 worker ${state.workerName} 已耗尽重启预算: $message")
+            return
+        }
+
+        state.restartCount += 1
+        val backoffDelay = backoffPolicy.nextDelayMillis(state.restartCount)
+        BiliBiliBot.logger.warn(
+            "任务 {} 的 worker {} 失败，将在 {}ms 后第 {} 次重启: {}",
+            this::class.simpleName,
+            state.workerName,
+            backoffDelay,
+            state.restartCount,
+            message,
+        )
+        kotlinx.coroutines.delay(backoffDelay)
+    }
+
+    private data class ManagedWorkerState(
+        val workerName: String,
+        var job: Job? = null,
+        var running: Boolean = false,
+        var restartCount: Int = 0,
+        var lastFailureMessage: String? = null,
+        var restartExhausted: Boolean = false,
+    )
 }

@@ -4,7 +4,6 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.DynamicFilter
@@ -45,12 +44,12 @@ object SendTasker : BiliTasker("SendTasker") {
         BiliBiliBot.logger.info("SendTasker 已启动")
 
         // 启动消息队列处理协程
-        launch {
+        launchManagedWorker("send-queue-loop") {
             processMessageQueue()
         }
 
         // 启动消息接收处理协程
-        launch {
+        launchManagedWorker("message-dispatch-loop") {
             processMessages()
         }
     }

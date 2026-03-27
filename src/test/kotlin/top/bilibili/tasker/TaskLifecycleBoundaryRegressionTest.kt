@@ -25,6 +25,8 @@ class TaskLifecycleBoundaryRegressionTest {
 
         assertTrue(listener.contains("override val wrapMainInBusinessLifecycle = false"))
         assertTrue(send.contains("override val wrapMainInBusinessLifecycle = false"))
+        assertTrue(listener.contains("launchManagedWorker("))
+        assertTrue(send.contains("launchManagedWorker("))
     }
 
     @Test
@@ -41,5 +43,12 @@ class TaskLifecycleBoundaryRegressionTest {
         assertTrue(live.contains("liveChannel.receiveCatching().getOrNull()"))
         assertTrue(live.contains("CancellationException(\"直播通道已关闭\")"))
         assertTrue(live.contains("runBusinessOperation("))
+    }
+
+    @Test
+    fun `process guardian should inspect task health snapshot instead of only outer job activity`() {
+        val guardian = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(guardian.contains("healthSnapshot()"))
     }
 }

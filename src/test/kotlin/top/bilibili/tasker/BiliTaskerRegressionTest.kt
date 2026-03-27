@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import top.bilibili.connector.ConnectionBackoffPolicy
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -34,6 +35,26 @@ class BiliTaskerRegressionTest {
                     cleanupCompleted.complete(Unit)
                 }
             }
+        }
+    }
+
+    private class ManagedWorkerTasker(name: String) : BiliTasker(name) {
+        override var interval: Int = -1
+        override val wrapMainInBusinessLifecycle = false
+        val workerReady = CompletableDeferred<Unit>()
+
+        override fun init() {
+            launchManagedWorker(
+                workerName = "listener-loop",
+                backoffPolicy = ConnectionBackoffPolicy(baseDelayMillis = 10L, maxDelayMillis = 20L),
+            ) {
+                workerReady.complete(Unit)
+                awaitCancellation()
+            }
+        }
+
+        override suspend fun main() {
+            awaitCancellation()
         }
     }
 
@@ -105,5 +126,22 @@ class BiliTaskerRegressionTest {
         assertEquals(2, report.stoppedTaskers)
         assertEquals(0, report.failedTaskers)
         assertTrue(BiliTasker.taskers.isEmpty())
+    }
+
+    @Test
+    fun `managed workers should be tracked in task health snapshot`() = runBlocking {
+        val tasker = ManagedWorkerTasker("ListenerTasker")
+
+        tasker.start()
+        tasker.workerReady.await()
+
+        val snapshot = tasker.healthSnapshot()
+
+        assertTrue(snapshot.healthy)
+        assertEquals(1, snapshot.workerSnapshots.size)
+        assertEquals("listener-loop", snapshot.workerSnapshots.single().workerName)
+        assertTrue(snapshot.workerSnapshots.single().active)
+
+        tasker.cancel()
     }
 }
