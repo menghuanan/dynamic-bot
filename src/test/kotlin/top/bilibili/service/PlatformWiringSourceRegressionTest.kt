@@ -1,14 +1,19 @@
 package top.bilibili.service
 
-import java.io.File
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PlatformWiringSourceRegressionTest {
+    // 统一按 UTF-8 读取源码，避免 source regression 受宿主默认编码影响。
+    private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
+
     @Test
     fun `login service should no longer send through BiliBiliBot napCat directly`() {
-        val source = File("src/main/kotlin/top/bilibili/service/LoginService.kt").readText()
+        val source = read("src/main/kotlin/top/bilibili/service/LoginService.kt")
 
         assertFalse(source.contains("BiliBiliBot.napCat.sendGroupMessage"))
         assertFalse(source.contains("BiliBiliBot.napCat.sendPrivateMessage"))
@@ -16,7 +21,7 @@ class PlatformWiringSourceRegressionTest {
 
     @Test
     fun `listener tasker should consume platform adapter flow`() {
-        val source = File("src/main/kotlin/top/bilibili/tasker/ListenerTasker.kt").readText()
+        val source = read("src/main/kotlin/top/bilibili/tasker/ListenerTasker.kt")
 
         assertFalse(source.contains("BiliBiliBot.napCat.eventFlow"))
         assertTrue(source.contains("platformAdapter.eventFlow") || source.contains("requirePlatformAdapter().eventFlow"))
@@ -24,9 +29,9 @@ class PlatformWiringSourceRegressionTest {
 
     @Test
     fun `bot startup should select adapter from platform config and start through adapter`() {
-        val botSource = File("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt").readText()
-        val configSource = File("src/main/kotlin/top/bilibili/config/NapCatConfig.kt").readText()
-        val managerSource = File("src/main/kotlin/top/bilibili/config/ConfigManager.kt").readText()
+        val botSource = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
+        val configSource = read("src/main/kotlin/top/bilibili/config/NapCatConfig.kt")
+        val managerSource = read("src/main/kotlin/top/bilibili/config/ConfigManager.kt")
 
         assertTrue(botSource.contains("platformAdapter.start()"))
         assertFalse(botSource.contains("napCat.start()"))
@@ -38,9 +43,9 @@ class PlatformWiringSourceRegressionTest {
     // 约束启动选择必须显式区分 NapCat 与通用 OneBot11，避免继续把供应商实现藏在协议类型后面。
     @Test
     fun `bot startup should distinguish napcat from generic onebot11 adapter selection`() {
-        val modelSource = File("src/main/kotlin/top/bilibili/connector/PlatformModels.kt").readText()
-        val configSource = File("src/main/kotlin/top/bilibili/config/NapCatConfig.kt").readText()
-        val botSource = File("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt").readText()
+        val modelSource = read("src/main/kotlin/top/bilibili/connector/PlatformModels.kt")
+        val configSource = read("src/main/kotlin/top/bilibili/config/NapCatConfig.kt")
+        val botSource = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
 
         assertTrue(modelSource.contains("enum class PlatformAdapterKind"))
         assertTrue(modelSource.contains("NAPCAT"))
@@ -54,8 +59,8 @@ class PlatformWiringSourceRegressionTest {
     // 约束能力判断必须统一收口到 capability guard，而不是继续散落在 service 里拼布尔判断。
     @Test
     fun `platform capability service should route through unified capability guard`() {
-        val adapterSource = File("src/main/kotlin/top/bilibili/connector/PlatformAdapter.kt").readText()
-        val serviceSource = File("src/main/kotlin/top/bilibili/connector/PlatformCapabilityService.kt").readText()
+        val adapterSource = read("src/main/kotlin/top/bilibili/connector/PlatformAdapter.kt")
+        val serviceSource = read("src/main/kotlin/top/bilibili/connector/PlatformCapabilityService.kt")
 
         assertTrue(adapterSource.contains("declaredCapabilities"))
         assertTrue(adapterSource.contains("guardCapability"))
@@ -66,8 +71,8 @@ class PlatformWiringSourceRegressionTest {
 
     @Test
     fun `main ingress should only rely on neutral inbound fields`() {
-        val dispatchSource = File("src/main/kotlin/top/bilibili/service/MessageEventDispatchService.kt").readText()
-        val routerSource = File("src/main/kotlin/top/bilibili/service/MessageCommandRouterService.kt").readText()
+        val dispatchSource = read("src/main/kotlin/top/bilibili/service/MessageEventDispatchService.kt")
+        val routerSource = read("src/main/kotlin/top/bilibili/service/MessageCommandRouterService.kt")
 
         listOf("event.messageType", "event.groupId", "event.rawMessage", "event.userId").forEach { legacy ->
             assertFalse(dispatchSource.contains(legacy), "dispatch should not read legacy field $legacy")
@@ -79,7 +84,7 @@ class PlatformWiringSourceRegressionTest {
 
     @Test
     fun `listener should consume normalized search texts instead of raw onebot segments`() {
-        val listenerSource = File("src/main/kotlin/top/bilibili/tasker/ListenerTasker.kt").readText()
+        val listenerSource = read("src/main/kotlin/top/bilibili/tasker/ListenerTasker.kt")
 
         listOf("event.messageType", "event.groupId", "event.message", "extractMiniAppUrl").forEach { legacy ->
             assertFalse(listenerSource.contains(legacy), "listener should not depend on legacy OneBot detail $legacy")
@@ -99,8 +104,20 @@ class PlatformWiringSourceRegressionTest {
         )
 
         targets.forEach { path ->
-            val source = File(path).readText()
+            val source = read(path)
             assertFalse(source.contains("BiliBiliBot.napCat"), "Direct napCat usage should be removed from $path")
         }
+    }
+
+    // 约束启动层只依赖 connector manager，避免 Bot 再次回退到直接 new vendor adapter 的模式。
+    @Test
+    fun `bot startup should delegate platform lifecycle to connector manager`() {
+        val botSource = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
+
+        assertTrue(botSource.contains("PlatformConnectorManager"), "bot startup should depend on PlatformConnectorManager")
+        assertFalse(botSource.contains("NapCatClient("), "bot startup should not construct NapCatClient directly")
+        assertFalse(botSource.contains("NapCatAdapter("), "bot startup should not construct NapCatAdapter directly")
+        assertFalse(botSource.contains("GenericOneBot11Adapter("), "bot startup should not construct GenericOneBot11Adapter directly")
+        assertFalse(botSource.contains("QQOfficialAdapter("), "bot startup should not construct QQOfficialAdapter directly")
     }
 }
