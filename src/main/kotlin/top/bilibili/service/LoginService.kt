@@ -42,23 +42,24 @@ object LoginService {
                     return@run
                 }
 
-                val qrImage = loginQrCode(loginData.url)
-                qrImageFile = File(BiliBiliBot.tempPath.toFile(), "bili_qr_${System.currentTimeMillis()}.png").apply {
-                    deleteOnExit()
-                    val data = qrImage.encodeToData(EncodedImageFormat.PNG)
-                    try {
-                        writeBytes(data?.bytes ?: byteArrayOf())
-                    } finally {
-                        data?.close()
+                val generatedQrImageFile = loginQrCode(loginData.url).use { qrImage ->
+                    File(BiliBiliBot.tempPath.toFile(), "bili_qr_${System.currentTimeMillis()}.png").apply {
+                        deleteOnExit()
+                        val data = qrImage.encodeToData(EncodedImageFormat.PNG)
+                        try {
+                            writeBytes(data?.bytes ?: byteArrayOf())
+                        } finally {
+                            data?.close()
+                        }
                     }
                 }
-                qrImage.close()
+                qrImageFile = generatedQrImageFile
 
                 sendPartsWithCapabilityFallback(
                     contact,
                     listOf(
                         OutgoingPart.text("请使用 BiliBili 手机 APP 扫码登录（3 分钟有效）"),
-                        OutgoingPart.image(qrImageFile.absolutePath),
+                        OutgoingPart.image(generatedQrImageFile.absolutePath),
                     ),
                     fallbackText = buildString {
                         appendLine("当前平台不支持直接发送登录二维码图片。")
