@@ -2,6 +2,7 @@ package top.bilibili.connector
 
 import kotlinx.coroutines.flow.Flow
 import top.bilibili.config.BotConfig
+import top.bilibili.connector.onebot11.core.KtorOneBot11Transport
 import top.bilibili.connector.onebot11.generic.GenericOneBot11Adapter
 import top.bilibili.connector.onebot11.vendors.napcat.NapCatAdapter
 import top.bilibili.connector.onebot11.vendors.napcat.NapCatClient
@@ -56,7 +57,7 @@ class PlatformConnectorManager(
             }
             PlatformAdapterKind.ONEBOT11 -> {
                 val oneBotConfig = config.selectedOneBot11Config()
-                GenericOneBot11Adapter(NapCatAdapter.transport(NapCatClient(oneBotConfig)))
+                GenericOneBot11Adapter(KtorOneBot11Transport(oneBotConfig))
             }
             PlatformAdapterKind.QQ_OFFICIAL -> QQOfficialAdapter(config.platform.qqOfficial)
         }

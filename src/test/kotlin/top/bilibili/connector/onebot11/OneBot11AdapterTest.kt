@@ -1,6 +1,9 @@
 package top.bilibili.connector.onebot11
 
 import java.io.File
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
@@ -23,6 +26,9 @@ import top.bilibili.connector.onebot11.core.OneBot11Transport
 import top.bilibili.connector.onebot11.generic.GenericOneBot11Adapter
 
 class OneBot11AdapterTest {
+    // 统一按 UTF-8 读取源码，避免 Windows 默认编码导致 source regression 漂移。
+    private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
+
     // 使用最小传输桩隔离 generic adapter 的 capability 语义，避免测试退化成对 NapCat 行为的回归。
     private class FakeTransport : OneBot11Transport {
         override val eventFlow: Flow<OneBot11MessageEvent> = emptyFlow()
@@ -80,7 +86,7 @@ class OneBot11AdapterTest {
     // 约束通用 OneBot11 适配核心必须只依赖新的传输契约，避免继续把 NapCatClient 绑死在协议层。
     @Test
     fun `generic onebot11 adapter should depend on transport contract instead of napcat client`() {
-        val adapterSource = File("src/main/kotlin/top/bilibili/connector/onebot11/OneBot11Adapter.kt").readText()
+        val adapterSource = read("src/main/kotlin/top/bilibili/connector/onebot11/OneBot11Adapter.kt")
         val genericAdapterFile = File("src/main/kotlin/top/bilibili/connector/onebot11/generic/GenericOneBot11Adapter.kt")
         val napCatClientFile = File("src/main/kotlin/top/bilibili/connector/onebot11/vendors/napcat/NapCatClient.kt")
 
@@ -88,8 +94,19 @@ class OneBot11AdapterTest {
         assertTrue(napCatClientFile.exists(), "NapCat client should live under the vendor directory")
         assertTrue(adapterSource.contains("OneBot11Transport"))
         assertFalse(adapterSource.contains("NapCatClient"))
-        assertTrue(genericAdapterFile.readText().contains("OneBot11Transport"))
-        assertFalse(genericAdapterFile.readText().contains("NapCatClient"))
+        assertTrue(read(genericAdapterFile.path).contains("OneBot11Transport"))
+        assertFalse(read(genericAdapterFile.path).contains("NapCatClient"))
+    }
+
+    // 约束 generic OneBot11 的运行期 wiring 必须走独立 transport，而不是继续借道 NapCat vendor 桥接。
+    @Test
+    fun `generic onebot11 startup should wire through dedicated transport`() {
+        val managerSource = read("src/main/kotlin/top/bilibili/connector/PlatformConnectorManager.kt")
+        val transportFile = File("src/main/kotlin/top/bilibili/connector/onebot11/core/KtorOneBot11Transport.kt")
+
+        assertTrue(transportFile.exists(), "generic OneBot11 transport should exist")
+        assertTrue(managerSource.contains("KtorOneBot11Transport("))
+        assertFalse(managerSource.contains("GenericOneBot11Adapter(NapCatAdapter.transport("))
     }
 
     // 约束 generic OneBot11 要对本地图和 @全体给出显式 guard 结果，而不是继续模糊地返回发送失败。
