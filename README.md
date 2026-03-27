@@ -1,8 +1,10 @@
 # BiliBili 动态推送 Bot v1.8
 
-1.8版本还没有稳定测试，建议先使用v1.7.44版本
+1.8版本还没有稳定测试，建议先使用v1.7.43版本。
 
-docker 部署的latest标签为v1.8.0，建议使用v1.7.44版本
+docker 部署的latest标签为v1.8.2，建议使用v1.7.43版本，v1.7.44版本的docker镜像有登录图渲染问题。
+
+如果你使用napcat进行对接，可以使用v1.8.2版本。
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
@@ -10,7 +12,7 @@ docker 部署的latest标签为v1.8.0，建议使用v1.7.44版本
 
 由 [bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin) 改造而来。  
 代码部分由 [claude](https://github.com/claude) 主刀构建改造后的主体框架， GPT-5系列模型（GPT-5.2-Codex、GPT-5.3-Codex、GPT-5.4） 协助完善功能细则与日常修复bug。  
-这是一个支持多平台连接器的 B 站动态推送 Bot，当前默认推荐使用 NapCat / llbot / OneBot11，QQ 官方适配器也提供了基础收发能力与显式降级处理。
+这是一个支持多平台连接器的 QQ 机器人 ，当前默认推荐使用 NapCat / llbot / OneBot11，QQ 官方适配器也提供了基础收发能力与显式降级处理（尚未测试，不建议使用）。
 
 ## 文档目录
 
