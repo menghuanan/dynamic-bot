@@ -1,4 +1,4 @@
-# BiliBili 动态推送 Bot v1.7
+# BiliBili 动态推送 Bot v1.8
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
@@ -115,14 +115,14 @@ chmod +x gradlew
 ./gradlew shadowJar
 ```
 编译完成后,可执行文件位于：
-- `build/libs/dynamic-bot-1.7-SNAPSHOT.jar`
+- `build/libs/dynamic-bot-1.8-SNAPSHOT.jar`
 
 ### 2. 运行 Bot
 
 #### 方式一：直接运行 JAR
 
 ```bash
-java -jar build/libs/dynamic-bot-1.7-SNAPSHOT.jar
+java -jar build/libs/dynamic-bot-1.8-SNAPSHOT.jar
 ```
 
 #### 方式二：使用 Docker Hub 镜像（推荐）
@@ -553,19 +553,6 @@ docker logs -f dynamic-bot
 
 #### 可用标签
 
-- `latest` - 最新版本（v1.7.1）
-- `v1.7.1` - 稳定版本 v1.7.1
-- `v1.7` - 稳定版本 v1.7
-- `v1.6.2` - 稳定版本 v1.6.2
-- `v1.6.1` - 稳定版本 v1.6.1
-- `v1.6` - 稳定版本 v1.6
-- `v1.5` - 稳定版本 v1.5
-- `v1.4` - 稳定版本 v1.4
-- `v1.3.1` - 稳定版本 v1.3.1
-- `v1.3` - 稳定版本 v1.3
-- `v1.2` - 稳定版本 v1.2
-- `v1.1` - 稳定版本 v1.1
-- `v1.0` - 稳定版本 v1.0
 
 ### 方式二：从源码构建部署
 
@@ -1047,7 +1034,7 @@ docker logs -f dynamic-bot
    在启动时加入--debug ：
 
    ```powershell
-   java -jar dynamic-bot-1.7.1.jar --debug
+   java -jar dynamic-bot-1.8.0.jar --debug
    ```
 
 1. **Docker 部署启用 Debug**
