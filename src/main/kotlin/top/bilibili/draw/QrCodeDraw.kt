@@ -4,6 +4,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.client.j2se.MatrixToImageConfig
 import com.google.zxing.client.j2se.MatrixToImageWriter
+import com.google.zxing.common.BitMatrix
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import org.jetbrains.skia.*
@@ -20,48 +21,84 @@ val bgColor = 0xFFFFFFFF
  */
 suspend fun loginQrCode(url: String): Image {
     return SkiaManager.executeDrawing {
-        val qrCodeWriter = QRCodeWriter()
-
-        val bitMatrix = qrCodeWriter.encode(
-            url, BarcodeFormat.QR_CODE, 250, 250,
-            mapOf(
-                EncodeHintType.MARGIN to 1,
-                EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.H
-            )
-        )
-
-        val config = MatrixToImageConfig(pointColor.toInt(), bgColor.toInt())
+        val bitMatrix = createLoginQrBitMatrix(url)
+        val config = createLoginQrImageConfig()
 
         drawToImage(250, 250) {
-            val img = Image.makeFromBitmap(MatrixToImageWriter.toBufferedImage(bitMatrix, config).toBitmap())
-            try {
-                drawImage(img, 0f, 0f)
-            } finally {
-                img.close()
-            }
-
-            drawCircle(125f, 125f, 35f, this@executeDrawing.createPaint {
-                color = Color.WHITE
-            })
-            drawCircle(125f, 125f, 30f, this@executeDrawing.createPaint {
-                color = Color.makeRGB(2, 181, 218)
-            })
-
-            try {
-                val svg = this@executeDrawing.createSvg("icon/BILIBILI_LOGO.svg")
-                if (svg != null) {
-                    val logoImg = svg.makeImage(this@executeDrawing, 40f, 40f)
-                    drawImage(logoImg, 105f, 105f, this@executeDrawing.createPaint {
-                        colorFilter = this@executeDrawing.createBlendColorFilter(Color.WHITE, BlendMode.SRC_ATOP)
-                    })
-                } else {
-                    drawFallbackLogo(this@executeDrawing, this)
-                }
-            } catch (e: Exception) {
-                logger.warn("加载二维码中心图标失败: ${e.message}")
-                drawFallbackLogo(this@executeDrawing, this)
-            }
+            this@executeDrawing.drawLoginQrCanvas(this, bitMatrix, config)
         }
+    }
+}
+
+/**
+ * 直接生成登录二维码 PNG 字节，避免发送链路依赖本地临时文件再次读取。
+ */
+suspend fun loginQrCodeBytes(url: String): ByteArray {
+    return SkiaManager.executeDrawing {
+        val bitMatrix = createLoginQrBitMatrix(url)
+        val config = createLoginQrImageConfig()
+
+        drawToBytes(250, 250) {
+            this@executeDrawing.drawLoginQrCanvas(this, bitMatrix, config)
+        }
+    }
+}
+
+/**
+ * 登录二维码固定使用高纠错级别，保证中心 Logo 覆盖后仍能稳定扫码。
+ */
+private fun createLoginQrBitMatrix(url: String): BitMatrix {
+    val qrCodeWriter = QRCodeWriter()
+    return qrCodeWriter.encode(
+        url,
+        BarcodeFormat.QR_CODE,
+        250,
+        250,
+        mapOf(
+            EncodeHintType.MARGIN to 1,
+            EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.H,
+        ),
+    )
+}
+
+/**
+ * 统一登录二维码的前景/背景色，确保 Image 与字节输出路径保持一致。
+ */
+private fun createLoginQrImageConfig(): MatrixToImageConfig {
+    return MatrixToImageConfig(pointColor.toInt(), bgColor.toInt())
+}
+
+/**
+ * 统一绘制登录二维码主体，避免 Image 输出和字节输出出现两套实现。
+ */
+private fun DrawingSession.drawLoginQrCanvas(canvas: Canvas, bitMatrix: BitMatrix, config: MatrixToImageConfig) {
+    val qrBitmapImage = Image.makeFromBitmap(MatrixToImageWriter.toBufferedImage(bitMatrix, config).toBitmap())
+    try {
+        canvas.drawImage(qrBitmapImage, 0f, 0f)
+    } finally {
+        qrBitmapImage.close()
+    }
+
+    canvas.drawCircle(125f, 125f, 35f, createPaint {
+        color = Color.WHITE
+    })
+    canvas.drawCircle(125f, 125f, 30f, createPaint {
+        color = Color.makeRGB(2, 181, 218)
+    })
+
+    try {
+        val svg = createSvg("icon/BILIBILI_LOGO.svg")
+        if (svg != null) {
+            val logoImg = svg.makeImage(this, 40f, 40f)
+            canvas.drawImage(logoImg, 105f, 105f, createPaint {
+                colorFilter = createBlendColorFilter(Color.WHITE, BlendMode.SRC_ATOP)
+            })
+        } else {
+            drawFallbackLogo(this, canvas)
+        }
+    } catch (e: Exception) {
+        logger.warn("加载二维码中心图标失败: ${e.message}")
+        drawFallbackLogo(this, canvas)
     }
 }
 

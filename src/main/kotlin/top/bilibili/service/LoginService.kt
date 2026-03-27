@@ -4,16 +4,16 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withTimeout
-import org.jetbrains.skia.EncodedImageFormat
 import top.bilibili.BiliConfigManager
 import top.bilibili.api.getLoginQrcode
 import top.bilibili.api.loginInfo
+import top.bilibili.connector.ImageSource
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformContact
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.core.resource.BusinessLifecycleManager
 import top.bilibili.core.resource.ResourceStrictness
-import top.bilibili.draw.loginQrCode
+import top.bilibili.draw.loginQrCodeBytes
 import top.bilibili.initTagid
 import top.bilibili.utils.toSubject
 import java.io.File
@@ -42,24 +42,27 @@ object LoginService {
                     return@run
                 }
 
-                val generatedQrImageFile = loginQrCode(loginData.url).use { qrImage ->
-                    File(BiliBiliBot.tempPath.toFile(), "bili_qr_${System.currentTimeMillis()}.png").apply {
+                val qrImageFileName = "bili_qr_${System.currentTimeMillis()}.png"
+                val qrImageBytes = loginQrCodeBytes(loginData.url)
+                val generatedQrImageFile = runCatching {
+                    File(BiliBiliBot.tempPath.toFile(), qrImageFileName).apply {
                         deleteOnExit()
-                        val data = qrImage.encodeToData(EncodedImageFormat.PNG)
-                        try {
-                            writeBytes(data?.bytes ?: byteArrayOf())
-                        } finally {
-                            data?.close()
-                        }
+                        writeBytes(qrImageBytes)
                     }
+                }.onFailure {
+                    // 本地缓存文件仅用于诊断和人工排查，失败时不应阻断实际二维码发送。
+                    logger.warn("写入登录二维码临时文件失败: ${it.message}")
+                }.getOrNull()
+                if (generatedQrImageFile != null) {
+                    logger.info("登录二维码临时文件已生成: ${generatedQrImageFile.name}")
                 }
                 qrImageFile = generatedQrImageFile
 
-                sendPartsWithCapabilityFallback(
+                val qrSendSucceeded = sendPartsWithCapabilityFallback(
                     contact,
                     listOf(
                         OutgoingPart.text("请使用 BiliBili 手机 APP 扫码登录（3 分钟有效）"),
-                        OutgoingPart.image(generatedQrImageFile.absolutePath),
+                        OutgoingPart.image(ImageSource.Binary(qrImageBytes, qrImageFileName)),
                     ),
                     fallbackText = buildString {
                         appendLine("当前平台不支持直接发送登录二维码图片。")
@@ -67,6 +70,16 @@ object LoginService {
                         append(loginData.url)
                     },
                 )
+                if (!qrSendSucceeded) {
+                    logger.warn("登录二维码发送失败，改为发送文本登录链接")
+                    sendMessage(
+                        contact,
+                        buildString {
+                            appendLine("登录二维码发送失败，请复制下面的链接到浏览器打开后完成登录：")
+                            append(loginData.url)
+                        },
+                    )
+                }
 
                 runCatching {
                     withTimeout(180_000) {

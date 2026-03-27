@@ -18,13 +18,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # 字体支持 (Skia 绘图需要)
     fonts-dejavu-core \
     fonts-noto-color-emoji \
+    # AWT/X11 运行库（/login 二维码经由 BufferedImage 路径时仍会加载 libawt_xawt.so）
+    libx11-6 \
+    libxext6 \
+    libxrender1 \
+    libxtst6 \
+    libxi6 \
     # OpenGL 基础符号库 (Skiko 软件渲染下仍可能需要)
     libgl1 \
+    libgl1-mesa-dri \
+    libglu1-mesa \
+    libegl1 \
+    libgles2 \
     # 字体和图形库
     libfreetype6 \
     libfontconfig1 \
     libharfbuzz0b \
-    libxrender1 \
     libpng16-16 \
     libjpeg-turbo8 \
     libwebp7 \

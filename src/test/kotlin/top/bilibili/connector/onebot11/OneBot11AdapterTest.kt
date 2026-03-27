@@ -32,6 +32,7 @@ class OneBot11AdapterTest {
     // 使用最小传输桩隔离 generic adapter 的 capability 语义，避免测试退化成对 NapCat 行为的回归。
     private class FakeTransport : OneBot11Transport {
         override val eventFlow: Flow<OneBot11MessageEvent> = emptyFlow()
+        var lastSentMessage: List<OneBot11MessageSegment> = emptyList()
 
         override fun start() = Unit
 
@@ -41,7 +42,11 @@ class OneBot11AdapterTest {
             chatType: PlatformChatType,
             targetId: Long,
             message: List<OneBot11MessageSegment>,
-        ): Boolean = true
+        ): Boolean {
+            // 记录协议层最终消息段，便于验证适配器是否已把图片转换为可直接发送的 payload。
+            lastSentMessage = message
+            return true
+        }
 
         override fun runtimeStatus(): PlatformRuntimeStatus = PlatformRuntimeStatus(connected = true, reconnectAttempts = 0)
     }
@@ -180,5 +185,30 @@ class OneBot11AdapterTest {
         assertTrue(degradedImage.reason.contains("remote image"), "generic image fallback reason should be explicit")
         val unsupportedAtAll = assertIs<CapabilityGuardResult.Unsupported>(atAllGuard)
         assertTrue(unsupportedAtAll.reason.contains("@全体"), "generic at-all reason should be explicit")
+    }
+
+    @Test
+    fun `binary image payload should be normalized into base64 onebot segment`() = runBlocking {
+        val transport = FakeTransport()
+        val adapter = OneBot11Adapter(transport)
+        val contact = PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, "100")
+
+        assertTrue(
+            adapter.sendMessage(
+                contact,
+                listOf(
+                    top.bilibili.connector.OutgoingPart.image(
+                        ImageSource.Binary(byteArrayOf(1, 2, 3, 4), "login.png"),
+                    ),
+                ),
+            ),
+        )
+
+        val imageSegment = transport.lastSentMessage.single()
+        assertEquals("image", imageSegment.type)
+        assertTrue(
+            imageSegment.data.getValue("file").startsWith("base64://"),
+            "binary image payload should bypass temp file reopening and become base64 directly",
+        )
     }
 }
