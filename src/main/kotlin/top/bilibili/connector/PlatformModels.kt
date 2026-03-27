@@ -36,7 +36,10 @@ data class PlatformContact(
 data class PlatformRuntimeStatus(
     val connected: Boolean,
     val reconnectAttempts: Int,
-    val sendQueueFull: Boolean,
+    val inboundPressureActive: Boolean = false,
+    val inboundDroppedEvents: Int = 0,
+    val outboundPressureActive: Boolean = false,
+    val outboundDroppedEvents: Int = 0,
 )
 
 sealed interface ImageSource {

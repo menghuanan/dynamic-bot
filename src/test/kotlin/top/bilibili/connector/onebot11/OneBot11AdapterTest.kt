@@ -43,7 +43,7 @@ class OneBot11AdapterTest {
             message: List<OneBot11MessageSegment>,
         ): Boolean = true
 
-        override fun runtimeStatus(): PlatformRuntimeStatus = PlatformRuntimeStatus(true, 0, false)
+        override fun runtimeStatus(): PlatformRuntimeStatus = PlatformRuntimeStatus(connected = true, reconnectAttempts = 0)
     }
 
     @Test

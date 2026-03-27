@@ -26,7 +26,7 @@ class CapabilityGuardTest {
 
         override suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean = true
 
-        override fun runtimeStatus(): PlatformRuntimeStatus = PlatformRuntimeStatus(true, 0, false)
+        override fun runtimeStatus(): PlatformRuntimeStatus = PlatformRuntimeStatus(connected = true, reconnectAttempts = 0)
 
         override suspend fun isContactReachable(contact: PlatformContact): Boolean = canSend
 

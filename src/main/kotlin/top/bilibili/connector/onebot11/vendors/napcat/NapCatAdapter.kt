@@ -76,7 +76,7 @@ private class NapCatTransport(
         return PlatformRuntimeStatus(
             connected = napCatClient.isConnected(),
             reconnectAttempts = napCatClient.getReconnectAttempts(),
-            sendQueueFull = napCatClient.isSendQueueFull(),
+            outboundPressureActive = napCatClient.isSendQueueFull(),
         )
     }
 

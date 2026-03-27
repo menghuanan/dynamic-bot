@@ -333,14 +333,16 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
 
         // 检查 BiliBiliBot 的 Channel
         try {
-            // 使用空的 DynamicDetail 测试 dynamicChannel
-            // 注意：这里只是检测，不实际发送数据
-            // 由于 Channel 的 trySend 需要实际数据，我们通过检查 NapCat 的发送队列来间接判断
-
-            // 检查 NapCat 发送队列
-            if (BiliBiliBot.isPlatformAdapterInitialized() && BiliBiliBot.platformAdapter.runtimeStatus().sendQueueFull) {
-                fullChannels.add("NapCat.sendChannel (容量: 200)")
-                logger.warn("NapCat 发送队列已满，可能存在消息积压")
+            if (BiliBiliBot.isPlatformAdapterInitialized()) {
+                val runtimeStatus = BiliBiliBot.platformAdapter.runtimeStatus()
+                if (runtimeStatus.outboundPressureActive) {
+                    fullChannels.add("platform.outbound (dropped=${runtimeStatus.outboundDroppedEvents})")
+                    logger.warn("平台出站背压已触发，可能存在消息积压")
+                }
+                if (runtimeStatus.inboundPressureActive) {
+                    fullChannels.add("platform.inbound (dropped=${runtimeStatus.inboundDroppedEvents})")
+                    logger.warn("平台入站背压已触发，存在事件丢弃风险")
+                }
             }
         } catch (e: Exception) {
             logger.debug("检查 Channel 背压时出错: ${e.message}")

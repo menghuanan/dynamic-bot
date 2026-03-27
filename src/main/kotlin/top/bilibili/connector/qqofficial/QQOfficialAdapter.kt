@@ -62,6 +62,8 @@ internal class QQOfficialAdapter(
         baseDelayMillis = 3_000L,
         maxDelayMillis = 60_000L,
     )
+    private val inboundPressureActive = AtomicBoolean(false)
+    private val inboundDroppedEvents = AtomicInteger(0)
     private val reachableContacts = ConcurrentHashMap.newKeySet<String>()
     private val _eventFlow = MutableSharedFlow<PlatformInboundMessage>(replay = 0, extraBufferCapacity = 64)
     private var gatewaySession: QQOfficialGatewaySession? = null
@@ -202,7 +204,8 @@ internal class QQOfficialAdapter(
         return PlatformRuntimeStatus(
             connected = connected.get(),
             reconnectAttempts = reconnectAttempts.get(),
-            sendQueueFull = false,
+            inboundPressureActive = inboundPressureActive.get(),
+            inboundDroppedEvents = inboundDroppedEvents.get(),
         )
     }
 
@@ -350,13 +353,13 @@ internal class QQOfficialAdapter(
             "GROUP_AT_MESSAGE_CREATE" -> {
                 normalizeMessage(frame, PlatformChatType.GROUP)?.let { inbound ->
                     markReachable(inbound.chatContact)
-                    _eventFlow.tryEmit(inbound)
+                    recordInboundEvent(inbound)
                 }
             }
             "C2C_MESSAGE_CREATE" -> {
                 normalizeMessage(frame, PlatformChatType.PRIVATE)?.let { inbound ->
                     markReachable(inbound.chatContact)
-                    _eventFlow.tryEmit(inbound)
+                    recordInboundEvent(inbound)
                 }
             }
             "GROUP_ADD_ROBOT", "GROUP_MSG_RECEIVE" -> {
@@ -634,6 +637,19 @@ internal class QQOfficialAdapter(
      */
     private fun markUnreachable(contact: PlatformContact) {
         reachableContacts -= contact.toSubject()
+    }
+
+    /**
+     * 显式记录入站 SharedFlow 溢出，避免 QQ 官方链路在高负载下静默丢事件。
+     */
+    private fun recordInboundEvent(inbound: PlatformInboundMessage) {
+        if (_eventFlow.tryEmit(inbound)) {
+            inboundPressureActive.set(false)
+            return
+        }
+        inboundPressureActive.set(true)
+        val droppedCount = inboundDroppedEvents.incrementAndGet()
+        logger.warn("QQ 官方入站事件背压触发，已累计丢弃 $droppedCount 条事件")
     }
 
     /**

@@ -337,6 +337,16 @@ class QQOfficialAdapterTest {
     }
 
     @Test
+    fun `qq official adapter should expose inbound overflow through neutral runtime status`() {
+        val source = read("src/main/kotlin/top/bilibili/connector/qqofficial/QQOfficialAdapter.kt")
+
+        assertTrue(source.contains("inboundPressureActive"))
+        assertTrue(source.contains("inboundDroppedEvents"))
+        assertTrue(source.contains("recordInboundEvent"))
+        assertTrue(source.contains("inboundDroppedEvents.incrementAndGet()"))
+    }
+
+    @Test
     fun `qq official reconnect should use shared bounded backoff without recursive retry scheduling`() {
         val source = read("src/main/kotlin/top/bilibili/connector/qqofficial/QQOfficialAdapter.kt")
         val policySource = read("src/main/kotlin/top/bilibili/connector/ConnectionBackoffPolicy.kt")
