@@ -9,10 +9,9 @@ import top.bilibili.utils.subjectsEquivalent
 
 object ConfigService {
     fun configOverview(uid: Long = 0L, subject: String): String {
-        parsePlatformContact(subject) ?: return "联系人格式错误: $subject"
-        if (uid < 0L) return "UID 格式错误: $uid"
-
         val normalizedSubject = normalizeContactSubject(subject) ?: return "联系人格式错误: $subject"
+        parsePlatformContact(normalizedSubject) ?: return "联系人格式错误: $subject"
+        if (uid < 0L) return "UID 格式错误: $uid"
         if (uid > 0L && !isFollow(uid, normalizedSubject)) return "该群未订阅 UID: $uid"
 
         val dynamicCustom = BiliData.dynamicPushTemplate.entries.find { (_, users) ->

@@ -71,7 +71,7 @@ class IdeCompatibilitySourceRegressionTest {
         val drawingSession = read("src/main/kotlin/top/bilibili/skia/DrawingSession.kt")
 
         assertTrue(tasker.contains("@OptIn(InternalForInheritanceCoroutinesApi::class)"))
-        assertTrue(tasker.contains("// 预留未使用变量 policy: val policy = TaskResourcePolicyRegistry.policyOf(taskName)"))
+        assertTrue(tasker.contains("// 预留未使用变量 policy: val policy = TaskResourcePolicyRegistry.policyOf(taskDisplayName)"))
 
         assertTrue(drawingSession.contains("return Image.makeFromEncoded(bytes).track()"))
         assertFalse(drawingSession.contains("?: throw IllegalArgumentException(\"Failed to decode image from bytes\")"))

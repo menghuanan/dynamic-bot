@@ -163,7 +163,6 @@ class KtorOneBot11Transport(
         return PlatformRuntimeStatus(
             connected = connected.get(),
             reconnectAttempts = reconnectAttempts.get(),
-            sendQueueFull = false,
         )
     }
 

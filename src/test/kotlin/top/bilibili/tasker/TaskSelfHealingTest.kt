@@ -88,7 +88,11 @@ class TaskSelfHealingTest {
         tasker.start()
 
         withTimeout(1_000) {
-            while (!tasker.healthSnapshot().workerSnapshots.single().restartExhausted) {
+            while (true) {
+                val snapshot = tasker.healthSnapshot()
+                if (snapshot.workerSnapshots.isNotEmpty() && snapshot.workerSnapshots.single().restartExhausted) {
+                    break
+                }
                 delay(10)
             }
         }

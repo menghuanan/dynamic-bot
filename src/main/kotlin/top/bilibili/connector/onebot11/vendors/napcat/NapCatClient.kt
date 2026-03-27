@@ -130,8 +130,8 @@ class NapCatClient(
         isConnected.set(false)
         runBlocking {
             try {
-                livenessWatchJob?.cancelAndJoin()
                 session?.close(CloseReason(CloseReason.Codes.NORMAL, "客户端停止"))
+                livenessWatchJob?.cancelAndJoin()
             } catch (e: Exception) {
                 logger.warn("关闭 WebSocket 会话失败", e)
             }
