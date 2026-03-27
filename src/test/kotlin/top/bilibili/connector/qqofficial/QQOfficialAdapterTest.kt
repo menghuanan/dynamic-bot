@@ -17,6 +17,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -35,6 +38,7 @@ import top.bilibili.connector.PlatformType
 
 class QQOfficialAdapterTest {
     private val json = Json { ignoreUnknownKeys = true }
+    private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
 
     @Test
     fun `missing credentials should keep adapter unavailable`() {
@@ -330,6 +334,18 @@ class QQOfficialAdapterTest {
         } finally {
             adapter.stop()
         }
+    }
+
+    @Test
+    fun `qq official reconnect should use shared bounded backoff without recursive retry scheduling`() {
+        val source = read("src/main/kotlin/top/bilibili/connector/qqofficial/QQOfficialAdapter.kt")
+        val policySource = read("src/main/kotlin/top/bilibili/connector/ConnectionBackoffPolicy.kt")
+
+        assertTrue(policySource.contains("class ConnectionBackoffPolicy"))
+        assertTrue(source.contains("ConnectionBackoffPolicy"))
+        assertFalse(source.contains("delay(3_000)"))
+        assertFalse(source.contains("scheduleReconnect()"))
+        assertTrue(source.contains("runReconnectLoop"))
     }
 
     // 启动测试适配器时，预置 Hello/Ready 帧，确保启动路径能完成首轮网关握手。

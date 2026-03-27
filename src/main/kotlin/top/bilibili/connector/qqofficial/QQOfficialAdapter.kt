@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory
 import top.bilibili.config.QQOfficialConfig
 import top.bilibili.connector.CapabilityGuardResult
 import top.bilibili.connector.CapabilityRequest
+import top.bilibili.connector.ConnectionBackoffPolicy
 import top.bilibili.connector.ImageSource
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformAdapter
@@ -57,6 +58,10 @@ internal class QQOfficialAdapter(
     private val started = AtomicBoolean(false)
     private val reconnectGuard = AtomicBoolean(false)
     private val reconnectAttempts = AtomicInteger(0)
+    private val reconnectBackoffPolicy = ConnectionBackoffPolicy(
+        baseDelayMillis = 3_000L,
+        maxDelayMillis = 60_000L,
+    )
     private val reachableContacts = ConcurrentHashMap.newKeySet<String>()
     private val _eventFlow = MutableSharedFlow<PlatformInboundMessage>(replay = 0, extraBufferCapacity = 64)
     private var gatewaySession: QQOfficialGatewaySession? = null
@@ -269,7 +274,7 @@ internal class QQOfficialAdapter(
             } else {
                 logger.info("QQ 官方网关连接已关闭")
             }
-            scheduleReconnect()
+            requestReconnect()
         }
 
         try {
@@ -283,7 +288,7 @@ internal class QQOfficialAdapter(
             if (initialBootstrap) {
                 throw throwable
             }
-            scheduleReconnect()
+            requestReconnect()
         }
     }
 
@@ -297,13 +302,13 @@ internal class QQOfficialAdapter(
             0 -> handleDispatchFrame(frame)
             7 -> {
                 logger.warn("QQ 官方网关要求客户端重连")
-                scheduleReconnect()
+                requestReconnect()
             }
             9 -> {
                 logger.warn("QQ 官方网关返回 invalid session，清理会话后重连")
                 sessionId = null
                 lastSeq = null
-                scheduleReconnect()
+                requestReconnect()
             }
             10 -> handleHelloFrame(frame.d)
             11 -> Unit
@@ -634,23 +639,36 @@ internal class QQOfficialAdapter(
     /**
      * 统一调度重连，避免同一时刻并发建立多条网关连接。
      */
-    private fun scheduleReconnect() {
+    private fun requestReconnect() {
         if (!started.get()) return
-        if (!reconnectGuard.compareAndSet(false, true)) return
-
-        reconnectJob?.cancel()
+        reconnectGuard.set(true)
+        if (reconnectJob?.isActive == true) return
         reconnectJob = scope.launch {
-            reconnectAttempts.incrementAndGet()
+            runReconnectLoop()
+        }
+    }
+
+    /**
+     * 使用单一重连循环串行处理 QQ 官方重连，避免递归调度造成重试风暴。
+     */
+    private suspend fun runReconnectLoop() {
+        while (started.get() && reconnectGuard.get()) {
+            val attempt = reconnectAttempts.incrementAndGet()
             heartbeatJob?.cancelAndJoin()
             gatewayCollectJob?.cancelAndJoin()
             gatewaySession?.close("reconnect")
-            delay(3_000)
-            runCatching {
+            val backoffDelay = reconnectBackoffPolicy.nextDelayMillis(attempt)
+            delay(backoffDelay)
+            val connectedNow = runCatching {
                 connectGateway(initialBootstrap = false)
-            }.onFailure {
-                reconnectGuard.set(false)
+                true
+            }.getOrElse {
                 logger.error("QQ 官方网关重连失败: ${it.message}", it)
-                scheduleReconnect()
+                false
+            }
+            if (connectedNow) {
+                reconnectGuard.set(false)
+                return
             }
         }
     }

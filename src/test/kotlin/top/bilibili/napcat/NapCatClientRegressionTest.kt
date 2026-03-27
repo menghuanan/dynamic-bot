@@ -136,6 +136,19 @@ class NapCatClientRegressionTest {
         )
     }
 
+    @Test
+    fun `napcat reconnect should use shared bounded backoff and application liveness watchdog`() {
+        val source = read("src/main/kotlin/top/bilibili/connector/onebot11/vendors/napcat/NapCatClient.kt")
+        val policySource = read("src/main/kotlin/top/bilibili/connector/ConnectionBackoffPolicy.kt")
+
+        assertTrue(policySource.contains("class ConnectionBackoffPolicy"))
+        assertTrue(policySource.contains("nextDelayMillis"))
+        assertTrue(source.contains("ConnectionBackoffPolicy"))
+        assertFalse(source.contains("delay(config.reconnectInterval)"))
+        assertTrue(source.contains("liveness"))
+        assertTrue(source.contains("lastInboundAtMillis"))
+    }
+
     // 约束 NapCat 特有的群能力映射必须留在 vendor 适配层，避免再次泄漏回通用 OneBot11 核心。
     @Test
     fun `napcat vendor adapter should keep napcat specific capability mapping`() {

@@ -18,6 +18,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
 import okhttp3.ConnectionPool
 import org.slf4j.LoggerFactory
+import top.bilibili.connector.ConnectionBackoffPolicy
 import top.bilibili.service.MessageLogSimplifier
 import top.bilibili.config.NapCatConfig
 import java.io.File
@@ -28,6 +29,7 @@ import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * NapCat OneBot v11 WebSocket 客户端（反向 WS）
@@ -66,11 +68,18 @@ class NapCatClient(
     private val isConnected = AtomicBoolean(false)
     private val stopping = AtomicBoolean(false)
     private val reconnectAttempts = AtomicInteger(0)
+    private val reconnectBackoffPolicy = ConnectionBackoffPolicy(
+        baseDelayMillis = config.reconnectInterval.coerceAtLeast(1_000L),
+        maxDelayMillis = maxOf(config.reconnectInterval, 60_000L),
+    )
+    private val livenessTimeoutMillis = maxOf(config.heartbeatInterval * 2, 60_000L)
+    private val lastInboundAtMillis = AtomicLong(0L)
 
     private val _eventFlow = MutableSharedFlow<MessageEvent>(replay = 0, extraBufferCapacity = 100)
     val eventFlow = _eventFlow.asSharedFlow()
 
     private var session: DefaultClientWebSocketSession? = null
+    private var livenessWatchJob: Job? = null
     private val sendChannelCapacity = 200
     private val sendChannel = Channel<QueuedOutgoingPayload>(capacity = sendChannelCapacity)  // ✅ P1修复: 从1000降低到200，降低内存占用
     private val sendMode = config.sendMode.lowercase()
@@ -121,6 +130,7 @@ class NapCatClient(
         isConnected.set(false)
         runBlocking {
             try {
+                livenessWatchJob?.cancelAndJoin()
                 session?.close(CloseReason(CloseReason.Codes.NORMAL, "客户端停止"))
             } catch (e: Exception) {
                 logger.warn("关闭 WebSocket 会话失败", e)
@@ -177,8 +187,9 @@ class NapCatClient(
                 if (config.maxReconnectAttempts == -1 ||
                     reconnectAttempts.get() < config.maxReconnectAttempts
                 ) {
-                    logger.info("将在 ${config.reconnectInterval}ms 后重连...")
-                    delay(config.reconnectInterval)
+                    val backoffDelay = reconnectBackoffPolicy.nextDelayMillis(reconnectAttempts.get())
+                    logger.info("将在 ${backoffDelay}ms 后重连...")
+                    delay(backoffDelay)
                 }
             }
         }
@@ -199,6 +210,11 @@ class NapCatClient(
             session = this
             isConnected.set(true)
             reconnectAttempts.set(0)
+            lastInboundAtMillis.set(System.currentTimeMillis())
+            livenessWatchJob?.cancel()
+            livenessWatchJob = launch {
+                runLivenessWatch()
+            }
             logger.info("WebSocket 连接成功!")
 
             // 获取 Bot 的 QQ 号
@@ -245,6 +261,7 @@ class NapCatClient(
             try {
                 // 接收消息循环
                 for (frame in incoming) {
+                    lastInboundAtMillis.set(System.currentTimeMillis())
                     when (frame) {
                         is Frame.Text -> {
                             val text = frame.readText()
@@ -280,11 +297,33 @@ class NapCatClient(
                 }
             } finally {
                 isConnected.set(false)
+                livenessWatchJob?.cancel()
+                livenessWatchJob = null
                 sendJob.cancel()
                 session = null
                 failPendingResponses(if (stopping.get()) "NapCat 客户端已停止" else "WebSocket 已断开")
                 logger.info("WebSocket 连接已断开")
             }
+        }
+    }
+
+    /**
+     * 应用层存活探测独立于底层 ping/pong；超过阈值未收到任何帧时主动触发重连。
+     */
+    private suspend fun runLivenessWatch() {
+        val probeIntervalMillis = (config.heartbeatInterval / 2).coerceIn(5_000L, 15_000L)
+        while (scope.isActive && !stopping.get()) {
+            delay(probeIntervalMillis)
+            if (!isConnected.get()) {
+                continue
+            }
+            val inactivityMillis = System.currentTimeMillis() - lastInboundAtMillis.get()
+            if (inactivityMillis < livenessTimeoutMillis) {
+                continue
+            }
+            logger.warn("NapCat liveness timeout: ${inactivityMillis}ms 未收到入站消息，主动关闭连接以触发重连")
+            session?.close(CloseReason(CloseReason.Codes.GOING_AWAY, "liveness-timeout"))
+            return
         }
     }
 
