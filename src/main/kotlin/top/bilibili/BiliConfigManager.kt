@@ -201,10 +201,11 @@ object BiliConfigManager {
         data.bangumi.values.forEach { bangumi ->
             changed = migrateStringSet(bangumi.contacts) || changed
         }
-        if (data.linkParseBlacklistContacts.isEmpty() && data.linkParseBlacklist.isNotEmpty()) {
+        if (data.linkParseBlacklist.isNotEmpty()) {
             data.linkParseBlacklist.forEach { userId ->
                 data.linkParseBlacklistContacts.add("onebot11:private:$userId")
             }
+            data.linkParseBlacklist.clear()
             changed = true
         }
         changed = migrateStringSet(data.linkParseBlacklistContacts) || changed

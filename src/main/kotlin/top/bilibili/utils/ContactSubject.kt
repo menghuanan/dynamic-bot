@@ -26,7 +26,7 @@ fun PlatformContact.toDisplayLabel(): String = when (type) {
 }
 
 /**
- * 解析持久化 subject 或兼容的旧格式为平台联系人。
+ * 解析持久化 subject；运行期落盘数据只接受带命名空间的联系人格式。
  */
 fun parsePlatformContact(subject: String?): PlatformContact? {
     val raw = subject?.trim().orEmpty()
@@ -40,14 +40,6 @@ fun parsePlatformContact(subject: String?): PlatformContact? {
             PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.GROUP, raw.removePrefix("$QQ_OFFICIAL_CONTACT_NAMESPACE:group:"))
         raw.startsWith("$QQ_OFFICIAL_CONTACT_NAMESPACE:private:") ->
             PlatformContact(PlatformType.QQ_OFFICIAL, PlatformChatType.PRIVATE, raw.removePrefix("$QQ_OFFICIAL_CONTACT_NAMESPACE:private:"))
-        raw.startsWith("group:") ->
-            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, raw.removePrefix("group:"))
-        raw.startsWith("private:") ->
-            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, raw.removePrefix("private:"))
-        raw.startsWith("g") && raw.length > 1 && raw.substring(1).all(Char::isDigit) ->
-            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, raw.substring(1))
-        raw.startsWith("u") && raw.length > 1 && raw.substring(1).all(Char::isDigit) ->
-            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, raw.substring(1))
         else -> null
     }
 }
@@ -62,11 +54,13 @@ fun parseCommandPlatformContact(
 ): PlatformContact? {
     val text = raw?.trim().orEmpty()
     if (text.isBlank()) return null
-    return parsePlatformContact(text) ?: PlatformContact(defaultPlatform, defaultType, text)
+    return parsePlatformContact(text)
+        ?: parseLegacyPlatformContact(text)
+        ?: PlatformContact(defaultPlatform, defaultType, text)
 }
 
 fun normalizeContactSubject(subject: String?): String? {
-    val contact = parsePlatformContact(subject) ?: return null
+    val contact = parsePlatformContact(subject) ?: parseLegacyPlatformContact(subject) ?: return null
     return contact.toSubject()
 }
 
@@ -131,6 +125,25 @@ fun PlatformContact.oneBotPrivateIdOrNull(): Long? {
  * 提供旧权限/群归属数据所需的数字型用户 ID；仅对 OneBot11 私聊联系人生效。
  */
 fun PlatformContact.oneBotUserIdOrNull(): Long? = oneBotPrivateIdOrNull()
+
+/**
+ * 兼容命令输入和旧配置迁移的历史短格式解析；新持久化路径不得直接依赖该入口。
+ */
+private fun parseLegacyPlatformContact(subject: String?): PlatformContact? {
+    val raw = subject?.trim().orEmpty()
+    if (raw.isBlank()) return null
+    return when {
+        raw.startsWith("group:") ->
+            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, raw.removePrefix("group:"))
+        raw.startsWith("private:") ->
+            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, raw.removePrefix("private:"))
+        raw.startsWith("g") && raw.length > 1 && raw.substring(1).all(Char::isDigit) ->
+            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, raw.substring(1))
+        raw.startsWith("u") && raw.length > 1 && raw.substring(1).all(Char::isDigit) ->
+            PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, raw.substring(1))
+        else -> null
+    }
+}
 
 /**
  * 将平台枚举统一映射到 subject 命名空间。

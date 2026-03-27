@@ -7,6 +7,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import top.bilibili.BiliConfigManager
+import top.bilibili.BiliData
 import top.bilibili.connector.PlatformAdapterKind
 import top.bilibili.connector.PlatformType
 
@@ -95,5 +97,25 @@ class PlatformConfigCompatibilityTest {
 
         assertEquals(PlatformType.ONEBOT11, config.selectedPlatformType())
         assertEquals(PlatformAdapterKind.ONEBOT11, config.selectedAdapterKind())
+    }
+
+    @Test
+    fun `legacy numeric blacklist data should migrate into namespaced contacts only once`() {
+        BiliData.linkParseBlacklist.clear()
+        BiliData.linkParseBlacklistContacts.clear()
+        BiliData.linkParseBlacklist += setOf(10001L, 20002L)
+
+        val migrate = BiliConfigManager::class.java.getDeclaredMethod("migrateDataIfNeeded", BiliData::class.java)
+        migrate.isAccessible = true
+
+        val firstChanged = migrate.invoke(BiliConfigManager, BiliData) as Boolean
+        val secondChanged = migrate.invoke(BiliConfigManager, BiliData) as Boolean
+
+        assertTrue(firstChanged)
+        assertFalse(secondChanged)
+        assertEquals(
+            setOf("onebot11:private:10001", "onebot11:private:20002"),
+            BiliData.linkParseBlacklistContacts,
+        )
     }
 }

@@ -42,7 +42,6 @@ object BlacklistCommandService {
             return
         }
         BiliData.linkParseBlacklistContacts.add(normalizedTarget)
-        targetId.toLongOrNull()?.let(BiliData.linkParseBlacklist::add)
         BiliConfigManager.saveData()
         sendText(chatContact, "已将 $targetId 添加到链接解析黑名单\nBot 将忽略该用户的所有链接解析请求")
     }
@@ -56,7 +55,6 @@ object BlacklistCommandService {
             return
         }
         BiliData.linkParseBlacklistContacts.remove(normalizedTarget)
-        targetId.toLongOrNull()?.let(BiliData.linkParseBlacklist::remove)
         BiliConfigManager.saveData()
         sendText(chatContact, "已将 $targetId 从链接解析黑名单移除")
     }
@@ -92,7 +90,7 @@ object BlacklistCommandService {
     }
 
     private suspend fun list(chatContact: PlatformContact) {
-        val blacklist = (BiliData.linkParseBlacklistContacts + BiliData.linkParseBlacklist.map { "onebot11:private:$it" }).distinct()
+        val blacklist = BiliData.linkParseBlacklistContacts.toList().sorted()
         val msg = if (blacklist.isEmpty()) {
             "链接解析黑名单为空"
         } else {
