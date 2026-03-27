@@ -11,7 +11,7 @@ import top.bilibili.utils.formatTime
 import java.time.Instant
 
 
-object LiveCloseCheckTasker : BiliCheckTasker("LiveClose")  {
+object LiveCloseCheckTasker : BiliCheckTasker("LiveCloseCheckTasker")  {
 
     override var interval: Int = BiliConfigManager.config.checkConfig.liveInterval
 

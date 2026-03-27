@@ -55,42 +55,16 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
     }
 
     private suspend fun handleGroupMessage(event: PlatformInboundMessage) {
+        if (event.fromSelf) {
+            logger.debug("忽略 Bot 自己发送的消息 (selfId=${event.selfId}, userId=${event.senderId})")
+            return
+        }
         val groupContact = event.chatContact
         val senderContact = event.senderContact
         val senderSubject = senderContact.toSubject()
 
-        val sendGuard = PlatformCapabilityService.guardMessageSend(groupContact)
-        if (sendGuard.stopCurrentOperation) {
-            logger.warn(
-                "{}: 停止当前群 {} 的链接解析事件处理",
-                sendGuard.marker ?: CapabilityGuard.UNSUPPORTED_MESSAGE,
-                groupContact.toSubject(),
-            )
-            return
-        }
-
-        val linkResolveGuard = PlatformCapabilityService.guardCapability(
-            CapabilityRequest(
-                capability = PlatformCapability.LINK_RESOLVE,
-                contact = groupContact,
-            ),
-        )
-        if (linkResolveGuard.stopCurrentOperation) {
-            logger.warn(
-                "{}: 停止当前群 {} 的链接解析能力分支",
-                linkResolveGuard.marker ?: CapabilityGuard.UNSUPPORTED_MESSAGE,
-                groupContact.toSubject(),
-            )
-            return
-        }
-
         if (top.bilibili.BiliData.linkParseBlacklistContacts.contains(senderSubject)) {
             logger.debug("忽略黑名单用户 {} 的链接解析请求", senderContact.id)
-            return
-        }
-
-        if (event.fromSelf) {
-            logger.debug("忽略 Bot 自己发送的消息 (selfId=${event.selfId}, userId=${event.senderId})")
             return
         }
 
@@ -112,6 +86,22 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         }
 
         if (matchedLinks.isEmpty()) return
+
+        // 只在确认本次事件确实要进入链接解析回复分支时再判断能力，避免为无关消息触发额外探测。
+        val linkResolveGuard = PlatformCapabilityService.guardCapability(
+            CapabilityRequest(
+                capability = PlatformCapability.LINK_RESOLVE,
+                contact = groupContact,
+            ),
+        )
+        if (linkResolveGuard.stopCurrentOperation) {
+            logger.warn(
+                "{}: 停止当前群 {} 的链接解析能力分支",
+                linkResolveGuard.marker ?: CapabilityGuard.UNSUPPORTED_MESSAGE,
+                groupContact.toSubject(),
+            )
+            return
+        }
 
         val policyDecision = linkResolvePolicyService.applyPolicy(
             groupKey = groupContact.toSubject(),

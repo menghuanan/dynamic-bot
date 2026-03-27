@@ -15,7 +15,7 @@ import top.bilibili.utils.logger
 import top.bilibili.utils.sendAll
 import top.bilibili.utils.time
 
-object DynamicCheckTasker : BiliCheckTasker("Dynamic") {
+object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
 
     override var interval = BiliConfigManager.config.checkConfig.interval
 

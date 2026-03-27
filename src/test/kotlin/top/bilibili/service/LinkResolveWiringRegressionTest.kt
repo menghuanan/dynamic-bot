@@ -22,8 +22,8 @@ class LinkResolveWiringRegressionTest {
         assertTrue(listener.contains("LinkResolvePolicyService"), "listener should delegate link approval to policy service")
         assertTrue(listener.contains("PlatformCapability.LINK_RESOLVE"), "listener should guard link resolve by explicit capability")
         assertTrue(listener.contains("CapabilityRequest("), "listener should build a capability request for link resolve")
-        assertTrue(listener.contains("stopCurrentOperation"), "listener should stop only the current event path when guard blocks link resolve")
-        assertTrue(dispatch.contains("guardMessageSend"), "event dispatch should stop current event when the platform cannot reply")
+        assertTrue(listener.contains("stopCurrentOperation"), "listener should stop only the current link-resolve capability branch when guard blocks it")
+        assertFalse(dispatch.contains("guardMessageSend"), "event dispatch should not eager guard send before command routing")
         assertTrue(
             listener.contains("TOO_MANY_REQUESTS_NOTICE"),
             "listener should emit the configured throttle warning text",

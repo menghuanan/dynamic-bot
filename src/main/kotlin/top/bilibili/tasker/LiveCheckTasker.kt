@@ -11,7 +11,7 @@ import top.bilibili.utils.logger
 import top.bilibili.utils.sendAll
 import java.time.Instant
 
-object LiveCheckTasker : BiliCheckTasker("Live") {
+object LiveCheckTasker : BiliCheckTasker("LiveCheckTasker") {
     override var interval = BiliConfigManager.config.checkConfig.liveInterval
     private val liveCloseEnable = BiliConfigManager.config.enableConfig.liveCloseNotifyEnable
 
