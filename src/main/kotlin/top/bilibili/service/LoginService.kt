@@ -20,6 +20,14 @@ import java.io.File
 import java.net.URI
 
 object LoginService {
+    /**
+     * 登录回调解析结果：统一携带 cookie 字符串和可选的 DedeUserID。
+     */
+    internal data class LoginCallbackPayload(
+        val cookie: String,
+        val dedeUserId: String?,
+    )
+
     suspend fun login(contact: PlatformContact) {
         BusinessLifecycleManager.run(
             owner = "LoginService",
@@ -44,32 +52,30 @@ object LoginService {
 
                 val qrImageFileName = "bili_qr_${System.currentTimeMillis()}.png"
                 val qrImageBytes = loginQrCodeBytes(loginData.url)
-                val generatedQrImageFile = runCatching {
-                    File(BiliBiliBot.tempPath.toFile(), qrImageFileName).apply {
-                        deleteOnExit()
-                        writeBytes(qrImageBytes)
-                    }
-                }.onFailure {
-                    // 本地缓存文件仅用于诊断和人工排查，失败时不应阻断实际二维码发送。
-                    logger.warn("写入登录二维码临时文件失败: ${it.message}")
-                }.getOrNull()
+                val generatedQrImageFile = createLoginQrTempFile(qrImageFileName, qrImageBytes)
                 if (generatedQrImageFile != null) {
                     logger.info("登录二维码临时文件已生成: ${generatedQrImageFile.name}")
+                } else {
+                    logger.warn("登录二维码临时文件生成失败，将退回文本登录链接")
                 }
                 qrImageFile = generatedQrImageFile
 
-                val qrSendSucceeded = sendPartsWithCapabilityFallback(
-                    contact,
-                    listOf(
-                        OutgoingPart.text("请使用 BiliBili 手机 APP 扫码登录（3 分钟有效）"),
-                        OutgoingPart.image(ImageSource.Binary(qrImageBytes, qrImageFileName)),
-                    ),
-                    fallbackText = buildString {
-                        appendLine("当前平台不支持直接发送登录二维码图片。")
-                        appendLine("请复制下面的二维码链接到浏览器打开后完成扫码登录：")
-                        append(loginData.url)
-                    },
-                )
+                val qrSendSucceeded = if (generatedQrImageFile != null) {
+                    sendPartsWithCapabilityFallback(
+                        contact,
+                        listOf(
+                            OutgoingPart.text("请使用 BiliBili 手机 APP 扫码登录（3 分钟有效）"),
+                            OutgoingPart.image(ImageSource.LocalFile(generatedQrImageFile.absolutePath)),
+                        ),
+                        fallbackText = buildString {
+                            appendLine("当前平台不支持直接发送登录二维码图片。")
+                            appendLine("请复制下面的二维码链接到浏览器打开后完成扫码登录：")
+                            append(loginData.url)
+                        },
+                    )
+                } else {
+                    false
+                }
                 if (!qrSendSucceeded) {
                     logger.warn("登录二维码发送失败，改为发送文本登录链接")
                     sendMessage(
@@ -89,11 +95,15 @@ object LoginService {
 
                             when (loginInfo?.code) {
                                 0 -> {
-                                    val cookie = extractCookie(loginInfo.url!!)
-                                    if (cookie.isNotEmpty()) {
-                                        BiliConfigManager.config.accountConfig.cookie = cookie
+                                    val callbackPayload = parseLoginCallback(loginInfo.url!!)
+                                    if (callbackPayload.cookie.isNotEmpty()) {
+                                        BiliConfigManager.config.accountConfig.cookie = callbackPayload.cookie
                                         BiliConfigManager.saveConfig()
-                                        BiliBiliBot.cookie.parse(cookie)
+                                        BiliBiliBot.cookie.parse(callbackPayload.cookie)
+                                        // 若当前登录回调携带 DedeUserID，则直接刷新运行时 UID，避免额外调用 userInfo。
+                                        callbackPayload.dedeUserId?.toLongOrNull()?.let { dedeUserId ->
+                                            BiliBiliBot.uid = dedeUserId
+                                        }
                                         initTagid()
                                         sendMessage(contact, "BiliBili 登录成功")
                                         logger.info("BiliBili 登录成功")
@@ -128,26 +138,48 @@ object LoginService {
             } catch (e: Exception) {
                 logger.error("登录流程发生异常", e)
                 sendMessage(contact, "登录过程出错，请稍后重试")
-            } finally {
-                qrImageFile?.delete()
             }
         }
     }
 
-    private fun extractCookie(url: String): String {
+    /**
+     * 从当前登录回调 URL 提取 Cookie 与可选用户 ID，保持成功路径停留在原有 API 包络内。
+     */
+    internal fun parseLoginCallback(url: String): LoginCallbackPayload {
         return try {
             val querys = URI(url).query.split("&")
-            buildString {
+            var dedeUserId: String? = null
+            val cookie = buildString {
                 querys.forEach { param ->
-                    if (param.contains("SESSDATA") || param.contains("bili_jct")) {
-                        append("${param.replace(",", "%2C").replace("*", "%2A")}; ")
+                    when {
+                        param.startsWith("SESSDATA=") || param.startsWith("bili_jct=") -> {
+                            append("${param.replace(",", "%2C").replace("*", "%2A")}; ")
+                        }
+                        param.startsWith("DedeUserID=") -> {
+                            dedeUserId = param.substringAfter("=", missingDelimiterValue = "").ifBlank { null }
+                        }
                     }
                 }
             }.trim()
+            LoginCallbackPayload(cookie = cookie, dedeUserId = dedeUserId)
         } catch (e: Exception) {
-            logger.error("提取 Cookie 失败", e)
-            ""
+            logger.error("解析登录回调失败", e)
+            LoginCallbackPayload(cookie = "", dedeUserId = null)
         }
+    }
+
+    /**
+     * 将登录二维码统一落到共享 temp 目录，便于适配器按各自协议处理本地文件图片。
+     */
+    private fun createLoginQrTempFile(fileName: String, bytes: ByteArray): File? {
+        return runCatching {
+            BiliBiliBot.tempPath.resolve(fileName).toFile().apply {
+                deleteOnExit()
+                writeBytes(bytes)
+            }
+        }.onFailure {
+            logger.warn("写入登录二维码临时文件失败: ${it.message}")
+        }.getOrNull()
     }
 
     private suspend fun sendMessage(contact: PlatformContact, message: String) {

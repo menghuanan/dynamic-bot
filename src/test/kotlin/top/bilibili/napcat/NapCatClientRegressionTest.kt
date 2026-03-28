@@ -100,6 +100,22 @@ class NapCatClientRegressionTest {
     }
 
     @Test
+    fun `base64 send mode should preserve already encoded image payloads`() {
+        val source = read("src/main/kotlin/top/bilibili/connector/onebot11/vendors/napcat/NapCatClient.kt")
+
+        // 适配器已把本地图编码成 base64 时，NapCat 不应再尝试回退到本地文件读取。
+        assertTrue(
+            source.contains("imageSource.startsWith(\"base64://\")"),
+            "NapCatClient should detect adapter-encoded base64 image payloads",
+        )
+        // 已编码图片段必须走跳过分支，避免重复转换破坏当前发送链路。
+        assertTrue(
+            source.contains("跳过重复转换"),
+            "NapCatClient should skip duplicate base64 conversion for already encoded images",
+        )
+    }
+
+    @Test
     fun `incoming log simplification should use shared placeholder mapping`() {
         val client = NapCatClient(NapCatConfig())
 

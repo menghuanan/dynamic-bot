@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DockerfileLoginDependencyRegressionTest {
@@ -11,10 +12,10 @@ class DockerfileLoginDependencyRegressionTest {
     private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
 
     @Test
-    fun `docker image should keep awt x11 runtime libraries required by login qr rendering`() {
+    fun `docker image should keep current graphics runtime libraries without attributing them to login qr rendering`() {
         val dockerfile = read("Dockerfile")
 
-        // /login 二维码绘制会经由 ZXing 的 BufferedImage 路径触发 libawt_xawt.so，因此需要保留这组运行库。
+        // 登录专用二维码已切到纯 Skia 绘制；这些库若保留，说明必须来自当前其他图形路径或运行时证据。
         listOf(
             "libx11-6",
             "libxext6",
@@ -31,5 +32,10 @@ class DockerfileLoginDependencyRegressionTest {
                 "Dockerfile should keep $packageName for login qr rendering in container",
             )
         }
+        // Docker 注释不得继续把这组库归因到 /login 的 BufferedImage 路径，避免文档和实现失真。
+        assertFalse(
+            dockerfile.contains("/login 二维码经由 BufferedImage 路径"),
+            "Dockerfile should no longer attribute retained graphics packages to the login qr BufferedImage path",
+        )
     }
 }

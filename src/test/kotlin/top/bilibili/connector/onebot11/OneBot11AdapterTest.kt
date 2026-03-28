@@ -4,6 +4,8 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.createTempFile
+import kotlin.io.path.writeBytes
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
@@ -210,5 +212,43 @@ class OneBot11AdapterTest {
             imageSegment.data.getValue("file").startsWith("base64://"),
             "binary image payload should bypass temp file reopening and become base64 directly",
         )
+    }
+
+    @Test
+    fun `local file and remote url images should keep adapter side transport ownership`() = runBlocking {
+        val tempImage = createTempFile(prefix = "onebot11-adapter-", suffix = ".png")
+        val transport = FakeTransport()
+        val adapter = OneBot11Adapter(transport)
+        val contact = PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, "100")
+
+        try {
+            // 用真实本地文件驱动消息段转换，确保测试覆盖的是 adapter 行为而不是字符串拼接。
+            tempImage.writeBytes(byteArrayOf(9, 8, 7, 6))
+
+            assertTrue(
+                adapter.sendMessage(
+                    contact,
+                    listOf(
+                        top.bilibili.connector.OutgoingPart.image(ImageSource.LocalFile(tempImage.toString())),
+                        top.bilibili.connector.OutgoingPart.image(ImageSource.RemoteUrl("https://example.com/cover.png")),
+                    ),
+                ),
+            )
+
+            val localImageSegment = transport.lastSentMessage[0]
+            val remoteImageSegment = transport.lastSentMessage[1]
+            assertTrue(
+                localImageSegment.data.getValue("file").startsWith("base64://"),
+                "adapter should convert local files into base64 payloads before transport",
+            )
+            assertEquals(
+                "https://example.com/cover.png",
+                remoteImageSegment.data.getValue("file"),
+                "adapter should keep remote image URLs unchanged",
+            )
+        } finally {
+            // 测试结束后删除临时文件，避免本地图样本残留到外部 temp 目录。
+            Files.deleteIfExists(tempImage)
+        }
     }
 }

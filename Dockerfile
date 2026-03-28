@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # 字体支持 (Skia 绘图需要)
     fonts-dejavu-core \
     fonts-noto-color-emoji \
-    # AWT/X11 运行库（/login 二维码经由 BufferedImage 路径时仍会加载 libawt_xawt.so）
+    # 图形/AWT/X11 运行库（当前通用二维码 helper 与 Skiko 软件渲染路径仍可能触发）
     libx11-6 \
     libxext6 \
     libxrender1 \

@@ -306,6 +306,15 @@ class QQOfficialAdapterTest {
     }
 
     @Test
+    fun `qq official image resolver should keep local and binary images on explicit fallback path`() {
+        val source = read("src/main/kotlin/top/bilibili/connector/qqofficial/QQOfficialAdapter.kt")
+
+        // QQ Official 只允许公网 URL 直发，本地图和二进制图必须继续交给上层文本降级。
+        assertTrue(source.contains("is ImageSource.LocalFile -> null"))
+        assertTrue(source.contains("is ImageSource.Binary -> null"))
+    }
+
+    @Test
     fun `group manage events should toggle send capability`() = runBlocking {
         val transport = FakeTransport()
         val adapter = createStartedAdapter(transport)
