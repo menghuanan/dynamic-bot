@@ -69,11 +69,12 @@ class ReadmeDeploymentRegressionTest {
             "README 应说明当前 QQ 官方适配器的能力边界",
         )
         assertTrue(
-            readme.contains("当前支持的协议与支持情况") &&
+            readme.contains("当前支持的协议") &&
                 readme.contains("NapCat") &&
                 readme.contains("OneBot11") &&
+                readme.contains("QQ 官方") &&
                 readme.contains("显式降级"),
-            "README 应新增协议支持情况说明",
+            "README 应保留当前协议概览与能力边界说明",
         )
 
         assertTrue(sampleConfig.contains("platform:"), "示例配置应使用 platform 段")

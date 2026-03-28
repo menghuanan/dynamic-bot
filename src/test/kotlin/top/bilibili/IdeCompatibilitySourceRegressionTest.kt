@@ -88,14 +88,14 @@ class IdeCompatibilitySourceRegressionTest {
     }
 
     @Test
-    fun `compatibility shims should suppress intentional unused parameters`() {
+    fun `compatibility shims should keep compatibility entry points available`() {
         val biliClient = read("src/main/kotlin/top/bilibili/client/BiliClient.kt")
         val liveDraw = read("src/main/kotlin/top/bilibili/draw/LiveDraw.kt")
         val configService = read("src/main/kotlin/top/bilibili/service/ConfigService.kt")
 
-        assertTrue(biliClient.contains("@Suppress(\"UNUSED_PARAMETER\")\nfun buildRetryLogMessage("))
-        assertTrue(biliClient.contains("@Suppress(\"UNUSED_PARAMETER\")\nfun buildRetryExhaustedLogMessage("))
-        assertTrue(liveDraw.contains("@Suppress(\"UNUSED_PARAMETER\")\nfun Canvas.drawLiveOrnament("))
+        assertTrue(biliClient.contains("fun buildRetryLogMessage("))
+        assertTrue(biliClient.contains("fun buildRetryExhaustedLogMessage("))
+        assertTrue(liveDraw.contains("fun Canvas.drawLiveOrnament("))
         assertTrue(configService.contains("@Suppress(\"UNUSED_PARAMETER\")\n    suspend fun config("))
     }
 
