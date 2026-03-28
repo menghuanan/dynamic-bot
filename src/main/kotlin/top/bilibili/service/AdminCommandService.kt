@@ -8,7 +8,13 @@ import top.bilibili.utils.parseCommandPlatformContact
 import top.bilibili.utils.subjectsEquivalent
 import top.bilibili.utils.toSubject
 
+/**
+ * 收敛普通管理员命令入口，避免群管理员配置分散在消息路由里。
+ */
 object AdminCommandService {
+    /**
+     * 统一处理普通管理员增删查命令，保证权限校验和帮助文案走同一入口。
+     */
     suspend fun handle(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         if (!CommandPermission.isSuperAdmin(senderContact)) return
         val isGroup = chatContact.type == PlatformChatType.GROUP

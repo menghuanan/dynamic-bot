@@ -14,6 +14,9 @@ import top.bilibili.tasker.ProcessGuardian
 import top.bilibili.tasker.SendTasker
 import top.bilibili.tasker.SkiaCleanupTasker
 
+/**
+ * 统一启动后台任务集合，避免主启动流程手工维护任务顺序和覆盖校验。
+ */
 object TaskBootstrapService {
     private val startupTaskNames = listOf(
         "ListenerTasker",
@@ -29,6 +32,9 @@ object TaskBootstrapService {
         "ProcessGuardian",
     )
 
+    /**
+     * 校验任务资源策略后按既定顺序启动所有后台任务。
+     */
     fun startTasks() {
         try {
             BiliBiliBot.logger.info("正在启动任务...")

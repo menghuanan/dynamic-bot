@@ -19,6 +19,9 @@ import top.bilibili.utils.toSubject
 import java.io.File
 import java.net.URI
 
+/**
+ * 统一封装扫码登录流程，避免消息入口直接处理二维码轮询与 Cookie 落盘。
+ */
 object LoginService {
     /**
      * 登录回调解析结果：统一携带 cookie 字符串和可选的 DedeUserID。
@@ -28,6 +31,9 @@ object LoginService {
         val dedeUserId: String?,
     )
 
+    /**
+     * 执行二维码登录全流程，并在成功后刷新运行时账号状态与持久化配置。
+     */
     suspend fun login(contact: PlatformContact) {
         BusinessLifecycleManager.run(
             owner = "LoginService",

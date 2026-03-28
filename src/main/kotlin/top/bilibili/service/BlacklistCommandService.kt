@@ -7,7 +7,13 @@ import top.bilibili.connector.PlatformContact
 import top.bilibili.utils.parseCommandPlatformContact
 import top.bilibili.utils.toSubject
 
+/**
+ * 统一管理链接解析黑名单命令，避免黑名单写入逻辑散落在快捷入口和完整命令里。
+ */
 object BlacklistCommandService {
+    /**
+     * 处理黑名单命令入口，并把权限校验与帮助提示固定在同一处。
+     */
     suspend fun handle(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         if (!CommandPermission.isSuperAdmin(senderContact)) {
             sendText(chatContact, "权限不足: 仅超级管理员可使用黑名单功能")
@@ -35,6 +41,9 @@ object BlacklistCommandService {
         }
     }
 
+    /**
+     * 为快捷命令提供统一加黑入口，保证目标归一化和持久化行为一致。
+     */
     suspend fun quickAdd(chatContact: PlatformContact, targetId: String) {
         val normalizedTarget = normalizeTarget(chatContact, targetId)
         if (BiliData.linkParseBlacklistContacts.contains(normalizedTarget)) {
@@ -46,6 +55,9 @@ object BlacklistCommandService {
         sendText(chatContact, "已将 $targetId 添加到链接解析黑名单\nBot 将忽略该用户的所有链接解析请求")
     }
 
+    /**
+     * 为快捷命令提供统一移黑入口，避免列表和完整命令维护两套删除逻辑。
+     */
     suspend fun quickRemove(chatContact: PlatformContact, targetId: String) {
         val normalizedTarget = normalizeTarget(chatContact, targetId)
         if (!BiliData.linkParseBlacklistContacts.contains(normalizedTarget)) {
@@ -57,6 +69,9 @@ object BlacklistCommandService {
         sendText(chatContact, "已将 $targetId 从链接解析黑名单移除")
     }
 
+    /**
+     * 为旧快捷命令保留查询入口，继续复用完整列表逻辑。
+     */
     suspend fun quickList(chatContact: PlatformContact) {
         list(chatContact)
     }

@@ -34,6 +34,9 @@ private object ServiceClientLifecycle {
 val client: BiliClient
     get() = ServiceClientLifecycle.get()
 
+/**
+ * 主动关闭共享的 BiliClient，避免停机或重载后继续复用旧连接。
+ */
 fun closeServiceClient() {
     ServiceClientLifecycle.close()
 }
@@ -44,6 +47,9 @@ val group by BiliData::group
 val bangumi by BiliData::bangumi
 val atAll by BiliData::atAll
 
+/**
+ * 统一判断指定 UID 是否已经覆盖目标会话，避免多处重复遍历订阅联系人。
+ */
 fun isFollow(uid: Long, subject: String) =
     uid == 0L || (dynamic.containsKey(uid) && dynamic[uid]!!.contacts.any { subjectsEquivalent(it, subject) })
 
@@ -55,18 +61,30 @@ object ConversationStateStore {
     private val mutex = Mutex()
     private val states = mutableMapOf<String, MutableMap<String, String>>()
 
+    /**
+     * 为会话流程保存命名状态值，避免多轮交互临时数据散落在调用栈外部。
+     */
     suspend fun put(key: String, name: String, value: String) = mutex.withLock {
         states.getOrPut(key) { mutableMapOf() }[name] = value
     }
 
+    /**
+     * 读取指定会话状态值，让交互流程在异步回调间保持上下文连续。
+     */
     suspend fun get(key: String, name: String): String? = mutex.withLock {
         states[key]?.get(name)
     }
 
+    /**
+     * 在流程结束后清空整组状态，避免旧会话残留影响下一次交互。
+     */
     suspend fun remove(key: String) = mutex.withLock {
         states.remove(key)
     }
 
+    /**
+     * 返回当前会话状态快照，便于调试或一次性消费多个键值。
+     */
     suspend fun snapshot(key: String): Map<String, String> = mutex.withLock {
         states[key]?.toMap() ?: emptyMap()
     }

@@ -7,7 +7,13 @@ import top.bilibili.core.resource.BusinessLifecycleManager
 import top.bilibili.core.resource.ResourceStrictness
 import top.bilibili.tasker.DynamicCheckTasker
 
+/**
+ * 将入站消息路由到快捷命令和 /bili 命令链，避免平台事件层直接耦合业务实现。
+ */
 object MessageCommandRouterService {
+    /**
+     * 处理群聊消息中的快捷命令与管理命令，保持群权限边界集中可控。
+     */
     suspend fun handleGroupMessage(event: PlatformInboundMessage) {
         val groupContact = event.chatContact
         val senderContact = event.senderContact
@@ -107,6 +113,9 @@ object MessageCommandRouterService {
         }
     }
 
+    /**
+     * 处理私聊中的管理命令，只在超级管理员上下文开放完整能力。
+     */
     suspend fun handlePrivateMessage(event: PlatformInboundMessage) {
         val userContact = event.chatContact
         val senderContact = event.senderContact

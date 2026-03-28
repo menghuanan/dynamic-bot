@@ -2,11 +2,17 @@ package top.bilibili.service
 
 import top.bilibili.connector.onebot11.vendors.napcat.MessageSegment
 
+/**
+ * 将平台原始消息与消息段收敛成可读日志文本，避免日志中充斥长 CQ 片段。
+ */
 object MessageLogSimplifier {
     private const val MAX_INPUT_LENGTH = 10_000
     private const val MAX_OUTPUT_LENGTH = 100
     private val cqPattern = "\\[CQ:([^,\\]]+)(?:,([^\\]]*))?\\]".toRegex()
 
+    /**
+     * 简化原始 OneBot 文本消息，并在输入过长时先截断保护日志体积。
+     */
     fun simplifyIncomingRaw(rawMessage: String, onTooLong: (Int) -> Unit): String {
         val safeMessage = if (rawMessage.length > MAX_INPUT_LENGTH) {
             onTooLong(rawMessage.length)
@@ -37,6 +43,9 @@ object MessageLogSimplifier {
         return truncate(result.toString())
     }
 
+    /**
+     * 将结构化消息段渲染成紧凑日志文本，方便统一记录多种消息类型。
+     */
     fun simplifySegments(segments: List<MessageSegment>): String {
         val rendered = buildString {
             segments.forEach { segment ->

@@ -7,7 +7,13 @@ import top.bilibili.connector.PlatformContact
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.utils.toSubject
 
+/**
+ * 负责帮助信息和模板命令的展示入口，避免表现层逻辑混入路由代码。
+ */
 object PresentationCommandService {
+    /**
+     * 按调用者权限输出帮助内容，并在支持时优先发送帮助图片。
+     */
     suspend fun sendHelp(chatContact: PlatformContact, senderContact: PlatformContact) {
         val isGroup = chatContact.type == PlatformChatType.GROUP
         if (!CommandPermission.isSuperAdmin(senderContact) && (!isGroup || !CommandPermission.isGroupAdmin(chatContact, senderContact))) return
@@ -91,6 +97,9 @@ object PresentationCommandService {
         }
     }
 
+    /**
+     * 统一处理模板命令分支，保证预览、设置和说明都走相同权限边界。
+     */
     suspend fun handleTemplate(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         val isGroup = chatContact.type == PlatformChatType.GROUP
         if (!CommandPermission.isSuperAdmin(senderContact) && (!isGroup || !CommandPermission.isGroupAdmin(chatContact, senderContact))) return

@@ -13,6 +13,9 @@ import top.bilibili.connector.PlatformChatType
 import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parsePlatformContact
 
+/**
+ * 集中维护按会话和 UID 生效的 @全体 策略，避免推送路径直接操作原始存储。
+ */
 object AtAllService {
     private val mutex = Mutex()
 
@@ -32,6 +35,9 @@ object AtAllService {
      */
     internal fun supportsType(type: String): Boolean = toAtAllType(type) != null
 
+    /**
+     * 写入 @全体 策略时顺带做联系人和 UID 范围校验，避免保存无效配置。
+     */
     suspend fun addAtAll(type: String, uid: Long = 0L, subject: String): String = mutex.withLock {
         val atAllType = toAtAllType(type) ?: return@withLock "没有这个类型哦 [$type]"
         val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
@@ -70,6 +76,9 @@ object AtAllService {
         "添加成功"
     }
 
+    /**
+     * 删除指定作用域下的 @全体 策略，并在空桶时回收冗余节点。
+     */
     suspend fun delAtAll(type: String, uid: Long = 0L, subject: String): String = mutex.withLock {
         val atAllType = toAtAllType(type) ?: return@withLock "没有这个类型哦 [$type]"
         val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
@@ -89,6 +98,9 @@ object AtAllService {
         "删除成功"
     }
 
+    /**
+     * 按会话或 UID 汇总 @全体 策略，方便命令层直接回显当前配置。
+     */
     suspend fun listAtAll(uid: Long = 0L, subject: String): String = mutex.withLock {
         val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
         if (uid == 0L) {
@@ -107,6 +119,9 @@ object AtAllService {
         buildString { list.forEach { appendLine(it.value) } }.trim()
     }
 
+    /**
+     * 在推送前统一判断是否需要 @全体，避免消息链路各自重复实现类型映射逻辑。
+     */
     suspend fun shouldAtAll(subject: String, uid: Long, message: BiliMessage): Boolean = mutex.withLock {
         val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock false
         val list = BiliData.atAll[normalizedSubject]?.get(uid) ?: return@withLock false

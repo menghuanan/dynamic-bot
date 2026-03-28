@@ -7,7 +7,13 @@ import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
 import top.bilibili.utils.toSubject
 
+/**
+ * 收口过滤器命令入口，避免权限判断和参数校验在多个调用点重复实现。
+ */
 object FilterCommandService {
+    /**
+     * 统一处理过滤器命令分支，让命令路由只负责把请求转进来。
+     */
     suspend fun handle(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         val isGroup = chatContact.type == PlatformChatType.GROUP
         if (!CommandPermission.isSuperAdmin(senderContact) && (!isGroup || !CommandPermission.isGroupAdmin(chatContact, senderContact))) return

@@ -16,6 +16,9 @@ import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parseContactId
 import top.bilibili.utils.parsePlatformContact
 
+/**
+ * 统一维护动态订阅的来源、联系人展开和关联清理，避免订阅状态在多处失配。
+ */
 object DynamicService {
     private val mutex = Mutex()
     private val hexColorRegex = Regex("^#[0-9A-Fa-f]{6}$")
@@ -184,6 +187,9 @@ object DynamicService {
         return segments.joinToString(";")
     }
 
+    /**
+     * 为旧主题色命令保留兼容提示，明确引导调用方迁移到会话作用域绑定。
+     */
     @Deprecated("请使用目标作用域主题色绑定")
     suspend fun setColor(uid: Long, color: String) = mutex.withLock {
         dynamic[uid] ?: return@withLock "没有订阅过 UID: $uid"
@@ -192,6 +198,9 @@ object DynamicService {
         "请在目标会话中使用 /bili color 重新设置主题色"
     }
 
+    /**
+     * 为单个联系人追加直接订阅来源，并在必要时同步创建底层订阅记录。
+     */
     suspend fun addDirectSubscribe(uid: Long, subject: String, isSelf: Boolean = true) = mutex.withLock {
         val normalizedSubject = normalizeSubject(subject) ?: return@withLock "联系人格式错误: $subject"
         val sourceRef = directSourceRef(normalizedSubject)
@@ -224,6 +233,9 @@ object DynamicService {
         else "为 $normalizedSubject 订阅 ${subData.name} 成功!"
     }
 
+    /**
+     * 移除单个联系人对应的直接订阅来源，并在来源清空时回收整条订阅数据。
+     */
     suspend fun removeDirectSubscribe(uid: Long, subject: String, isSelf: Boolean = true) = mutex.withLock {
         val normalizedSubject = normalizeSubject(subject) ?: return@withLock "联系人格式错误: $subject"
         val user = dynamic[uid] ?: return@withLock "还未订阅此人哦"
@@ -244,6 +256,9 @@ object DynamicService {
         else "为 $normalizedSubject 取消订阅 ${user.name} 成功"
     }
 
+    /**
+     * 为分组追加订阅来源，并把分组联系人展开成实际推送目标。
+     */
     suspend fun addGroupSubscribe(uid: Long, groupName: String) = mutex.withLock {
         val targetGroup = group[groupName] ?: return@withLock "分组 $groupName 不存在"
         if (targetGroup.contacts.isEmpty()) return@withLock "分组 $groupName 中没有任何联系人"
@@ -275,6 +290,9 @@ object DynamicService {
         "分组 $groupName 订阅 ${subData.name} 成功!"
     }
 
+    /**
+     * 删除分组订阅来源，并在无剩余来源时同步回收整条订阅记录。
+     */
     suspend fun removeGroupSubscribe(uid: Long, groupName: String) = mutex.withLock {
         val user = dynamic[uid] ?: return@withLock "还未订阅此人哦"
         val sourceRef = groupSourceRef(groupName)
@@ -292,6 +310,9 @@ object DynamicService {
         return@withLock "分组 $groupName 取消订阅 ${user.name} 成功"
     }
 
+    /**
+     * 在分组成员变更后重建所有关联 UID 的联系人展开结果。
+     */
     suspend fun refreshGroupRef(groupName: String) = mutex.withLock {
         val sourceRef = groupSourceRef(groupName)
         dynamic.forEach { (uid, subData) ->
@@ -302,6 +323,9 @@ object DynamicService {
         }
     }
 
+    /**
+     * 在分组删除后移除全部关联来源，避免残留引用继续参与推送。
+     */
     suspend fun deleteGroupRef(groupName: String) = mutex.withLock {
         val sourceRef = groupSourceRef(groupName)
         dynamic.toMap().forEach { (uid, subData) ->
@@ -319,15 +343,24 @@ object DynamicService {
     }
 
     // 兼容旧调用路径: /add 和快速命令都视为 direct 来源
+    /**
+     * 为旧调用路径保留直接订阅入口，避免历史命令在来源模型升级后失效。
+     */
     suspend fun addSubscribe(uid: Long, subject: String, isSelf: Boolean = true): String {
         return addDirectSubscribe(uid, subject, isSelf)
     }
 
     // 兼容旧调用路径
+    /**
+     * 为旧调用路径保留取消订阅入口，继续复用新的来源清理逻辑。
+     */
     suspend fun removeSubscribe(uid: Long, subject: String, isSelf: Boolean = true): String {
         return removeDirectSubscribe(uid, subject, isSelf)
     }
 
+    /**
+     * 移除目标会话的全部直接订阅痕迹，并同步清理关联过滤器与模板绑定。
+     */
     suspend fun removeAllSubscribe(subject: String) = mutex.withLock {
         val normalizedSubject = normalizeSubject(subject) ?: subject
         val directRef = directSourceRef(normalizedSubject)
@@ -349,6 +382,9 @@ object DynamicService {
         }
     }
 
+    /**
+     * 汇总目标会话下的动态与番剧订阅，保证命令层查看口径一致。
+     */
     suspend fun list(subject: String) = mutex.withLock {
         buildString {
             appendLine("目标: $subject")
@@ -379,6 +415,9 @@ object DynamicService {
         }
     }
 
+    /**
+     * 列出当前全部动态订阅及联系人规模，便于全局巡检。
+     */
     suspend fun listAll() = mutex.withLock {
         var count = 0
         buildString {
@@ -393,6 +432,9 @@ object DynamicService {
         }
     }
 
+    /**
+     * 统计指定 UID 或全部 UID 覆盖到的联系人，方便定位推送范围。
+     */
     suspend fun listUser(uid: Long? = null) = mutex.withLock {
         buildString {
             val user = mutableSetOf<String>()

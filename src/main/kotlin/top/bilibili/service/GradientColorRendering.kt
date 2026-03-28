@@ -20,17 +20,26 @@ private const val NEUTRAL_RENDER_CHROMA = 0.0025
 private const val INTERPOLATION_T_GAMMA = 1.08
 private const val INTERPOLATION_MIDPOINT_LIGHTNESS_DIP = 0.03
 
+/**
+ * 标记主题色最终命中的来源，便于渲染与诊断区分绑定值和默认回退。
+ */
 enum class ResolvedColorSourceType {
     SUBJECT_BOUND_NORMALIZED,
     DEFAULT_COLOR_FALLBACK,
 }
 
+/**
+ * 描述主题色为何退回默认值，便于日志和命令提示保留上下文。
+ */
 enum class ColorFallbackReason {
     NO_BINDING,
     BINDING_PARSE_FAILED,
     NORMALIZATION_FAILED,
 }
 
+/**
+ * 封装解析后的主题色来源信息，让渲染链路能感知回退原因。
+ */
 data class ResolvedColorSource(
     val sourceType: ResolvedColorSourceType,
     val color: String,
@@ -49,22 +58,34 @@ internal data class InterpolationHint(
     val source: InterpolationHintSource,
 )
 
+/**
+ * 聚合主题色、背景渐变和来源信息，避免绘图层重复解析颜色来源。
+ */
 data class ResolvedGradientPalette(
     val themeColor: Int,
     val backgroundColors: IntArray,
     val source: ResolvedColorSource,
 )
 
+/**
+ * 将会话主题色转换为可用于绘图背景的渐变色数组。
+ */
 fun generateSubjectScopedGradientColors(color: String): IntArray {
     val normalized = normalizeSubjectScopedGradientColor(color, NormalizationContext.USER_COMMAND)?.normalizedColor
         ?: throw IllegalArgumentException("invalid subject scoped gradient color: $color")
     return generateSubjectScopedGradientColorsFromNormalized(normalized)
 }
 
+/**
+ * 按 UID 和会话解析完整渐变调色板，供绘图链路直接消费。
+ */
 fun resolveGradientPalette(uid: Long, subject: String?): ResolvedGradientPalette {
     return resolveGradientPalette(ColorBindingService.resolveColorSource(uid, subject))
 }
 
+/**
+ * 基于已解析的颜色来源生成最终调色板，统一处理回退和异常兜底。
+ */
 fun resolveGradientPalette(source: ResolvedColorSource): ResolvedGradientPalette {
     return when (source.sourceType) {
         ResolvedColorSourceType.DEFAULT_COLOR_FALLBACK -> legacyGradientPalette(source)

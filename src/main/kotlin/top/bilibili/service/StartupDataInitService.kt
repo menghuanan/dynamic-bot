@@ -3,7 +3,13 @@ package top.bilibili.service
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.utils.ImageCache
 
+/**
+ * 负责启动期数据初始化与缓存预清理，避免主启动流程夹杂大量细节。
+ */
 object StartupDataInitService {
+    /**
+     * 初始化 B 站数据并顺带清理过期图片缓存，保证启动后的基础状态干净可用。
+     */
     suspend fun initBiliData() {
         try {
             BiliBiliBot.logger.info("正在初始化 B站数据...")

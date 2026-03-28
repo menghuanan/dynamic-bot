@@ -5,7 +5,13 @@ import top.bilibili.core.BiliCommandExecutor
 import top.bilibili.core.BiliCommandProcessor
 import top.bilibili.connector.PlatformContact
 
+/**
+ * 将 /bili 子命令分发收口到统一入口，隔离消息路由与具体命令实现。
+ */
 object BiliCommandDispatchService {
+    /**
+     * 复用命令处理器完成子命令分发，并在这里统一兜底异常返回。
+     */
     suspend fun dispatch(chatContact: PlatformContact, senderContact: PlatformContact, message: String) {
         try {
             val args = message.substringAfter("/bili ").trim().split(Regex("\\s+"))

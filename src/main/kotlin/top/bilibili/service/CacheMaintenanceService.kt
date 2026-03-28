@@ -3,7 +3,13 @@ package top.bilibili.service
 import top.bilibili.core.BiliBiliBot
 import java.io.File
 
+/**
+ * 提供手动缓存清理入口，便于启动流程和运维操作复用同一实现。
+ */
 object CacheMaintenanceService {
+    /**
+     * 统一清理缓存目录中的文件，并把失败明细保留在日志里。
+     */
     fun clearAllCache() {
         try {
             val cacheDir = File("data/cache")

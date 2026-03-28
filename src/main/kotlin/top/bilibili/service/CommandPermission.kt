@@ -6,6 +6,9 @@ import top.bilibili.connector.PlatformContact
 import top.bilibili.utils.subjectsEquivalent
 import top.bilibili.utils.toSubject
 
+/**
+ * 集中封装命令权限判断，兼容旧配置和新的平台联系人标识。
+ */
 object CommandPermission {
     /**
      * 使用平台联系人判断超级管理员，兼容旧 OneBot11 数字管理员配置。

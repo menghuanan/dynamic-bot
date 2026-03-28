@@ -11,7 +11,13 @@ import top.bilibili.utils.groupLabelFromSubject
 import top.bilibili.utils.parseCommandPlatformContact
 import top.bilibili.utils.toSubject
 
+/**
+ * 收口分组管理命令，避免群分组写入和订阅联动逻辑散落在消息层。
+ */
 object GroupCommandService {
+    /**
+     * 统一处理分组命令入口，保证权限校验与帮助文案走同一条链路。
+     */
     suspend fun handle(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         if (!CommandPermission.isSuperAdmin(senderContact)) return
 
@@ -32,6 +38,9 @@ object GroupCommandService {
         }
     }
 
+    /**
+     * 汇总全部分组及规模，方便超级管理员快速查看当前分组布局。
+     */
     suspend fun listGroups(chatContact: PlatformContact, senderContact: PlatformContact) {
         if (!CommandPermission.isSuperAdmin(senderContact)) return
         val groups = BiliData.group

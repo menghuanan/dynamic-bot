@@ -9,6 +9,9 @@ import top.bilibili.utils.actionNotify
 import top.bilibili.utils.findLocalIdOrName
 import top.bilibili.utils.toSubject
 
+/**
+ * 收口配置、主题色和 @全体 相关命令，避免设置类逻辑散落在多个服务里。
+ */
 object SettingsCommandService {
     /**
      * 统一收敛 atall 子命令解析，兼容旧 set 别名和“/bili atall <类型> <uid>”旧式快捷写法。
@@ -39,6 +42,9 @@ object SettingsCommandService {
         }
     }
 
+    /**
+     * 统一处理 @全体 策略命令，并在写入前补齐权限与平台能力校验。
+     */
     suspend fun handleAtAll(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         val isGroup = chatContact.type == PlatformChatType.GROUP
         if (!CommandPermission.isSuperAdmin(senderContact) && (!isGroup || !CommandPermission.isGroupAdmin(chatContact, senderContact))) return
@@ -128,6 +134,9 @@ object SettingsCommandService {
         sendText(chatContact, result)
     }
 
+    /**
+     * 汇总配置查询与颜色子命令入口，保持设置命令的分发边界清晰。
+     */
     suspend fun handleConfig(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         val isGroup = chatContact.type == PlatformChatType.GROUP
         if (!CommandPermission.isSuperAdmin(senderContact) && (!isGroup || !CommandPermission.isGroupAdmin(chatContact, senderContact))) return
@@ -149,6 +158,9 @@ object SettingsCommandService {
         sendText(chatContact, ConfigService.configOverview(uid, subject))
     }
 
+    /**
+     * 为独立颜色命令提供入口，并把目标匹配与持久化逻辑统一收敛到内部实现。
+     */
     suspend fun handleColor(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         if (!CommandPermission.isSuperAdmin(senderContact)) {
             sendText(chatContact, "权限不足: 仅超级管理员可用")

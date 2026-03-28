@@ -9,6 +9,9 @@ import top.bilibili.FilterType
 import top.bilibili.utils.findEquivalentSubjectKey
 import top.bilibili.utils.normalizeContactSubject
 
+/**
+ * 集中维护订阅过滤器存储，避免命令层直接处理筛选结构细节。
+ */
 object FilterService {
     private val mutex = Mutex()
 
@@ -24,6 +27,9 @@ object FilterService {
         }
     }
 
+    /**
+     * 在写入过滤器前统一校验目标订阅是否存在，避免留下无效规则。
+     */
     suspend fun addFilter(type: FilterType, mode: FilterMode?, regex: String?, uid: Long, subject: String) =
         mutex.withLock {
             val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
@@ -57,6 +63,9 @@ object FilterService {
             "设置成功"
         }
 
+    /**
+     * 读取并格式化指定目标的过滤器列表，顺带回收已经空掉的历史节点。
+     */
     suspend fun listFilter(uid: Long, subject: String) = mutex.withLock {
         val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
         if (!isFollow(uid, normalizedSubject)) return@withLock "还未订阅此人哦"
@@ -88,6 +97,9 @@ object FilterService {
         if (text.isBlank()) "当前目标没有过滤器" else text
     }
 
+    /**
+     * 删除指定索引的过滤规则，并在规则集为空时同步清理空容器。
+     */
     suspend fun delFilter(index: String, uid: Long, subject: String) = mutex.withLock {
         val normalizedSubject = normalizeContactSubject(subject) ?: return@withLock "联系人格式错误: $subject"
         if (!isFollow(uid, normalizedSubject)) return@withLock "还未订阅此人哦"

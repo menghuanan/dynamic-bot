@@ -1,16 +1,25 @@
 package top.bilibili.service
 
+/**
+ * 描述一次链接解析策略的放行结果，便于调用方同时处理警告和已批准列表。
+ */
 data class LinkResolvePolicyDecision(
     val approvedLinks: List<ResolvedLinkInfo>,
     val shouldWarnTooManyRequests: Boolean
 )
 
+/**
+ * 统一处理链接解析的冷却与限流策略，避免消息入口自行维护状态窗口。
+ */
 class LinkResolvePolicyService(
     private val nowProvider: () -> Long = System::currentTimeMillis
 ) {
     private val linkCooldowns = mutableMapOf<String, Long>()
     private val userApprovals = mutableMapOf<String, ArrayDeque<Long>>()
 
+    /**
+     * 按群和用户维度执行去重、冷却与频率限制，统一决定本次允许解析的链接。
+     */
     @Synchronized
     fun applyPolicy(groupKey: String, userKey: String, candidates: List<ResolvedLinkInfo>): LinkResolvePolicyDecision {
         val now = nowProvider()

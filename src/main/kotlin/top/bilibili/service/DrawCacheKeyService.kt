@@ -6,20 +6,32 @@ import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import top.bilibili.utils.parseContactId
 
+/**
+ * 统一生成绘图缓存键，避免不同业务场景各自拼接路径导致失效粒度不一致。
+ */
 object DrawCacheKeyService {
     private val liveTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
 
+    /**
+     * 为动态卡片生成带会话作用域与主题色维度的缓存路径。
+     */
     fun dynamicPath(uid: Long, dynamicId: String, subject: String?, color: String): String {
         val scopeDirectory = subjectScopeDirectory(subject)
         return "$uid/$scopeDirectory/${dynamicId}_${colorHash(color)}.png"
     }
 
+    /**
+     * 为直播卡片生成带会话作用域与主题色维度的缓存路径。
+     */
     fun livePath(uid: Long, liveTime: Long, subject: String?, color: String): String {
         val scopeDirectory = subjectScopeDirectory(subject)
         val timeKey = formatLiveTime(liveTime)
         return "$uid/$scopeDirectory/${timeKey}_${colorHash(color)}.png"
     }
 
+    /**
+     * 为搜索卡片生成稳定缓存路径，避免实体类型冲突导致复用错误。
+     */
     fun searchPath(uid: Long, entityType: String, entityId: String, subject: String?, color: String): String {
         val scopeDirectory = subjectScopeDirectory(subject)
         val entityHash = md5("$entityType|$entityId").take(10)

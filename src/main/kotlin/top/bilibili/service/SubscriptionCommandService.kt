@@ -12,7 +12,13 @@ import top.bilibili.utils.groupLabelFromSubject
 import top.bilibili.utils.parseCommandPlatformContact
 import top.bilibili.utils.toSubject
 
+/**
+ * 收口订阅管理命令，统一处理联系人解析、权限边界和持久化落盘。
+ */
 object SubscriptionCommandService {
+    /**
+     * 处理订阅命令入口，并根据目标类型分发到 UP 或番剧订阅链路。
+     */
     suspend fun handleAdd(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         val isGroup = chatContact.type == PlatformChatType.GROUP
         if (!isGroup && !CommandPermission.isSuperAdmin(senderContact)) return
@@ -37,6 +43,9 @@ object SubscriptionCommandService {
         sendText(chatContact, result)
     }
 
+    /**
+     * 处理取消订阅命令入口，保证番剧和 UP 订阅移除行为一致。
+     */
     suspend fun handleRemove(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         val isGroup = chatContact.type == PlatformChatType.GROUP
         if (!isGroup && !CommandPermission.isSuperAdmin(senderContact)) return
@@ -61,6 +70,9 @@ object SubscriptionCommandService {
         sendText(chatContact, result)
     }
 
+    /**
+     * 处理订阅查询命令，并在超级管理员场景下扩展展示推送覆盖范围。
+     */
     suspend fun handleList(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         val isGroup = chatContact.type == PlatformChatType.GROUP
         if (args.size == 1) {

@@ -9,6 +9,9 @@ import top.bilibili.connector.PlatformContact
 import top.bilibili.utils.parsePlatformContact
 import top.bilibili.utils.toSubject
 
+/**
+ * 默认消息网关实现，在发送入口统一补齐管理员联系人解析和能力守卫。
+ */
 class DefaultMessageGateway(
     // 网关只保留 connector-owned 发送入口，避免继续注入 raw adapter provider。
     private val sendMessageEntryPoint: suspend (PlatformContact, List<OutgoingPart>) -> Boolean,
@@ -16,6 +19,9 @@ class DefaultMessageGateway(
     private val logger: Logger,
 ) : MessageGateway {
 
+    /**
+     * 将管理员通知收口到标准联系人发送链路，避免业务层自行处理管理员目标解析。
+     */
     override suspend fun sendAdminMessage(message: String): Boolean {
         val adminContact = adminContactProvider()?.let(::parsePlatformContact)
         if (adminContact == null) {
@@ -25,6 +31,9 @@ class DefaultMessageGateway(
         return sendMessageGuarded(adminContact, listOf(OutgoingPart.text(message)))
     }
 
+    /**
+     * 保留最薄的底层发送委托，让具体适配器只暴露一个发送入口。
+     */
     override suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean {
         return sendMessageEntryPoint.invoke(contact, message)
     }

@@ -8,9 +8,15 @@ import top.bilibili.utils.biliClient
 import top.bilibili.utils.containsEquivalentSubject
 import top.bilibili.utils.toSubject
 
+/**
+ * 提供 /add /del /list 等快捷命令入口，避免消息路由直接操作订阅存储。
+ */
 object QuickSubscriptionService {
     private val logger = LoggerFactory.getLogger(QuickSubscriptionService::class.java)
 
+    /**
+     * 为当前会话快速订阅指定 UID，并在入口处先校验用户是否存在。
+     */
     suspend fun subscribe(contact: PlatformContact, uid: Long) {
         try {
             val contactStr = contact.toSubject()
@@ -29,6 +35,9 @@ object QuickSubscriptionService {
         }
     }
 
+    /**
+     * 为当前会话快速取消指定 UID 的订阅，统一复用标准取消链路。
+     */
     suspend fun unsubscribe(contact: PlatformContact, uid: Long) {
         try {
             val contactStr = contact.toSubject()
@@ -41,6 +50,9 @@ object QuickSubscriptionService {
         }
     }
 
+    /**
+     * 列出当前会话命中的动态订阅，方便快捷命令直接查看结果。
+     */
     suspend fun listSubscriptions(contact: PlatformContact) {
         try {
             val contactStr = contact.toSubject()

@@ -11,16 +11,25 @@ internal const val OKLCH_NEUTRAL_THRESHOLD = 0.02
 internal const val HUE_EPSILON = 0.001
 internal const val L_EPSILON = 0.0005
 
+/**
+ * 标记主题色归一化所处的调用语境，便于后续按入口收紧规则。
+ */
 enum class NormalizationContext {
     USER_COMMAND,
 }
 
+/**
+ * 描述一次主题色归一化的结果，便于调用方区分原输入与最终落盘值。
+ */
 data class ColorNormalizationResult(
     val originalInput: String,
     val normalizedColor: String,
     val changed: Boolean,
 )
 
+/**
+ * 封装主题色绑定写入结果，让命令层统一处理成功与失败提示。
+ */
 data class ColorBindingResult(
     val success: Boolean,
     val message: String,
@@ -28,6 +37,9 @@ data class ColorBindingResult(
     val changed: Boolean = false,
 ) {
     companion object {
+        /**
+         * 统一构造失败结果，避免调用方各自拼装不完整的返回对象。
+         */
         fun failure(message: String): ColorBindingResult = ColorBindingResult(
             success = false,
             message = message,
@@ -55,6 +67,9 @@ internal fun OklchColor.toOklab(): OklabColor {
     return OklabColor(l, a, b)
 }
 
+/**
+ * 统一归一化会话作用域的渐变色输入，保证缓存键和持久化内容口径一致。
+ */
 fun normalizeSubjectScopedGradientColor(
     color: String,
     @Suppress("UNUSED_PARAMETER")

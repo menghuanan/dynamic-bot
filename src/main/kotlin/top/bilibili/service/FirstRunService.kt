@@ -7,7 +7,13 @@ import top.bilibili.core.BiliBiliBot
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.utils.parsePlatformContact
 
+/**
+ * 负责首次运行提示流程，避免欢迎消息逻辑混入启动主线。
+ */
 object FirstRunService {
+    /**
+     * 仅在首次启动时向管理员发送初始化提示，并在成功后落盘标记位。
+     */
     suspend fun checkFirstRun(config: BotConfig) {
         if (config.firstRunFlag != 0) return
 

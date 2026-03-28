@@ -12,7 +12,13 @@ import top.bilibili.data.LiveMessage
 import top.bilibili.utils.ImageCache
 import top.bilibili.utils.normalizeContactSubject
 
+/**
+ * 将模板和业务消息拼装成最终消息段，避免推送任务重复实现模板渲染细节。
+ */
 object TemplateRenderService {
+    /**
+     * 基于消息类型和会话作用域构建最终消息段，并在模板绘图失效时补文本兜底。
+     */
     suspend fun buildSegments(
         message: BiliMessage,
         contactStr: String,

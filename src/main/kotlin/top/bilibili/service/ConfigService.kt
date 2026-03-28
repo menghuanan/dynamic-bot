@@ -7,7 +7,13 @@ import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parsePlatformContact
 import top.bilibili.utils.subjectsEquivalent
 
+/**
+ * 统一生成会话级配置概览，避免命令层直接拼装多处运行时状态。
+ */
 object ConfigService {
+    /**
+     * 汇总模板、颜色、过滤器与订阅信息，保证展示口径始终一致。
+     */
     fun configOverview(uid: Long = 0L, subject: String): String {
         val normalizedSubject = normalizeContactSubject(subject) ?: return "联系人格式错误: $subject"
         parsePlatformContact(normalizedSubject) ?: return "联系人格式错误: $subject"
@@ -118,6 +124,9 @@ object ConfigService {
         }.trim()
     }
 
+    /**
+     * 为旧调用方保留兼容入口，只接受已可转为联系人字符串的参数。
+     */
     @Suppress("UNUSED_PARAMETER")
     suspend fun config(event: Any, uid: Long = 0L, contact: Any): String {
         val subject = contact as? String ?: return "联系人参数错误"

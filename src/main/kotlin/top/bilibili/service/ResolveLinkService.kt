@@ -8,10 +8,16 @@ import top.bilibili.draw.*
 import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.*
 
+/**
+ * 为旧调用方保留单链接解析入口，继续复用统一的匹配与去重链路。
+ */
 suspend fun matchingRegular(content: String, subject: String? = null): ResolvedLinkInfo? {
     return matchingInternalRegular(content, subject)
 }
 
+/**
+ * 解析文本中的全部可识别链接，并保持结果顺序与正文出现顺序一致。
+ */
 suspend fun matchingAllRegular(content: String, subject: String? = null): List<ResolvedLinkInfo> {
     return matchingAllRegularOrdered(content, subject)
 }
@@ -62,12 +68,25 @@ private fun collectOrderedMatches(content: String): List<OrderedLinkMatch> {
     )
 }
 
+/**
+ * 封装已解析链接的类型、标识与会话信息，便于后续统一绘图和取规范链接。
+ */
 data class ResolvedLinkInfo(val type: LinkType, val id: String, val subject: String? = null) : ResolveLink {
     // 保留这一层转发，既要继续透传 subject，也要满足源码回归测试对 `type.drawGeneral(id, subject)` 形态的约束，后续整理时不要内联掉。
+    /**
+     * 复用链接类型上的绘图实现，并继续透传当前会话作用域。
+     */
     override suspend fun drawGeneral(): String? = type.drawGeneral(id, subject)
+
+    /**
+     * 复用链接类型上的规范链接解析，避免调用方自行判断类型。
+     */
     override suspend fun getLink(): String = type.getLink(id)
 }
 
+/**
+ * 执行首个命中链接的解析，供需要单结果的旧调用路径继续复用。
+ */
 suspend fun matchingInternalRegular(content: String, subject: String? = null): ResolvedLinkInfo? {
     var matchResult: MatchResult? = null
     var type: LinkType? = null
@@ -123,31 +142,59 @@ private fun isOpusMatch(matchResult: MatchResult): Boolean {
     return matchResult.value.contains("/opus/")
 }
 
+/**
+ * 描述链接解析在当前消息中的触发策略，便于上层按配置决定是否响应。
+ */
 enum class TriggerMode {
     At,
     Always,
     Never
 }
 
+/**
+ * 抽象可解析链接需要暴露的最小能力，避免消息处理链依赖具体链接类型。
+ */
 interface ResolveLink {
+    /**
+     * 生成当前链接的预览图路径；当条件不满足时允许返回空。
+     */
     suspend fun drawGeneral(): String?
+
+    /**
+     * 返回当前链接的规范化跳转地址，供纯文本回退场景复用。
+     */
     suspend fun getLink(): String
 }
 
+/**
+ * 收口全部可识别链接类型及其兼容入口，避免正则和展示逻辑分散维护。
+ */
 sealed class LinkType(val regex: List<Regex> = emptyList()) {
     abstract val stableName: String
 
     // 这两个兼容 shim 是给 ResolvedLinkInfo 和源码守卫用的；实际实现仍在下方顶层函数里，后续重构时不要删除这层委托。
+    /**
+     * 为链接类型保留统一绘图入口，便于结果对象和测试共用同一调用形态。
+     */
     suspend fun drawGeneral(id: String, subject: String? = null): String? = drawResolvedLink(this, id, subject)
 
+    /**
+     * 为链接类型保留统一规范链接入口，避免调用方拼接不同类型的 URL。
+     */
     suspend fun getLink(id: String): String = resolveCanonicalLink(this, id)
 
+    /**
+     * 匹配普通视频链接与 av/BV 两种视频标识。
+     */
     object VideoLink : LinkType(listOf(
         """(?:www\.bilibili\.com/video/)?((?:BV[0-9A-z]{10})|(?:av\d{1,20}))""".toRegex()
     )) {
         override val stableName: String = "VideoLink"
     }
 
+    /**
+     * 匹配专栏链接，并兼容桌面与移动页两种形态。
+     */
     object Article : LinkType(listOf(
         """(?:www\.bilibili\.com/read/)?cv(\d{1,10})""".toRegex(),
         """(?:www\.bilibili\.com/read/mobile/)(\d{1,10})""".toRegex()
@@ -155,6 +202,9 @@ sealed class LinkType(val regex: List<Regex> = emptyList()) {
         override val stableName: String = "Article"
     }
 
+    /**
+     * 匹配动态与 opus 链接，为后续动态卡片绘制提供统一入口。
+     */
     object Dynamic : LinkType(listOf(
         """[tm]\.bilibili\.com/(?:dynamic/)?(\d+)""".toRegex(),
         """(?:www|m)\.bilibili\.com/opus/(\d+)""".toRegex()
@@ -162,35 +212,53 @@ sealed class LinkType(val regex: List<Regex> = emptyList()) {
         override val stableName: String = "Dynamic"
     }
 
+    /**
+     * 匹配直播间链接，供直播搜索卡片和直链回退复用。
+     */
     object Live : LinkType(listOf(
         """live\.bilibili\.com/(?:h5/)?(\d+)""".toRegex()
     )) {
         override val stableName: String = "Live"
     }
 
+    /**
+     * 匹配用户空间链接，统一转换为用户卡片搜索入口。
+     */
     object User : LinkType(listOf(
         """space\.bilibili\.com/(\d+)""".toRegex()
     )) {
         override val stableName: String = "User"
     }
 
+    /**
+     * 匹配番剧相关链接，兼容 ss、ep、md 三种常见标识。
+     */
     object Pgc : LinkType(listOf(
         """(?:(?:www|m)\.bilibili\.com/bangumi/(?:play|media)/)?((?:ss|ep|md)\d+)""".toRegex()
     )) {
         override val stableName: String = "Pgc"
     }
 
+    /**
+     * 匹配短链接并交给重定向解析，以便继续复用其他类型的完整链路。
+     */
     object ShortLink : LinkType(listOf(
         """(?:b23\.tv|bili2233\.cn)\\?/([0-9A-z]+)""".toRegex()
     )) {
         override val stableName: String = "ShortLink"
     }
 
+    /**
+     * 标记 opus 链接及其可选专栏 ID，便于统一落到动态或专栏展示。
+     */
     data class OpusWithCv(val opusId: String, val cvId: String? = null) : LinkType() {
         override val stableName: String = "OpusWithCv"
     }
 
     companion object {
+        /**
+         * 返回参与正文匹配的链接类型列表，集中维护匹配顺序依赖。
+         */
         fun matchableTypes(): List<LinkType> = listOf(VideoLink, Article, Dynamic, Live, User, Pgc, ShortLink)
     }
 }
@@ -388,6 +456,9 @@ private fun getDefaultColors(): List<Int> {
     return parseGradientColors(BiliConfigManager.config.imageConfig.defaultColor)
 }
 
+/**
+ * 将视频详情转换为统一作者展示结构，避免搜索绘图链路分别适配字段。
+ */
 fun VideoDetail.toDrawAuthorData(): ModuleAuthor =
     ModuleAuthor(
         "AUTHOR_TYPE_NORMAL",
@@ -396,6 +467,9 @@ fun VideoDetail.toDrawAuthorData(): ModuleAuthor =
         owner.face
     )
 
+/**
+ * 将用户详情转换为统一作者展示结构，供空间链接和搜索卡片复用。
+ */
 fun BiliUser.toDrawAuthorData(): ModuleAuthor =
     ModuleAuthor(
         "AUTHOR_TYPE_NORMAL",
@@ -408,6 +482,9 @@ fun BiliUser.toDrawAuthorData(): ModuleAuthor =
         sign = sign
     )
 
+/**
+ * 将视频详情转换为动态卡片可直接渲染的主体数据结构。
+ */
 fun VideoDetail.toDrawData(): ModuleDynamic.Major.Archive =
     ModuleDynamic.Major.Archive(
         0,
@@ -429,6 +506,9 @@ fun VideoDetail.toDrawData(): ModuleDynamic.Major.Archive =
         )
     )
 
+/**
+ * 将专栏详情转换为动态卡片渲染结构，统一搜索卡片展示口径。
+ */
 fun ArticleDetail.toDrawData(): ModuleDynamic.Major.Article =
     ModuleDynamic.Major.Article(
         aid.toString(),
@@ -439,6 +519,9 @@ fun ArticleDetail.toDrawData(): ModuleDynamic.Major.Article =
         covers
     )
 
+/**
+ * 将直播间详情转换为动态卡片渲染结构，兼容直播状态和分区展示。
+ */
 fun LiveRoomDetail.toDrawData(): ModuleDynamic.Major.Live =
     ModuleDynamic.Major.Live(
         roomId,
@@ -461,6 +544,9 @@ fun LiveRoomDetail.toDrawData(): ModuleDynamic.Major.Live =
         )
     )
 
+/**
+ * 将番剧详情转换为统一的 PGC 渲染结构，供搜索卡片直接复用。
+ */
 fun BiliDetail.toPgc(): ModuleDynamic.Major.Pgc? =
     when (this) {
         is PgcSeason -> {
