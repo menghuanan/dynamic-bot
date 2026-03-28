@@ -308,7 +308,12 @@ class ResourceManagementRegressionGuardTest {
         val dynamicDraw = read("src/main/kotlin/top/bilibili/draw/DynamicDraw.kt")
         val dynamicModule = read("src/main/kotlin/top/bilibili/draw/DynamicModuleDraw.kt")
         val liveDraw = read("src/main/kotlin/top/bilibili/draw/LiveDraw.kt")
-        val qrCodeDraw = read("src/main/kotlin/top/bilibili/draw/QrCodeDraw.kt")
+        // 登录二维码渲染热路径已迁移到专用渲染器，旧分支仍保留 QrCodeDraw 作为兼容回退入口。
+        val loginQrRenderer = if (Files.exists(Path.of("src/main/kotlin/top/bilibili/draw/LoginQrCodeRenderer.kt"))) {
+            read("src/main/kotlin/top/bilibili/draw/LoginQrCodeRenderer.kt")
+        } else {
+            read("src/main/kotlin/top/bilibili/draw/QrCodeDraw.kt")
+        }
 
         assertTrue(
             dynamicDraw.contains("session.createSvg("),
@@ -323,8 +328,8 @@ class ResourceManagementRegressionGuardTest {
             "LiveDraw should load SVGDOM through DrawingSession",
         )
         assertTrue(
-            qrCodeDraw.contains("createSvg("),
-            "QrCodeDraw should load SVGDOM through DrawingSession",
+            loginQrRenderer.contains("createSvg("),
+            "login qr renderer should load SVGDOM through DrawingSession",
         )
     }
     @Test

@@ -68,19 +68,24 @@ class GradientResourceManagementRegressionTest {
     fun `draw helper hot paths should stop relying on unmanaged global or inline skia helpers`() {
         val dynamicDraw = read("src/main/kotlin/top/bilibili/draw/DynamicDraw.kt")
         val dynamicModule = read("src/main/kotlin/top/bilibili/draw/DynamicModuleDraw.kt")
-        val qrCodeDraw = read("src/main/kotlin/top/bilibili/draw/QrCodeDraw.kt")
+        // 登录二维码渲染热路径已迁移到专用渲染器，旧分支仍保留 QrCodeDraw 作为兼容回退入口。
+        val loginQrRenderer = if (Files.exists(Path.of("src/main/kotlin/top/bilibili/draw/LoginQrCodeRenderer.kt"))) {
+            read("src/main/kotlin/top/bilibili/draw/LoginQrCodeRenderer.kt")
+        } else {
+            read("src/main/kotlin/top/bilibili/draw/QrCodeDraw.kt")
+        }
 
         assertTrue(
             dynamicModule.contains("session.createSvg("),
             "DynamicModuleDraw should load SVGDOM through DrawingSession",
         )
         assertTrue(
-            qrCodeDraw.contains("createBlendColorFilter("),
-            "QrCodeDraw should create ColorFilter through DrawingSession",
+            loginQrRenderer.contains("createBlendColorFilter("),
+            "login qr renderer should create ColorFilter through DrawingSession",
         )
         assertTrue(
-            qrCodeDraw.contains("createPaint"),
-            "QrCodeDraw should create temporary Paint instances through DrawingSession",
+            loginQrRenderer.contains("createPaint"),
+            "login qr renderer should create temporary Paint instances through DrawingSession",
         )
         assertTrue(
             !dynamicDraw.contains("val linkPaint = Paint().apply"),
