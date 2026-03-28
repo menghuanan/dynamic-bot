@@ -1,10 +1,8 @@
 # BiliBili 动态推送 Bot v1.8
 
-1.8版本还没有稳定测试，建议先使用v1.7.43版本。
+新部署的用户优先推荐v1.7.43版本。
 
-docker 部署的latest标签为v1.8.2，建议使用v1.7.43版本，v1.7.44版本的docker镜像有登录图渲染问题。
-
-如果你使用napcat进行对接，可以使用v1.8.2版本。
+如果你使用napcat进行对接，可以使用v1.8.3版本。
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
