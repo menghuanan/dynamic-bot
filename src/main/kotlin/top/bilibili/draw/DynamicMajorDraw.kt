@@ -12,6 +12,9 @@ import top.bilibili.utils.*
 import kotlin.math.ceil
 
 
+/**
+ * 规整番剧评价文本，使其在固定宽度内截断后更稳定。
+ */
 private fun formatPgcEvaluateText(
     session: DrawingSession,
     rawText: String,
@@ -70,11 +73,15 @@ private fun formatPgcEvaluateText(
     if (lines.size < 5) return lines.joinToString("\n")
 
     val firstSix = lines.take(5).toMutableList()
+    // 评价区高度是固定预算，最后一行提前截断可避免阴影和下方统计区域被顶出卡片。
     val sixthLine = firstSix[4]
     firstSix[4] = if (sixthLine.length >= 15) sixthLine.substring(0, 14) + "…" else sixthLine
     return firstSix.joinToString("\n")
 }
 
+/**
+ * 根据图片尺寸推断动态媒体角标。
+ */
 internal fun resolveDynamicMediaLabel(src: String, width: Int, height: Int): String? {
     return when {
         src.endsWith(".gif") -> "动图"
@@ -83,10 +90,16 @@ internal fun resolveDynamicMediaLabel(src: String, width: Int, height: Int): Str
     }
 }
 
+/**
+ * 计算动态媒体角标文本的垂直基线位置。
+ */
 internal fun dynamicMediaLabelTextBaseline(rrect: RRect, textLine: TextLine): Float {
     return rrect.bottom - (rrect.height - textLine.capHeight) / 2
 }
 
+/**
+ * 在动态媒体图片右下角绘制类型角标。
+ */
 private fun Canvas.drawDynamicMediaLabel(
     session: DrawingSession,
     label: String,
@@ -112,6 +125,10 @@ private fun Canvas.drawDynamicMediaLabel(
         session.createPaint { color = Color.WHITE }
     )
 }
+
+/**
+ * 根据 major 类型分发到对应的绘制实现。
+ */
 suspend fun ModuleDynamic.Major.makeGeneral(session: DrawingSession, isForward: Boolean = false): Image {
     return when (type) {
         "MAJOR_TYPE_ARCHIVE" -> if (isForward) archive!!.drawSmall(session) else archive!!.drawGeneral(session)
@@ -130,6 +147,9 @@ suspend fun ModuleDynamic.Major.makeGeneral(session: DrawingSession, isForward: 
     }
 }
 
+/**
+ * 绘制纯文本提示卡片。
+ */
 fun drawInfoText(session: DrawingSession, text: String): Image {
     val lineCount = useTextLine(text, font) { textLine ->
         if (textLine.width / cardContentRect.width > 1) 2 else 1
@@ -156,6 +176,9 @@ fun drawInfoText(session: DrawingSession, text: String): Image {
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
+/**
+ * 绘制 opus 类型动态卡片。
+ */
 suspend fun ModuleDynamic.Major.Opus.drawGeneral(session: DrawingSession): Image {
     val desc = summary.drawGeneral(session)
     val draw = if (pics.isNotEmpty()) {
@@ -202,6 +225,9 @@ suspend fun ModuleDynamic.Major.Opus.drawGeneral(session: DrawingSession): Image
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
+/**
+ * 绘制通用附加卡片样式的 major 模块。
+ */
 suspend fun ModuleDynamic.Major.Common.drawGeneral(session: DrawingSession): Image {
     val paragraphStyle = ParagraphStyle().apply {
         maxLinesCount = 1
@@ -296,6 +322,9 @@ suspend fun ModuleDynamic.Major.Common.drawGeneral(session: DrawingSession): Ima
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
+/**
+ * 绘制视频类 major 卡片。
+ */
 suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, showStat: Boolean = false): Image {
     val paragraphStyle = ParagraphStyle().apply {
         maxLinesCount = 2
@@ -442,10 +471,16 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, sho
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
+/**
+ * 绘制直播类 major 小卡片。
+ */
 suspend fun ModuleDynamic.Major.Live.drawGeneral(session: DrawingSession): Image {
     return drawLiveSmallCard(session, title, "$descFirst $descSecond", cover, badge.text, "$id", null)
 }
 
+/**
+ * 绘制推荐直播类 major 小卡片。
+ */
 suspend fun ModuleDynamic.Major.LiveRcmd.drawGeneral(session: DrawingSession): Image {
     val info = liveInfo.livePlayInfo
     return drawLiveSmallCard(
@@ -464,10 +499,16 @@ suspend fun ModuleDynamic.Major.LiveRcmd.drawGeneral(session: DrawingSession): I
     )
 }
 
+/**
+ * 绘制视频类 major 的紧凑小卡片。
+ */
 suspend fun ModuleDynamic.Major.Archive.drawSmall(session: DrawingSession): Image {
     return drawSmallCard(session, title, desc, cover, badge.text, "av$aid", durationText)
 }
 
+/**
+ * 绘制番剧类 major 的紧凑小卡片。
+ */
 suspend fun ModuleDynamic.Major.Pgc.drawSmall(session: DrawingSession): Image {
     return drawPgcCard(
         session,
@@ -504,6 +545,9 @@ internal fun computePgcCardLayout(contentHeight: Float): PgcCardLayout {
     return PgcCardLayout(topSafeGap, bottomSafeGap, cardTop, surfaceHeight)
 }
 
+/**
+ * 计算番剧卡片右侧文本区所需的总高度。
+ */
 internal fun computePgcTextBlockHeight(
     titleHeight: Float,
     broadcastHeight: Float,
@@ -517,6 +561,9 @@ internal fun computePgcTextBlockHeight(
     return if (evaluateHeight != null) baseHeight + evaluateHeight else baseHeight
 }
 
+/**
+ * 绘制番剧卡片。
+ */
 suspend fun drawPgcCard(
     session: DrawingSession,
     title: String,
@@ -764,6 +811,9 @@ suspend fun drawPgcCard(
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
+/**
+ * 绘制直播小卡片。
+ */
 suspend fun drawLiveSmallCard(
     session: DrawingSession,
     title: String,
@@ -877,6 +927,9 @@ suspend fun drawLiveSmallCard(
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
+/**
+ * 绘制通用小卡片。
+ */
 suspend fun drawSmallCard(
     session: DrawingSession,
     title: String,
@@ -1014,6 +1067,9 @@ suspend fun drawSmallCard(
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
+/**
+ * 绘制图片宫格类 major 卡片。
+ */
 suspend fun ModuleDynamic.Major.Draw.drawGeneral(session: DrawingSession): Image {
     var drawItemWidth = 0f
     var drawItemHeight = 0f
@@ -1069,6 +1125,7 @@ suspend fun ModuleDynamic.Major.Draw.drawGeneral(session: DrawingSession): Image
             drawItemHeight = drawItemWidth
             drawItemSpace += quality.drawSpace * ((items.size - 1) / 3)
             drawItemNum = 3
+            // 超过 9 张后继续增加列数会显著降低可读性，固定 3 列更适合消息卡片场景。
             logger.debug("动态包含 ${items.size} 张图片，使用3列布局")
         }
     }
@@ -1121,6 +1178,9 @@ suspend fun ModuleDynamic.Major.Draw.drawGeneral(session: DrawingSession): Image
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
+/**
+ * 绘制被屏蔽的专属动态卡片。
+ */
 suspend fun ModuleDynamic.Major.Blocked.drawGeneral(session: DrawingSession): Image {
     val paragraphStyle = ParagraphStyle().apply {
         maxLinesCount = 2
@@ -1166,6 +1226,9 @@ suspend fun ModuleDynamic.Major.Blocked.drawGeneral(session: DrawingSession): Im
 }
 
 
+/**
+ * 绘制专栏类 major 卡片。
+ */
 suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Image {
     val paragraphStyle = ParagraphStyle().apply {
         maxLinesCount = 2
@@ -1310,6 +1373,9 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
     return with(session) { surface.makeImageSnapshot().track() }
 }
 
+/**
+ * 绘制音乐类 major 卡片。
+ */
 suspend fun ModuleDynamic.Major.Music.drawGeneral(session: DrawingSession): Image {
     val paragraphStyle = ParagraphStyle().apply {
         maxLinesCount = 2

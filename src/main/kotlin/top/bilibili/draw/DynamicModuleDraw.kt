@@ -34,6 +34,9 @@ suspend fun ModuleDynamic.makeGeneral(session: DrawingSession, isForward: Boolea
     }
 }
 
+/**
+ * 绘制动态附加卡片。
+ */
 suspend fun ModuleDynamic.Additional.makeGeneral(session: DrawingSession): Image? {
     return when (type) {
         "ADDITIONAL_TYPE_COMMON" -> {
@@ -115,6 +118,9 @@ suspend fun ModuleDynamic.Additional.makeGeneral(session: DrawingSession): Image
 }
 
 
+/**
+ * 绘制通用附加卡片。
+ */
 suspend fun drawAdditionalCard(
     session: DrawingSession,
     label: String,
@@ -218,6 +224,9 @@ suspend fun drawAdditionalCard(
 }
 
 
+/**
+ * 绘制争议提示模块。
+ */
 suspend fun ModuleDispute.drawGeneral(session: DrawingSession): Image {
     val lineCount = useTextLine(title, font) { textLine ->
         if (textLine.width / cardContentRect.width > 1) 2 else 1
@@ -255,6 +264,9 @@ suspend fun ModuleDispute.drawGeneral(session: DrawingSession): Image {
 }
 
 
+/**
+ * 绘制话题模块。
+ */
 suspend fun ModuleDynamic.Topic.drawGeneral(session: DrawingSession): Image {
     val lineCount = useTextLine(name, font) { textLine ->
         if (textLine.width / cardContentRect.width > 1) 2 else 1
@@ -294,6 +306,9 @@ suspend fun ModuleDynamic.Topic.drawGeneral(session: DrawingSession): Image {
 }
 
 
+/**
+ * 绘制动态正文富文本模块。
+ */
 suspend fun ModuleDynamic.ContentDesc.drawGeneral(session: DrawingSession): Image {
     val paragraphStyle = ParagraphStyle().apply {
         alignment = Alignment.LEFT
@@ -349,6 +364,7 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(session: DrawingSession): Imag
                     try {
                         val emojiSize = useTextLine("🙂", font) { it.height }
 
+                        // emoji 需要按文本流参与换行，否则行宽计算与真实渲染会脱节。
                         if (x + emojiSize > textCardRect.right) {
                             x = textCardRect.left
                             y += emojiSize + quality.lineSpace
@@ -427,6 +443,9 @@ internal fun String.toCodePointStrings(): List<String> {
     return codePoints
 }
 
+/**
+ * 将 emoji 文本转换为 Twemoji 所需的 code point key。
+ */
 internal fun String.toEmojiCodePointKey(): String {
     return buildList {
         var index = 0
@@ -438,6 +457,9 @@ internal fun String.toEmojiCodePointKey(): String {
     }.joinToString("-")
 }
 
+/**
+ * 在指定区域内按文本流规则绘制文本与 emoji。
+ */
 suspend fun Canvas.drawTextArea(text: String, rect: Rect, textX: Float, textY: Float, font: Font, paint: Paint): Point {
     var x = textX
     var y = textY
@@ -500,6 +522,7 @@ suspend fun Canvas.drawTextArea(text: String, rect: Rect, textX: Float, textY: F
                     var emojiImg: Image? = null
                     try {
                         var e = emoji.split("-")
+                        // 非 ZWJ 场景保留去掉 FE0F 的回退形式，可提升 Twemoji 命中率。
                         if (e.last() == "fe0f" && !e.contains("200d")) {
                             e = e.dropLast(1)
                         }
@@ -536,6 +559,9 @@ suspend fun Canvas.drawTextArea(text: String, rect: Rect, textX: Float, textY: F
     return Point(x, y)
 }
 
+/**
+ * 绘制转发态作者头部信息。
+ */
 suspend fun ModuleAuthor.drawForward(session: DrawingSession, time: String): Image {
     val authorFace = face
     val authorName = name
@@ -567,6 +593,9 @@ suspend fun ModuleAuthor.drawForward(session: DrawingSession, time: String): Ima
 }
 
 
+/**
+ * 绘制普通动态作者头部信息。
+ */
 suspend fun ModuleAuthor.drawGeneral(session: DrawingSession, time: String, link: String, themeColor: Int): Image {
     val authorFace = face
     val authorName = name
@@ -617,6 +646,9 @@ suspend fun ModuleAuthor.drawGeneral(session: DrawingSession, time: String, link
 }
 
 
+/**
+ * 绘制作者区域右侧装饰，目前支持粉丝卡和二维码。
+ */
 suspend fun Canvas.drawOrnament(
     session: DrawingSession,
     decorate: ModuleAuthor.Decorate?,
@@ -678,6 +710,7 @@ suspend fun Canvas.drawOrnament(
         }
 
         "QrCode" -> {
+            // 二维码挂件与粉丝卡互斥，避免在有限头像区域内叠加两种装饰造成遮挡。
             val qrCodeImg = qrCode(session, link!!, quality.ornamentHeight.toInt(), qrCodeColor!!)
             val y = ((quality.faceSize - qrCodeImg.height + quality.contentSpace) / 2)
             val tarFRect = Rect.makeXYWH(

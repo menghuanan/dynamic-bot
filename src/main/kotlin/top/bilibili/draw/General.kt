@@ -245,6 +245,9 @@ fun Canvas.drawImageRRect(image: Image, srcRect: Rect, rRect: RRect, paint: Pain
 fun Canvas.drawImageRRect(image: Image, rRect: RRect, paint: Paint? = null) =
     drawImageRRect(image, Rect(0f, 0f, image.width.toFloat(), image.height.toFloat()), rRect, paint)
 
+/**
+ * 加载 SVG 资源。
+ */
 fun loadSVG(path: String): SVGDOM? {
     return try {
         // 使用 classLoader 加载资源，确保从 classpath 根目录开始查找
@@ -283,6 +286,9 @@ fun SVGDOM.makeImage(session: DrawingSession, width: Float, height: Float): Imag
     }
 }
 
+/**
+ * 将 Surface 快照保存为图片文件。
+ */
 fun Surface.saveImage(path: String) {
     val image = makeImageSnapshot()
     val data = image.encodeToData()!!
@@ -295,12 +301,18 @@ fun Surface.saveImage(path: String) {
 }
 //fun Surface.saveImage(path: java.nio.file.Path) = path.writeBytes(makeImageSnapshot().encodeToData()!!.bytes)
 
+/**
+ * 按目标宽度等比绘制图片。
+ */
 fun Canvas.drawScaleWidthImage(image: Image, width: Float, x: Float, y: Float, paint: Paint? = null) {
     val src = Rect.makeXYWH(0f, 0f, image.width.toFloat(), image.height.toFloat())
     val dst = Rect.makeXYWH(x, y, width, width * image.height / image.width)
     drawImageRect(image, src, dst, FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST), paint, false)
 }
 
+/**
+ * 按目标宽度绘制图片并额外描边，便于调试布局边界。
+ */
 fun Canvas.drawScaleWidthImageOutline(
     image: Image,
     width: Float,
@@ -320,16 +332,28 @@ fun Canvas.drawScaleWidthImageOutline(
     }
 }
 
+/**
+ * 将普通矩形转换为无圆角的圆角矩形。
+ */
 fun Rect.toRRect() =
     RRect.makeLTRB(left, top, right, bottom, 0f)
 
+/**
+ * 将普通矩形转换为指定圆角半径的圆角矩形。
+ */
 fun Rect.toRRect(radius: Float) =
     RRect.makeLTRB(left, top, right, bottom, radius)
 
+/**
+ * 平移圆角矩形。
+ */
 fun RRect.offsetR(dx: Float, dy: Float): RRect {
     return RRect.makeComplexLTRB(left + dx, top + dy, right + dx, bottom + dy, radii)
 }
 
+/**
+ * 将图片按裁剪填充方式绘制到目标圆角区域。
+ */
 fun Canvas.drawImageClip(
     session: DrawingSession,
     image: Image,
@@ -365,6 +389,9 @@ fun Canvas.drawImageClip(
 }
 
 
+/**
+ * 将十六进制颜色字符串转换为 Skia 颜色值。
+ */
 fun Color.makeRGB(hex: String): Int {
     require(hex.startsWith("#")) { "Hex format error: $hex" }
     require(hex.length == 7 || hex.length == 9) { "Hex length error: $hex" }
@@ -392,8 +419,14 @@ fun Color.makeRGB(hex: String): Int {
     }
 }
 
+/**
+ * 拆解颜色值中的 RGB 分量。
+ */
 fun Color.getRGB(color: Int) = intArrayOf(getR(color), getG(color), getB(color))
 
+/**
+ * 将 RGB 颜色转换为 HSB。
+ */
 fun rgb2hsb(rgbR: Int, rgbG: Int, rgbB: Int): FloatArray {
 
     val rgb = intArrayOf(rgbR, rgbG, rgbB)
@@ -415,6 +448,9 @@ fun rgb2hsb(rgbR: Int, rgbG: Int, rgbB: Int): FloatArray {
     return floatArrayOf(hsbH, hsbS, hsbB)
 }
 
+/**
+ * 将 HSB 颜色转换为 RGB。
+ */
 fun hsb2rgb(h: Float, s: Float, v: Float): IntArray {
     var r = 0f
     var g = 0f
@@ -466,6 +502,9 @@ fun hsb2rgb(h: Float, s: Float, v: Float): IntArray {
     return intArrayOf((r * 255.0).toInt(), (g * 255.0).toInt(), (b * 255.0).toInt())
 }
 
+/**
+ * 根据主题色列表生成线性渐变颜色数组。
+ */
 fun generateLinearGradient(colors: List<Int>): IntArray {
     val colorGenerator = BiliConfigManager.config.imageConfig.colorGenerator
     return if (colors.size == 1) {
@@ -474,6 +513,7 @@ fun generateLinearGradient(colors: List<Int>): IntArray {
             hsb[1] = colorGenerator.saturation
             hsb[2] = colorGenerator.brightness
         }
+        // 单色输入时主动扩展为邻近色相，避免背景退化成单调纯色。
         val linearLayerCount = 3
         val linearLayerStep = colorGenerator.hueStep
         val llc = if (linearLayerCount % 2 == 0) linearLayerCount + 1 else linearLayerCount

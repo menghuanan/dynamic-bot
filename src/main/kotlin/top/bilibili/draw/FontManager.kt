@@ -91,6 +91,9 @@ object FontManager : AutoCloseable {
             return _fansCardFont
         }
 
+    /**
+     * 加载主字体，优先使用配置项，其次回退到系统默认字体。
+     */
     private fun loadMainTypeface(): Typeface {
         val imageConfig = BiliConfigManager.config.imageConfig
         val mainFont = imageConfig.font.split(";").first().split(".").first()
@@ -113,6 +116,9 @@ object FontManager : AutoCloseable {
         }
     }
 
+    /**
+     * 加载 Emoji 字体，失败时返回空并走主字体回退。
+     */
     private fun loadEmojiTypeface(): Typeface? {
         return try {
             FontUtils.matchFamilyStyle("Noto Color Emoji", FontStyle.NORMAL)
@@ -122,6 +128,9 @@ object FontManager : AutoCloseable {
         }
     }
 
+    /**
+     * 加载粉丝卡专用字体。
+     */
     private fun loadFansCardFont(): Font? {
         return try {
             Font(
@@ -134,6 +143,9 @@ object FontManager : AutoCloseable {
         }
     }
 
+    /**
+     * 加载系统默认字体链。
+     */
     private fun loadSysDefaultFont(): Typeface {
         // 优先使用内嵌字体，然后尝试常见的系统字体
         val defaultList = listOf(
@@ -155,6 +167,9 @@ object FontManager : AutoCloseable {
         throw Exception("无法加载默认字体, 请自行配置字体或准备字体文件")
     }
 
+    /**
+     * 关闭字体管理器并释放 Font 资源。
+     */
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             synchronized(this) {

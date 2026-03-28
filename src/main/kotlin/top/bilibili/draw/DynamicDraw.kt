@@ -140,10 +140,25 @@ val cardBadgeArc: FloatArray by lazy {
 }
 
 
+/**
+ * 根据主题色列表生成动态卡片图片并缓存到磁盘。
+ *
+ * @param colors 主题色列表
+ * @param subject 可选的联系人标识
+ * @param color 原始颜色字符串
+ */
 suspend fun DynamicItem.makeDrawDynamic(colors: List<Int>, subject: String? = null, color: String? = null): String {
     return makeDrawDynamic(colors.first(), generateLinearGradient(colors), subject, color)
 }
 
+/**
+ * 根据主色和背景渐变生成动态卡片图片并缓存到磁盘。
+ *
+ * @param themeColor 主色
+ * @param backgroundColors 背景渐变颜色
+ * @param subject 可选的联系人标识
+ * @param color 原始颜色字符串
+ */
 suspend fun DynamicItem.makeDrawDynamic(themeColor: Int, backgroundColors: IntArray, subject: String? = null, color: String? = null): String {
     return SkiaManager.executeDrawing {
         val dynamic = this@makeDrawDynamic.drawDynamic(this, themeColor, false)
@@ -155,6 +170,13 @@ suspend fun DynamicItem.makeDrawDynamic(themeColor: Int, backgroundColors: IntAr
     }
 }
 
+/**
+ * 将单条动态绘制为完整卡片图像。
+ *
+ * @param session 当前绘制会话
+ * @param themeColor 主色
+ * @param isForward 是否按转发态样式绘制
+ */
 suspend fun DynamicItem.drawDynamic(session: DrawingSession, themeColor: Int, isForward: Boolean = false): Image {
     val orig = orig?.drawDynamic(session, themeColor, type == DYNAMIC_TYPE_FORWARD)
 
@@ -162,6 +184,7 @@ suspend fun DynamicItem.drawDynamic(session: DrawingSession, themeColor: Int, is
 
     // 调整附加卡片顺序
     if (orig != null) {
+        // 转发动态需要把原动态主体插到附加卡片之前，保持阅读顺序与客户端一致。
         imgList = if (this.modules.moduleDynamic.additional != null) {
             val result = ArrayList<Image>(imgList.size + 1)
             result.addAll(imgList.subList(0, imgList.size - 1))
@@ -189,6 +212,9 @@ suspend fun DynamicItem.drawDynamic(session: DrawingSession, themeColor: Int, is
 
 }
 
+/**
+ * 根据模板生成动态页脚文案。
+ */
 fun buildFooter(name: String, uid: Long, id: String, time: String, type: String): String? {
     val footerTemplate = BiliConfigManager.config.templateConfig.footer.dynamicFooter
     return if (footerTemplate.isNotBlank()) {
@@ -305,11 +331,15 @@ fun List<Image>.assembleCard(session: DrawingSession, id: String, footer: String
     } finally {
         // 如果需要关闭输入的 Image 列表
         if (closeInputImages) {
+            // 组装阶段常会持有临时图片对象，显式收口可避免长链路累计原生资源。
             imgList.forEach { runCatching { it.close() } }
         }
     }
 }
 
+/**
+ * 生成动态主体各模块对应的图片列表。
+ */
 suspend fun DynamicItem.Modules.makeGeneral(
     session: DrawingSession,
     time: String,
@@ -331,6 +361,9 @@ suspend fun DynamicItem.Modules.makeGeneral(
     }
 }
 
+/**
+ * 绘制专属动态的默认占位图。
+ */
 fun drawBlockedDefault(session: DrawingSession): Image {
     val bgImg = with(session) {
         Image.makeFromEncoded(loadResourceBytes("image/Blocked_BG_Day.png")).track()
@@ -369,12 +402,21 @@ fun drawBlockedDefault(session: DrawingSession): Image {
     }
 }
 
+/**
+ * 计算文本在矩形中的垂直基线位置。
+ */
 fun Rect.textVertical(text: TextLine) =
     bottom - (height - text.capHeight) / 2
 
+/**
+ * 计算标签卡片文字的垂直基线位置。
+ */
 internal fun labelCardTextBaseline(rrect: RRect, textLine: TextLine): Float =
     Rect.makeXYWH(rrect.left, rrect.top, rrect.width, rrect.height).textVertical(textLine)
 
+/**
+ * 绘制通用卡片背景与描边。
+ */
 fun Canvas.drawCard(session: DrawingSession, rrect: RRect, bgColor: Int = theme.cardBgColor) {
     val fillPaint = session.createPaint {
         color = bgColor
@@ -397,10 +439,16 @@ fun Canvas.drawCard(session: DrawingSession, rrect: RRect, bgColor: Int = theme.
     drawRRect(rrect, strokePaint)
 }
 
+/**
+ * 使用颜色列表生成卡片背景图。
+ */
 fun makeCardBg(session: DrawingSession, height: Int, colors: List<Int>, block: (Canvas) -> Unit): Image {
     return makeCardBg(session, height, generateLinearGradient(colors), block)
 }
 
+/**
+ * 使用渐变颜色数组生成卡片背景图。
+ */
 fun makeCardBg(session: DrawingSession, height: Int, gradientColors: IntArray, block: (Canvas) -> Unit): Image {
     val imageRect = Rect.makeXYWH(0f, 0f, quality.imageWidth.toFloat(), height.toFloat())
     val surface = session.createSurface(imageRect.width.toInt(), height)
@@ -421,6 +469,9 @@ fun makeCardBg(session: DrawingSession, height: Int, gradientColors: IntArray, b
     }
 }
 
+/**
+ * 绘制头像、挂件和认证标识。
+ */
 suspend fun Canvas.drawAvatar(
     session: DrawingSession,
     face: String,
@@ -503,6 +554,9 @@ suspend fun Canvas.drawAvatar(
 
 }
 
+/**
+ * 绘制卡片角标。
+ */
 fun Canvas.drawBadge(
     session: DrawingSession,
     text: String,
@@ -556,6 +610,9 @@ fun Canvas.drawBadge(
     )
 }
 
+/**
+ * 绘制轻量标签卡片。
+ */
 fun Canvas.drawLabelCard(
     textLine: TextLine,
     x: Float,

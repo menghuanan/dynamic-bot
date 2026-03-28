@@ -46,6 +46,9 @@ internal fun drawFallbackLogo(session: DrawingSession, canvas: Canvas) {
     }
 }
 
+/**
+ * 生成通用二维码图片。
+ */
 fun qrCode(session: DrawingSession, url: String, width: Int, color: Int): Image {
     val qrCodeWriter = QRCodeWriter()
 
@@ -59,6 +62,7 @@ fun qrCode(session: DrawingSession, url: String, width: Int, color: Int): Image 
     val c = Color.getRGB(color)
     val cc = c[0] + c[1] + c[2]
     val ccc = if (cc > 382) {
+        // 过亮前景色会削弱二维码对比度，先调深后再编码更稳妥。
         val hsb = rgb2hsb(c[0], c[1], c[2])
         hsb[1] = if (hsb[1] + 0.25f > 1f) 1f else hsb[1] + 0.25f
         val rgb = hsb2rgb(hsb[0], hsb[1], hsb[2])

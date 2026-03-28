@@ -14,10 +14,16 @@ import top.bilibili.skia.SkiaManager
 import kotlin.math.abs
 
 
+/**
+ * 根据主题色列表生成直播卡片图片并缓存到磁盘。
+ */
 suspend fun LiveInfo.makeDrawLive(colors: List<Int>, subject: String? = null, color: String? = null): String {
     return makeDrawLive(colors.first(), generateLinearGradient(colors), subject, color)
 }
 
+/**
+ * 根据主色和背景渐变生成直播卡片图片并缓存到磁盘。
+ */
 suspend fun LiveInfo.makeDrawLive(themeColor: Int, backgroundColors: IntArray, subject: String? = null, color: String? = null): String {
     return SkiaManager.executeDrawing {
         val live = this@makeDrawLive.drawLive(this, themeColor)
@@ -29,6 +35,9 @@ suspend fun LiveInfo.makeDrawLive(themeColor: Int, backgroundColors: IntArray, s
     }
 }
 
+/**
+ * 将直播信息绘制为完整卡片图像。
+ */
 suspend fun LiveInfo.drawLive(session: DrawingSession, qrCodeColor: Int): Image {
     val margin = quality.cardMargin * 2
 
@@ -115,6 +124,9 @@ suspend fun LiveInfo.drawLive(session: DrawingSession, qrCodeColor: Int): Image 
     }
 }
 
+/**
+ * 绘制直播卡片顶部的主播信息区域。
+ */
 suspend fun LiveInfo.drawAvatar(session: DrawingSession, qrCodeColor: Int): Image {
     val liveFace = face
     val liveTitle = title
@@ -181,6 +193,9 @@ suspend fun LiveInfo.drawAvatar(session: DrawingSession, qrCodeColor: Int): Imag
 }
 
 @Suppress("UNUSED_PARAMETER")
+/**
+ * 绘制直播卡片右侧装饰，目前主要用于二维码挂件。
+ */
 fun Canvas.drawLiveOrnament(session: DrawingSession, link: String?, qrCodeColor: Int?, label: String?) {
     when (BiliConfigManager.config.imageConfig.cardOrnament) {
         "QrCode" -> {
