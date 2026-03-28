@@ -8,6 +8,9 @@ import top.bilibili.utils.normalizeContactSubject
 import java.io.File
 import java.nio.file.Paths
 
+/**
+ * 配置与持久化数据的统一加载、保存和迁移入口。
+ */
 object BiliConfigManager {
     private val logger = LoggerFactory.getLogger(BiliConfigManager::class.java)
     private const val CURRENT_DATA_VERSION = 3
@@ -30,6 +33,9 @@ object BiliConfigManager {
         ),
     )
 
+    /**
+     * 初始化配置目录、配置对象和持久化数据。
+     */
     fun init() {
         configDir.mkdirs()
         dataDir.mkdirs()
@@ -41,6 +47,9 @@ object BiliConfigManager {
         logger.info("数据加载完成")
     }
 
+    /**
+     * 从磁盘加载主配置；文件不存在时创建默认配置。
+     */
     private fun loadConfig(): BiliConfig {
         return try {
             if (configFile.exists()) {
@@ -58,10 +67,14 @@ object BiliConfigManager {
         }
     }
 
+    /**
+     * 从磁盘加载业务数据，并在必要时执行旧版本迁移。
+     */
     private fun loadData(): BiliData {
         return try {
             val oldDataFile = File(dataDir, "BiliData.yml")
             if (!dataFile.exists() && oldDataFile.exists()) {
+                // 先复制旧位置数据，是为了在升级路径时尽量保住已有订阅状态。
                 logger.info("检测到旧数据文件，正在迁移到新位置")
                 oldDataFile.copyTo(dataFile, overwrite = false)
             }
@@ -101,6 +114,9 @@ object BiliConfigManager {
         }
     }
 
+    /**
+     * 根据数据版本执行兼容迁移，并在内容变更时提升版本号。
+     */
     private fun migrateDataIfNeeded(data: BiliData): Boolean {
         var changed = false
 
@@ -108,6 +124,7 @@ object BiliConfigManager {
             data.dynamic.values.forEach { sub ->
                 if (sub.sourceRefs.isEmpty() && sub.contacts.isNotEmpty()) {
                     sub.contacts.forEach { contact ->
+                        // 补齐 direct 引用，是为了让旧订阅数据接入新的来源追踪模型。
                         sub.sourceRefs.add("direct:$contact")
                     }
                     changed = true
@@ -133,6 +150,9 @@ object BiliConfigManager {
         return changed
     }
 
+    /**
+     * 将历史联系人 subject 迁移为当前统一格式。
+     */
     private fun migrateLegacyContactSubjects(data: BiliData): Boolean {
         var changed = false
 
@@ -182,6 +202,7 @@ object BiliConfigManager {
             changed = migrateStringSet(group.contacts) || changed
             changed = migrateStringSet(group.adminContacts) || changed
             if (group.creatorContact.isBlank() && group.creator > 0L) {
+                // 旧数据只存数字 QQ 号时补全 subject，是为了后续统一按平台联系人处理权限。
                 group.creatorContact = "onebot11:private:${group.creator}"
                 changed = true
             } else {
@@ -193,6 +214,7 @@ object BiliConfigManager {
             }
             if (group.adminContacts.isEmpty() && group.admin.isNotEmpty()) {
                 group.admin.forEach { adminId ->
+                    // 这里回填管理员联系人集合，是为了兼容旧版只存数字管理员 ID 的数据结构。
                     group.adminContacts.add("onebot11:private:$adminId")
                 }
                 changed = true
@@ -203,6 +225,7 @@ object BiliConfigManager {
         }
         if (data.linkParseBlacklist.isNotEmpty()) {
             data.linkParseBlacklist.forEach { userId ->
+                // 黑名单迁移到联系人格式后，后续才能跨平台复用同一套拦截逻辑。
                 data.linkParseBlacklistContacts.add("onebot11:private:$userId")
             }
             data.linkParseBlacklist.clear()
@@ -213,6 +236,9 @@ object BiliConfigManager {
         return changed
     }
 
+    /**
+     * 迁移纯字符串集合中的联系人 subject。
+     */
     private fun migrateStringSet(values: MutableSet<String>): Boolean {
         val migrated = linkedSetOf<String>()
         var changed = false
@@ -231,6 +257,9 @@ object BiliConfigManager {
         return changed
     }
 
+    /**
+     * 迁移带 `direct:` 前缀的订阅来源引用集合。
+     */
     private fun migrateSourceRefSet(values: MutableSet<String>): Boolean {
         val migrated = linkedSetOf<String>()
         var changed = false
@@ -259,6 +288,9 @@ object BiliConfigManager {
         return changed
     }
 
+    /**
+     * 迁移模板到联系人集合的绑定映射。
+     */
     private fun migrateTemplateBindings(
         source: MutableMap<String, MutableSet<String>>,
     ): MigrationResult<MutableMap<String, MutableSet<String>>> {
@@ -281,6 +313,9 @@ object BiliConfigManager {
         return MigrationResult(if (changed) result.toMutableMap() else source, changed)
     }
 
+    /**
+     * 迁移以联系人 subject 为键的嵌套映射。
+     */
     private fun <T> migrateNestedMap(
         source: MutableMap<String, T>,
     ): MigrationResult<MutableMap<String, T>> {
@@ -300,10 +335,14 @@ object BiliConfigManager {
         )
     }
 
+    /**
+     * 在归一化键冲突时合并旧值与新值，尽量避免迁移过程中覆盖原有配置。
+     */
     @Suppress("UNCHECKED_CAST")
     private fun <T> mergeNestedValues(existing: T?, incoming: T): T {
         if (existing is MutableMap<*, *> && incoming is MutableMap<*, *>) {
             val merged = linkedMapOf<Any?, Any?>()
+            // 新值后写入，是为了让显式归一化后的条目优先覆盖旧键映射结果。
             merged.putAll(existing as MutableMap<Any?, Any?>)
             merged.putAll(incoming as MutableMap<Any?, Any?>)
             return merged.toMutableMap() as T
@@ -311,6 +350,9 @@ object BiliConfigManager {
         return incoming
     }
 
+    /**
+     * 将当前配置写回配置文件。
+     */
     fun saveConfig(configToSave: BiliConfig = config) {
         try {
             configFile.writeText(yaml.encodeToString(configToSave))
@@ -320,6 +362,9 @@ object BiliConfigManager {
         }
     }
 
+    /**
+     * 将当前业务数据写回数据文件，并对空写入结果做保护检查。
+     */
     fun saveData(dataToSave: BiliData = BiliData): Boolean {
         return try {
             val wrapper = BiliDataWrapper.from(dataToSave)
@@ -340,26 +385,41 @@ object BiliConfigManager {
         }
     }
 
+    /**
+     * 同时保存配置与业务数据。
+     */
     fun saveAll() {
         saveConfig()
         saveData()
     }
 
+    /**
+     * 重新加载主配置。
+     */
     fun reloadConfig() {
         config = loadConfig()
         logger.info("配置已重新加载")
     }
 
+    /**
+     * 重新加载业务数据。
+     */
     fun reloadData() {
         data = loadData()
         logger.info("数据已重新加载")
     }
 
+    /**
+     * 重新加载配置与业务数据。
+     */
     fun reloadAll() {
         reloadConfig()
         reloadData()
     }
 
+    /**
+     * 迁移操作的统一返回结果。
+     */
     private data class MigrationResult<T>(
         val value: T,
         val changed: Boolean,

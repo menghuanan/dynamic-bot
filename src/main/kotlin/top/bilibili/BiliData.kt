@@ -50,6 +50,9 @@ object BiliData {
     var linkParseBlacklistContacts: MutableSet<String> = mutableSetOf()
 }
 
+/**
+ * 订阅数据模型。
+ */
 @Serializable
 data class SubData(
     var name: String,
@@ -63,6 +66,9 @@ data class SubData(
     val banList: MutableMap<String, String> = mutableMapOf(),
 )
 
+/**
+ * 分组配置模型。
+ */
 @Serializable
 data class Group(
     val name: String,
@@ -72,6 +78,9 @@ data class Group(
     val adminContacts: MutableSet<String> = mutableSetOf(),
     val contacts: MutableSet<String> = mutableSetOf(),
 ) {
+    /**
+     * 以适合命令行和消息展示的格式输出分组摘要。
+     */
     override fun toString(): String {
         return """
 分组名: $name
@@ -86,6 +95,9 @@ ${contacts.joinToString("\n").ifEmpty { "暂无用户" }}
     }
 }
 
+/**
+ * 番剧订阅数据模型。
+ */
 @Serializable
 data class Bangumi(
     val title: String,
@@ -97,36 +109,54 @@ data class Bangumi(
     val contacts: MutableSet<String> = mutableSetOf(),
 )
 
+/**
+ * 过滤器类型。
+ */
 @Serializable
 enum class FilterType {
     TYPE,
     REGULAR
 }
 
+/**
+ * 动态过滤配置。
+ */
 @Serializable
 data class DynamicFilter(
     val typeSelect: TypeFilter = TypeFilter(),
     val regularSelect: RegularFilter = RegularFilter(),
 )
 
+/**
+ * 按动态类型过滤的配置。
+ */
 @Serializable
 data class TypeFilter(
     var mode: FilterMode = FilterMode.BLACK_LIST,
     val list: MutableList<DynamicFilterType> = mutableListOf()
 )
 
+/**
+ * 按正则表达式过滤的配置。
+ */
 @Serializable
 data class RegularFilter(
     var mode: FilterMode = FilterMode.BLACK_LIST,
     val list: MutableList<String> = mutableListOf()
 )
 
+/**
+ * 过滤器工作模式。
+ */
 @Serializable
 enum class FilterMode(val value: String) {
     WHITE_LIST("白名单"),
     BLACK_LIST("黑名单")
 }
 
+/**
+ * 可参与过滤的动态类型。
+ */
 @Serializable
 enum class DynamicFilterType(val value: String) {
     DYNAMIC("动态"),
@@ -137,6 +167,9 @@ enum class DynamicFilterType(val value: String) {
     LIVE("直播"),
 }
 
+/**
+ * 可配置的艾特全体策略。
+ */
 @Serializable
 enum class AtAllType(val value: String) {
     ALL("全部"),

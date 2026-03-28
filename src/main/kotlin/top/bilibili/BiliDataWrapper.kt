@@ -25,7 +25,9 @@ data class BiliDataWrapper(
     var linkParseBlacklistContacts: MutableSet<String> = mutableSetOf(),
 ) {
     companion object {
-        /** 从 BiliData object 创建包装类 */
+        /**
+         * 从 [BiliData] 单例创建可序列化的包装对象。
+         */
         fun from(biliData: BiliData): BiliDataWrapper {
             return BiliDataWrapper(
                 dataVersion = biliData.dataVersion,
@@ -46,7 +48,9 @@ data class BiliDataWrapper(
             )
         }
 
-        /** 应用到 BiliData object */
+        /**
+         * 将包装对象中的数据回填到 [BiliData] 单例。
+         */
         fun applyTo(wrapper: BiliDataWrapper, biliData: BiliData) {
             biliData.dataVersion = wrapper.dataVersion
             biliData.dynamic = wrapper.dynamic

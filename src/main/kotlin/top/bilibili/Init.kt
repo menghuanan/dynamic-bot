@@ -18,12 +18,18 @@ import kotlin.io.path.name
 
 private val fontsInitialized = AtomicBoolean(false)
 
+/**
+ * 初始化运行所需的账号、分组和字体数据。
+ */
 suspend fun initData() {
     checkCookie()
     initTagid()
     loadFonts()
 }
 
+/**
+ * 校验并加载登录 Cookie，同时尝试读取当前登录账号 UID。
+ */
 suspend fun checkCookie() {
     val accountConfig = BiliConfigManager.config.accountConfig
     val cookieFile = BiliBiliBot.dataFolder.resolve("cookies.json")
@@ -39,6 +45,7 @@ suspend fun checkCookie() {
             BiliBiliBot.logger.error("解析 cookies.json 失败", e)
         }
     }
+    // 仅在文件读取失败或缺失时回退配置项，是为了兼容旧部署方式并优先使用独立 Cookie 文件。
     if (BiliBiliBot.cookie.isEmpty()) BiliBiliBot.cookie.parse(accountConfig.cookie)
 
     try {
@@ -51,6 +58,9 @@ suspend fun checkCookie() {
     }
 }
 
+/**
+ * 初始化自动关注分组的标签 ID。
+ */
 suspend fun initTagid() {
     val accountConfig = BiliConfigManager.config.accountConfig
     if (accountConfig.autoFollow && accountConfig.followGroup.isNotEmpty()) {
@@ -61,6 +71,7 @@ suspend fun initTagid() {
                     return
                 }
             }
+            // 找不到现有分组时直接创建，是为了让自动关注能力在首次启动时即可生效。
             val res = biliClient.createGroup(accountConfig.followGroup) ?: throw Exception("创建分组失败: 返回结果为空")
             BiliBiliBot.tagid = res.tagId
         } catch (e: Exception) {
@@ -70,6 +81,9 @@ suspend fun initTagid() {
     }
 }
 
+/**
+ * 加载本地或内置字体资源，并确保整个进程只执行一次初始化。
+ */
 suspend fun loadFonts() {
     if (!fontsInitialized.compareAndSet(false, true)) {
         BiliBiliBot.logger.debug("字体已初始化，跳过重复加载")
@@ -118,6 +132,7 @@ suspend fun loadFonts() {
             }
         }
     } catch (e: Throwable) {
+        // 初始化失败时复位状态，是为了允许后续在修复环境后重新触发字体加载。
         fontsInitialized.set(false)
         throw e
     }

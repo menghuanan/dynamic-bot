@@ -6,6 +6,9 @@ import top.bilibili.service.TriggerMode
 import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.CacheType
 
+/**
+ * 插件运行期的主配置模型。
+ */
 @Serializable
 data class BiliConfig(
     // 管理员
@@ -54,6 +57,9 @@ data class BiliConfig(
     }
 }
 
+/**
+ * 功能开关配置。
+ */
 @Serializable
 data class EnableConfig(
     val debugMode: Boolean = false,
@@ -67,6 +73,9 @@ data class EnableConfig(
     val cacheClearEnable: Boolean = true,
 )
 
+/**
+ * 翻译相关配置。
+ */
 @Serializable
 data class TranslateConfig(
     val cutLine: String = "\n\n〓〓〓 翻译 〓〓〓\n",
@@ -79,6 +88,9 @@ data class TranslateConfig(
     )
 }
 
+/**
+ * 图片渲染与配色配置。
+ */
 @Serializable
 data class ImageConfig(
     val quality: String = "1000w",
@@ -107,12 +119,18 @@ data class ImageConfig(
     }
 }
 
+/**
+ * 代理相关配置。
+ */
 @Serializable
 data class ProxyConfig(
     val proxy: List<String> = listOf(),
 //    val verifyUrl: String = "http://httpbin.org",
 )
 
+/**
+ * B 站账号与自动关注分组配置。
+ */
 @Serializable
 data class BiliAccountConfig(
     var cookie: String = "",
@@ -120,6 +138,9 @@ data class BiliAccountConfig(
     var followGroup: String = "Bot关注"
 )
 
+/**
+ * 动态与直播检测频率配置。
+ */
 @Serializable
 data class CheckConfig(
     var interval: Int = 15,
@@ -135,6 +156,9 @@ data class CheckConfig(
 )
 
 
+/**
+ * 推送节流相关配置。
+ */
 @Serializable
 data class PushConfig(
     val messageInterval: Long = 100,
@@ -142,6 +166,9 @@ data class PushConfig(
     val toShortLink: Boolean = false,
 )
 
+/**
+ * 文本模板配置。
+ */
 @Serializable
 data class TemplateConfig(
     var defaultDynamicPush: String = "OneMsg",
@@ -166,6 +193,9 @@ data class TemplateConfig(
     var footer: FooterConfig = FooterConfig(),
 )
 
+/**
+ * 页脚文案配置。
+ */
 @Serializable
 data class FooterConfig(
     var dynamicFooter: String = "",
@@ -173,6 +203,9 @@ data class FooterConfig(
     var footerAlign: String = "LEFT"
 )
 
+/**
+ * 本地缓存行为配置。
+ */
 @Serializable
 data class CacheConfig(
     val downloadOriginal: Boolean = true,
@@ -185,6 +218,9 @@ data class CacheConfig(
     )
 )
 
+/**
+ * 链接解析触发方式配置。
+ */
 @Serializable
 data class LinkResolveConfig(
     val triggerMode: TriggerMode = TriggerMode.At,

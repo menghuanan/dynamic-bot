@@ -14,6 +14,7 @@ object SkikoInitializer {
      */
     @JvmStatic
     fun initialize() {
+        // 只允许初始化一次，是为了避免运行中反复修改图形后端属性带来不可预期行为。
         if (initialized) return
         initialized = true
 

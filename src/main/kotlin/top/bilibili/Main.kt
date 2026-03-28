@@ -6,6 +6,9 @@ import kotlin.system.exitProcess
 
 private val logger = LoggerFactory.getLogger("Main")
 
+/**
+ * 返回当前程序版本标签，优先读取启动参数注入的版本号。
+ */
 internal fun currentVersionLabel(
     systemVersion: String? = System.getProperty("app.version"),
     implementationVersion: String? = BiliConfigManager::class.java.`package`?.implementationVersion,
@@ -16,11 +19,17 @@ internal fun currentVersionLabel(
     return resolvedVersion?.let(::normalizeVersionLabel) ?: "unknown"
 }
 
+/**
+ * 统一补齐版本号前缀 `v`。
+ */
 private fun normalizeVersionLabel(version: String): String {
     val trimmedVersion = version.trim()
     return if (trimmedVersion.startsWith("v")) trimmedVersion else "v$trimmedVersion"
 }
 
+/**
+ * 程序主入口。
+ */
 fun main(args: Array<String>) {
     SkikoInitializer.initialize()
 
@@ -56,6 +65,7 @@ fun main(args: Array<String>) {
 
         Runtime.getRuntime().addShutdownHook(
             Thread {
+                // 使用关闭钩子统一收尾，是为了在外部终止进程时也尽量释放 Bot 持有的资源。
                 logger.info("收到停止信号，正在关闭...")
                 try {
                     BiliBiliBot.stop()
