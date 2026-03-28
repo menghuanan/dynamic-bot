@@ -43,7 +43,7 @@ class OneBot11LocalFileImageRegressionTest {
     }
 
     @Test
-    fun `onebot11 adapter should convert local image files into base64 payloads`() = runBlocking {
+    fun `onebot11 adapter should keep local image files as file uri payloads`() = runBlocking {
         val tempImage = createTempFile(prefix = "onebot11-local-file-", suffix = ".png")
         val transport = FakeTransport()
         val adapter = OneBot11Adapter(transport)
@@ -64,12 +64,12 @@ class OneBot11LocalFileImageRegressionTest {
             val filePayload = imageSegment.data.getValue("file")
             assertEquals("image", imageSegment.type)
             assertTrue(
-                filePayload.startsWith("base64://"),
-                "local image files should be encoded into base64 payloads before leaving the adapter",
+                filePayload.startsWith("file:///"),
+                "local image files should stay as file URIs until the vendor client decides whether sendMode requires base64",
             )
             assertFalse(
-                filePayload.startsWith("file://"),
-                "local image files should no longer be forwarded as file:// URLs",
+                filePayload.startsWith("base64://"),
+                "generic adapter should not eagerly convert local image files into base64 payloads",
             )
         } finally {
             // 删除临时文件，避免测试运行后污染仓库外部 temp 目录。

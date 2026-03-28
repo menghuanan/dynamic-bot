@@ -14,9 +14,7 @@ import top.bilibili.connector.PlatformType
 import top.bilibili.connector.onebot11.core.OneBot11MessageEvent
 import top.bilibili.connector.onebot11.core.OneBot11MessageSegment
 import top.bilibili.connector.onebot11.core.OneBot11Transport
-import java.io.File
-import java.net.URI
-import java.nio.file.Paths
+import top.bilibili.utils.ImageCache
 import java.util.Base64
 
 open class OneBot11Adapter(
@@ -98,10 +96,10 @@ open class OneBot11Adapter(
     private fun resolveImageFile(source: ImageSource): String {
         return when (source) {
             is ImageSource.LocalFile -> {
-                if (source.path.startsWith("base64://")) {
+                if (source.path.startsWith("file://") || source.path.startsWith("base64://")) {
                     source.path
                 } else {
-                    encodeLocalImageFile(resolveLocalImageFile(source.path))
+                    ImageCache.toFileUrl(source.path)
                 }
             }
             is ImageSource.RemoteUrl -> source.url
@@ -110,36 +108,11 @@ open class OneBot11Adapter(
     }
 
     /**
-     * 将本地图片文件读取为 base64 transport payload，确保 OneBot11 发送端不再透传 file:// URL。
-     */
-    private fun encodeLocalImageFile(file: File): String {
-        require(file.exists() && file.isFile) {
-            "OneBot11 local image file does not exist: ${file.absolutePath}"
-        }
-        return encodeBinaryImage(file.readBytes())
-    }
-
-    /**
      * 统一生成 base64:// 图片载荷，避免 LocalFile 与 Binary 走出两套编码格式。
      */
     private fun encodeBinaryImage(bytes: ByteArray): String {
         val encoded = Base64.getEncoder().encodeToString(bytes)
         return "base64://$encoded"
-    }
-
-    /**
-     * 兼容普通路径和 file:// 路径输入，统一收口为适配器可读取的本地文件对象。
-     */
-    private fun resolveLocalImageFile(path: String): File {
-        if (!path.startsWith("file://")) {
-            return File(path)
-        }
-        return runCatching {
-            Paths.get(URI(path)).toFile()
-        }.getOrElse {
-            val normalized = path.removePrefix("file:///").removePrefix("file://")
-            File(normalized)
-        }
     }
 
     companion object {

@@ -215,7 +215,7 @@ class OneBot11AdapterTest {
     }
 
     @Test
-    fun `local file and remote url images should keep adapter side transport ownership`() = runBlocking {
+    fun `local file and remote url images should preserve neutral adapter payloads`() = runBlocking {
         val tempImage = createTempFile(prefix = "onebot11-adapter-", suffix = ".png")
         val transport = FakeTransport()
         val adapter = OneBot11Adapter(transport)
@@ -238,8 +238,8 @@ class OneBot11AdapterTest {
             val localImageSegment = transport.lastSentMessage[0]
             val remoteImageSegment = transport.lastSentMessage[1]
             assertTrue(
-                localImageSegment.data.getValue("file").startsWith("base64://"),
-                "adapter should convert local files into base64 payloads before transport",
+                localImageSegment.data.getValue("file").startsWith("file:///"),
+                "generic adapter should keep local files as file URIs so vendor clients can apply their own send-mode policies",
             )
             assertEquals(
                 "https://example.com/cover.png",
