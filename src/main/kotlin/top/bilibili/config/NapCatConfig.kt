@@ -7,6 +7,9 @@ import top.bilibili.connector.PlatformAdapterKind
 import top.bilibili.connector.PlatformType
 import top.bilibili.utils.normalizeContactSubject
 
+/**
+ * OneBot11/NapCat 连接参数配置。
+ */
 @Serializable
 data class NapCatConfig(
     val host: String = "127.0.0.1",
@@ -27,11 +30,17 @@ data class NapCatConfig(
     @SerialName("connect_timeout")
     val connectTimeout: Long = 10000,
 ) {
+    /**
+     * 生成用于建立 WebSocket 连接的地址。
+     */
     fun getWebSocketUrl(): String {
         val protocol = if (useTls) "wss" else "ws"
         return "$protocol://$host:$port"
     }
 
+    /**
+     * 校验当前 NapCat 配置是否满足最基本的连接要求。
+     */
     fun validate(): Boolean {
         val normalizedSendMode = sendMode.lowercase()
         return host.isNotBlank() &&
@@ -40,6 +49,9 @@ data class NapCatConfig(
     }
 }
 
+/**
+ * 单个推送目标的配置项。
+ */
 @Serializable
 data class TargetConfig(
     val type: String,
@@ -65,12 +77,21 @@ data class TargetConfig(
     }
 
     companion object {
+        /**
+         * 创建群聊目标配置。
+         */
         fun group(groupId: Long) = TargetConfig("group", groupId)
 
+        /**
+         * 创建私聊目标配置。
+         */
         fun private(userId: Long) = TargetConfig("private", userId)
     }
 }
 
+/**
+ * 单个群管理员映射配置。
+ */
 @Serializable
 data class GroupAdminConfig(
     val groupId: Long = 0L,
@@ -106,6 +127,9 @@ data class GroupAdminConfig(
     }
 }
 
+/**
+ * QQ 官方机器人接入配置。
+ */
 @Serializable
 data class QQOfficialConfig(
     @SerialName("app_id")
@@ -116,6 +140,9 @@ data class QQOfficialConfig(
     val botToken: String = "",
 )
 
+/**
+ * 当前选中平台的统一配置包装。
+ */
 @Serializable
 data class PlatformConfig(
     val type: PlatformType = PlatformType.ONEBOT11,
@@ -127,6 +154,9 @@ data class PlatformConfig(
     val qqOfficial: QQOfficialConfig = QQOfficialConfig(),
 )
 
+/**
+ * Bot 运行期使用的根配置对象。
+ */
 @Serializable
 data class BotConfig(
     val platform: PlatformConfig = PlatformConfig(),
@@ -137,6 +167,9 @@ data class BotConfig(
     @SerialName("first_run_flag")
     var firstRunFlag: Int = 0,
 ) {
+    /**
+     * 返回当前启用的平台类型。
+     */
     fun selectedPlatformType(): PlatformType = platform.type
 
     /**
@@ -154,6 +187,9 @@ data class BotConfig(
         }
     }
 
+    /**
+     * 返回适配器字段已经归一化后的平台配置。
+     */
     fun normalizedPlatformConfig(): PlatformConfig {
         val normalizedAdapter = when (selectedPlatformType()) {
             PlatformType.ONEBOT11 -> normalizeAdapterKind(platform.adapter).serialName()
@@ -166,12 +202,19 @@ data class BotConfig(
         }
     }
 
+    /**
+     * 返回整体字段已经归一化后的 Bot 配置。
+     */
     fun normalizedBotConfig(): BotConfig {
         val normalizedPlatform = normalizedPlatformConfig()
         return if (normalizedPlatform == platform) this else copy(platform = normalizedPlatform)
     }
 
+    /**
+     * 在新旧结构并存时，统一解析当前应该使用的 OneBot11 配置。
+     */
     fun selectedOneBot11Config(): NapCatConfig {
+        // 只有在新版节点仍为空时才回退 legacy 字段，避免旧字段覆盖显式配置的新结构。
         return if (platform.onebot11 == NapCatConfig() && napcat != NapCatConfig()) {
             napcat
         } else {
@@ -179,6 +222,9 @@ data class BotConfig(
         }
     }
 
+    /**
+     * 校验当前选择的平台配置是否完整可用。
+     */
     fun validateSelectedPlatform(): Boolean {
         return when (selectedPlatformType()) {
             PlatformType.ONEBOT11 -> selectedOneBot11Config().validate()
@@ -189,18 +235,25 @@ data class BotConfig(
         }
     }
 
+    /**
+     * 将配置中的适配器文本映射为受支持的适配器枚举。
+     */
     private fun normalizeAdapterKind(rawAdapter: String?): PlatformAdapterKind {
         val normalized = rawAdapter?.trim()?.lowercase().orEmpty()
         return when {
             normalized == PlatformAdapterKind.NAPCAT.serialName() -> PlatformAdapterKind.NAPCAT
             normalized == PlatformAdapterKind.LLBOT.serialName() -> PlatformAdapterKind.LLBOT
             normalized == PlatformAdapterKind.ONEBOT11.serialName() -> PlatformAdapterKind.ONEBOT11
+            // 空字符串只在旧配置迁移阶段才推断为 napcat，避免把真正缺省值误判为 legacy 适配器。
             normalized.isBlank() && napcat != NapCatConfig() && platform.onebot11 == NapCatConfig() -> PlatformAdapterKind.NAPCAT
             else -> PlatformAdapterKind.ONEBOT11
         }
     }
 }
 
+/**
+ * 将适配器枚举转换为配置文件中持久化使用的字符串。
+ */
 private fun PlatformAdapterKind.serialName(): String = when (this) {
     PlatformAdapterKind.NAPCAT -> "napcat"
     PlatformAdapterKind.LLBOT -> "llbot"

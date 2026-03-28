@@ -8,12 +8,18 @@ import kotlinx.serialization.encodeToString
 import java.io.File
 import java.nio.charset.StandardCharsets
 
+/**
+ * 描述一次 bot 配置文件加载的结果及其副作用。
+ */
 internal data class BotConfigFileLoadResult(
     val config: BotConfig,
     val createdDefault: Boolean = false,
     val rewritten: Boolean = false,
 )
 
+/**
+ * 负责以统一格式读写 `bot.yml`。
+ */
 internal class BotConfigFileStore(
     private val configDir: File,
     private val yaml: Yaml = Yaml.default,
@@ -68,6 +74,9 @@ private data class BotConfigDecodeResult(
     val requiresRewrite: Boolean,
 )
 
+/**
+ * 兼容旧版 `bot.yml` 结构的中间解码模型。
+ */
 @Serializable
 private data class BotConfigCompatDocument(
     val platform: PlatformCompatDocument = PlatformCompatDocument(),
@@ -100,6 +109,9 @@ private data class BotConfigCompatDocument(
     }
 }
 
+/**
+ * 平台配置的兼容解码模型。
+ */
 @Serializable
 private data class PlatformCompatDocument(
     val type: top.bilibili.connector.PlatformType = top.bilibili.connector.PlatformType.ONEBOT11,
@@ -122,6 +134,9 @@ private data class PlatformCompatDocument(
     }
 }
 
+/**
+ * 写回磁盘时使用的标准配置结构。
+ */
 @Serializable
 private data class CanonicalBotConfigDocument(
     val platform: PlatformConfig = PlatformConfig(),

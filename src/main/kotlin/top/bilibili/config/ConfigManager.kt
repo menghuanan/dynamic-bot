@@ -3,6 +3,9 @@ package top.bilibili.config
 import org.slf4j.LoggerFactory
 import java.io.File
 
+/**
+ * 统一管理 `bot.yml` 的加载、保存与重载流程。
+ */
 object ConfigManager {
     private val logger = LoggerFactory.getLogger(ConfigManager::class.java)
 
@@ -13,6 +16,9 @@ object ConfigManager {
     lateinit var botConfig: BotConfig
         private set
 
+    /**
+     * 初始化运行期配置，并在必要时创建或迁移 `bot.yml`。
+     */
     fun init() {
         if (!configDir.exists()) {
             configDir.mkdirs()
@@ -20,6 +26,7 @@ object ConfigManager {
         }
 
         try {
+            // 启动阶段优先保证服务可继续运行，因此异常时回退到默认配置并立即落盘。
             val loadResult = store.loadWithMetadata()
             botConfig = loadResult.config
             if (loadResult.createdDefault) {
@@ -41,6 +48,9 @@ object ConfigManager {
         }
     }
 
+    /**
+     * 将当前运行期配置规范化后保存到磁盘。
+     */
     fun saveConfig() {
         try {
             botConfig = botConfig.normalizedBotConfig()
@@ -51,6 +61,9 @@ object ConfigManager {
         }
     }
 
+    /**
+     * 重新执行一次完整的配置初始化流程。
+     */
     fun reload() {
         logger.info("正在重新加载配置...")
         init()
