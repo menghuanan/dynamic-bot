@@ -35,24 +35,39 @@ open class OneBot11Adapter(
         )
     }
 
+    /**
+     * 启动底层 OneBot11 传输，保持平台层只面对统一适配器生命周期。
+     */
     override fun start() {
         transport.start()
     }
 
+    /**
+     * 停止底层 OneBot11 传输，确保连接关闭与协程回收沿统一 suspend 生命周期执行。
+     */
     override suspend fun stop() {
         transport.stop()
     }
 
+    /**
+     * 将平台无关消息片段映射为 OneBot11 段并按联系人类型发送，避免业务层继续处理数字 ID 与协议差异。
+     */
     override suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean {
         if (contact.platform != PlatformType.ONEBOT11) return false
         val numericId = contact.id.toLongOrNull() ?: return false
         return transport.sendMessage(contact.type, numericId, toMessageSegments(message))
     }
 
+    /**
+     * 透传底层 OneBot11 传输运行状态，供平台层统一监控连接健康度。
+     */
     override fun runtimeStatus(): PlatformRuntimeStatus {
         return transport.runtimeStatus()
     }
 
+    /**
+     * 对群聊联系人走显式群可达性探测，对私聊默认按 OneBot11 常规语义视为可发送。
+     */
     override suspend fun isContactReachable(contact: PlatformContact): Boolean {
         if (contact.platform != PlatformType.ONEBOT11) return false
         if (contact.type != PlatformChatType.GROUP) return true
@@ -60,6 +75,9 @@ open class OneBot11Adapter(
         return isGroupReachable(groupId)
     }
 
+    /**
+     * 仅在群聊上下文尝试判断 @全体 能力，避免私聊或跨平台联系人误入 vendor 权限探测。
+     */
     override suspend fun canAtAll(contact: PlatformContact): Boolean {
         if (contact.platform != PlatformType.ONEBOT11 || contact.type != PlatformChatType.GROUP) {
             return false
@@ -82,6 +100,9 @@ open class OneBot11Adapter(
         return false
     }
 
+    /**
+     * 将统一发送模型映射为 OneBot11 消息段，避免各 vendor 重复实现同一套基础转换。
+     */
     private fun toMessageSegments(parts: List<OutgoingPart>): List<OneBot11MessageSegment> {
         return parts.map { part ->
             when (part) {
@@ -93,6 +114,9 @@ open class OneBot11Adapter(
         }
     }
 
+    /**
+     * 统一解析图片来源到 OneBot11 `file` 字段，避免本地文件、远程地址与二进制输入走散。
+     */
     private fun resolveImageFile(source: ImageSource): String {
         return when (source) {
             is ImageSource.LocalFile -> {
@@ -116,6 +140,9 @@ open class OneBot11Adapter(
     }
 
     companion object {
+        /**
+         * 将标准 OneBot11 消息事件归一化为平台无关的入站模型，供命令与监听链统一消费。
+         */
         fun normalize(event: OneBot11MessageEvent): PlatformInboundMessage {
             val chatType = if (event.messageType == "group") {
                 PlatformChatType.GROUP
@@ -137,6 +164,7 @@ open class OneBot11Adapter(
                 if (textContent.isNotEmpty()) {
                     add(textContent)
                 } else if (shouldUseRawMessageForSearch(event.rawMessage)) {
+                    // 只有纯文本 raw_message 才回流到搜索词，避免 CQ 码把图片/回复误识别成可搜索文本。
                     add(event.rawMessage.trim())
                 }
                 extractMiniAppUrl(event.message)?.let(::add)
@@ -156,6 +184,9 @@ open class OneBot11Adapter(
             )
         }
 
+        /**
+         * 从 OneBot11 的 json 段中提取小程序或卡片跳转链接，供上层链接解析链补足搜索文本。
+         */
         private fun extractMiniAppUrl(messageSegments: List<OneBot11MessageSegment>): String? {
             val jsonData = messageSegments
                 .firstOrNull { it.type == "json" }

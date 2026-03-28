@@ -113,6 +113,9 @@ internal class QQOfficialAdapter(
         return super.guardCapability(request)
     }
 
+    /**
+     * 启动 QQ 官方网关并等待首轮握手完成，避免外层把仅创建对象误判为已可用连接。
+     */
     override fun start() {
         if (!started.compareAndSet(false, true)) {
             logger.info("QQ 官方适配器已在运行中，忽略重复启动")
@@ -133,6 +136,9 @@ internal class QQOfficialAdapter(
         }
     }
 
+    /**
+     * 停止 QQ 官方适配器并回收网关、缓存与传输资源，避免退场后保留旧会话状态。
+     */
     override suspend fun stop() {
         if (!started.compareAndSet(true, false)) {
             return
@@ -148,6 +154,9 @@ internal class QQOfficialAdapter(
         transport.close()
     }
 
+    /**
+     * 按 QQ 官方平台约束执行发送，并在图片或 @全体 不可用时显式走失败或文本降级。
+     */
     override suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean {
         if (contact.platform != PlatformType.QQ_OFFICIAL) return false
         if (!started.get() || !connected.get()) return false
@@ -182,6 +191,7 @@ internal class QQOfficialAdapter(
                     logger.warn("QQ 官方平台当前无法发送本地/二进制图片，且消息无可降级文本: {}", contact.toSubject())
                     return false
                 }
+                // QQ 官方对非公网图片没有兜底上传能力，因此这里只能退回纯文本而不是伪造空 media 请求。
                 logger.warn("QQ 官方平台当前仅直接支持公网图片 URL，已降级为纯文本发送: {}", contact.toSubject())
                 postMessage(contact, msgType = 0, content = sendPlan.content, media = null, replyId = sendPlan.replyId)
                 return true
@@ -189,6 +199,7 @@ internal class QQOfficialAdapter(
 
             resolvedImageUrls.forEachIndexed { index, imageUrl ->
                 val media = uploadMedia(contact, imageUrl)
+                // 文本和回复只放在第一条图片消息里，避免多图拆分后把同一段内容重复发给用户。
                 val content = if (index == 0) sendPlan.content else ""
                 postMessage(
                     contact = contact,
@@ -204,6 +215,9 @@ internal class QQOfficialAdapter(
         }.getOrDefault(false)
     }
 
+    /**
+     * 汇总 QQ 官方当前连接态、重连次数与入站背压状态，供运行时监控统一读取。
+     */
     override fun runtimeStatus(): PlatformRuntimeStatus {
         return PlatformRuntimeStatus(
             connected = connected.get(),
@@ -214,6 +228,9 @@ internal class QQOfficialAdapter(
     }
 
     // QQ 官方的群聊/私聊可达性依赖运行时已接受的会话，避免业务层误判“所有 openid 都可主动发送”。
+    /**
+     * 仅把运行期已建立过会话的联系人视为可达，避免对任意 openid 盲目尝试主动发送。
+     */
     override suspend fun isContactReachable(contact: PlatformContact): Boolean {
         if (contact.platform != PlatformType.QQ_OFFICIAL) return false
         if (!connected.get()) return false
@@ -247,6 +264,9 @@ internal class QQOfficialAdapter(
     }
 
     // QQ 官方平台没有 OneBot 风格的 @全体能力，这里始终显式返回 false 触发上层降级。
+    /**
+     * 显式声明 QQ 官方不支持 OneBot 风格的 @全体，要求上层改走降级或提示逻辑。
+     */
     override suspend fun canAtAll(contact: PlatformContact): Boolean = false
 
     private fun hasCredentials(): Boolean {
@@ -289,6 +309,7 @@ internal class QQOfficialAdapter(
 
         try {
             withTimeout(15_000) {
+                // 首轮或重连都必须等 READY/RESUMED，避免外层拿到一个尚未完成鉴权的会话。
                 newReadySignal.await()
             }
             reconnectAttempts.set(0)
@@ -521,6 +542,7 @@ internal class QQOfficialAdapter(
         val expiresInSeconds = response["expires_in"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
         check(token.isNotBlank()) { "QQ 官方 access token 获取失败: $response" }
 
+        // 预留一小段刷新窗口，避免请求恰好撞上服务端侧的过期切换点。
         accessToken = token
         accessTokenExpireAtMillis = now + (expiresInSeconds * 1000L) - 10_000L
         return token
@@ -721,6 +743,7 @@ internal class QQOfficialAdapter(
     private suspend fun runReconnectLoop() {
         while (started.get() && reconnectGuard.get()) {
             val attempt = reconnectAttempts.incrementAndGet()
+            // 先停掉旧代际的心跳和收帧协程，避免新旧连接并发写同一份 session 状态。
             heartbeatJob?.cancelAndJoin()
             gatewayCollectJob?.cancelAndJoin()
             gatewaySession?.close("reconnect")

@@ -24,6 +24,9 @@ class PlatformConnectorManager(
     val eventFlow: Flow<PlatformInboundMessage>
         get() = adapter().eventFlow
 
+    /**
+     * 返回 manager 是否已持有运行期适配器实例，供启动链区分“已初始化”与“已启动”。
+     */
     fun isInitialized(): Boolean = synchronized(lifecycleLock) { platformAdapter != null }
 
     /**
@@ -33,6 +36,9 @@ class PlatformConnectorManager(
         adapter()
     }
 
+    /**
+     * 统一启动当前平台适配器，并在异常时回滚生命周期状态避免残留半启动实例。
+     */
     fun start() {
         val adapterToStart = synchronized(lifecycleLock) {
             if (
@@ -104,6 +110,9 @@ class PlatformConnectorManager(
             ?: CapabilityGuard.unsupported("platform adapter is not initialized")
     }
 
+    /**
+     * 返回当前平台运行状态；未初始化时也提供默认值，避免外层监控再判空。
+     */
     fun runtimeStatus(): PlatformRuntimeStatus {
         return currentAdapter()?.runtimeStatus()
             ?: PlatformRuntimeStatus(

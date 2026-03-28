@@ -55,6 +55,9 @@ sealed interface ImageSource {
     ) : ImageSource
 
     companion object {
+        /**
+         * 按来源前缀推断图片输入类型，避免调用方在最常见的路径与 URL 场景手动分支。
+         */
         fun from(pathOrUrl: String): ImageSource {
             return when {
                 pathOrUrl.startsWith("http://") ||
@@ -92,14 +95,29 @@ sealed interface OutgoingPart {
     }
 
     companion object {
+        /**
+         * 构造文本消息片段，供业务层按统一发送模型拼装内容。
+         */
         fun text(text: String): OutgoingPart = Text(text)
 
+        /**
+         * 直接使用已归一化的图片来源构造图片片段，避免发送层再关心来源细节。
+         */
         fun image(source: ImageSource): OutgoingPart = Image(source)
 
+        /**
+         * 按常见路径或 URL 输入快速构造图片片段，减少调用方样板代码。
+         */
         fun image(pathOrUrl: String): OutgoingPart = Image(ImageSource.from(pathOrUrl))
 
+        /**
+         * 构造 @全体 片段，供支持该能力的平台在发送阶段统一处理。
+         */
         fun atAll(): OutgoingPart = MentionAll
 
+        /**
+         * 构造回复片段，保持各平台回复能力都走同一抽象入口。
+         */
         fun reply(messageId: Int): OutgoingPart = Reply(messageId)
     }
 }

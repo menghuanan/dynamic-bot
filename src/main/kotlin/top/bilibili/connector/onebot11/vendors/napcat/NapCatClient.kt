@@ -109,6 +109,9 @@ class NapCatClient(
     }
 
     /** 启动客户端 */
+    /**
+     * 启动 NapCat 长连接与重连循环，供适配器层统一接通 vendor client 生命周期。
+     */
     fun start() {
         if (connectionJob?.isActive == true) {
             logger.info("NapCat WebSocket 客户端已在运行中，忽略重复启动")
@@ -123,6 +126,9 @@ class NapCatClient(
     }
 
     /** 停止客户端 */
+    /**
+     * 停止 NapCat client 并回收会话、队列和协程资源，避免停机后残留后台循环。
+     */
     suspend fun stop() {
         if (!stopping.compareAndSet(false, true)) {
             logger.info("NapCat WebSocket 客户端已在停止中")
@@ -167,6 +173,9 @@ class NapCatClient(
     }
 
     /** 连接循环（支持自动重连） */
+    /**
+     * 统一维护 NapCat 的连接与退避重试，避免上层生命周期代码直接感知 vendor 重连细节。
+     */
     private suspend fun connectLoop() {
         while (scope.isActive && !stopping.get()) {
             try {
@@ -205,6 +214,9 @@ class NapCatClient(
     }
 
     /** 建立 WebSocket 连接 */
+    /**
+     * 建立单次 NapCat 会话，并把登录态探测、收发循环与存活监控收口在同一连接代际里。
+     */
     private suspend fun connect() {
         logger.info("正在连接到 NapCat WebSocket 服务器...")
 
@@ -229,6 +241,7 @@ class NapCatClient(
             // 获取 Bot 的 QQ 号
             launch {
                 try {
+                    // 等首轮握手稳定后再拉取 selfId，避免把刚连上的瞬时波动误判成登录失败。
                     delay(500) // 等待连接稳定
                     val loginInfo = getLoginInfo()
                     if (loginInfo != null) {
@@ -247,6 +260,7 @@ class NapCatClient(
             // 启动发送协程
             val sendJob = launch {
                 for (payload in sendChannel) {
+                    // 发送前先扣减排队计数，避免阻塞发送时外部背压指标长期高估。
                     queuedMessageCount.updateAndGet { count -> if (count > 0) count - 1 else 0 }
                     try {
                         send(payload.rawJson)
@@ -345,6 +359,9 @@ class NapCatClient(
     }
 
     /** 处理收到的消息 */
+    /**
+     * 先按响应帧匹配挂起请求，再按事件类型尝试解析入站消息，避免一条帧被多套逻辑重复消费。
+     */
     private suspend fun handleMessage(text: String) {
         // 优先处理 API 响应，避免被后续消息事件分支吞掉
         try {
@@ -384,6 +401,9 @@ class NapCatClient(
     }
 
     /** 发送群消息 */
+    /**
+     * 通过 NapCat 标准群消息 action 发送消息段，保持群聊发送与私聊发送共用同一底层路径。
+     */
     suspend fun sendGroupMessage(groupId: Long, message: List<MessageSegment>): Boolean {
         return sendMessage(
             action = "send_group_msg",
@@ -394,6 +414,9 @@ class NapCatClient(
     }
 
     /** 发送私聊消息 */
+    /**
+     * 通过 NapCat 标准私聊 action 发送消息段，保持私聊发送与群聊发送共用同一底层路径。
+     */
     suspend fun sendPrivateMessage(userId: Long, message: List<MessageSegment>): Boolean {
         return sendMessage(
             action = "send_private_msg",
@@ -404,6 +427,9 @@ class NapCatClient(
     }
 
     /** 通用发送消息方法 */
+    /**
+     * 统一组装 OneBot action、等待响应并处理降级日志，避免群聊与私聊各自复制发送细节。
+     */
     private suspend fun sendMessage(
         action: String,
         targetKey: String,
@@ -423,6 +449,7 @@ class NapCatClient(
             val segmentsToSend = prepareSegmentsForSend(message) ?: return false
             val outgoingLogPreview = buildOutgoingLogPreview(segmentsToSend)
             val messageJson = if (config.messageFormat == "string" || config.messageFormat == "cqcode") {
+                // NapCat 在字符串模式下要求发送 CQ 码文本，否则会把结构化段当作非法请求处理。
                 JsonPrimitive(segmentsToSend.toCqCode())
             } else {
                 json.encodeToJsonElement(segmentsToSend)
@@ -487,6 +514,9 @@ class NapCatClient(
         }
     }
 
+    /**
+     * 统一把待发 JSON 放入发送队列，并在队列打满时只告警一次避免刷屏。
+     */
     private suspend fun enqueueOutgoingJson(payload: String, logPreview: String? = null) {
         val queuedPayload = QueuedOutgoingPayload(
             rawJson = payload,
@@ -508,6 +538,9 @@ class NapCatClient(
         queuedMessageCount.incrementAndGet()
     }
 
+    /**
+     * 在连接终止时统一唤醒所有等待中的请求，避免调用方永久挂起在已失效的 echo 上。
+     */
     private fun failPendingResponses(reason: String) {
         val pending = pendingResponses.entries.toList()
         pendingResponses.clear()
@@ -516,6 +549,9 @@ class NapCatClient(
         }
     }
 
+    /**
+     * 发送标准 OneBot action 并按 echo 等待响应，供发送链和能力探测链共享请求入口。
+     */
     private suspend fun sendActionAndAwaitResponse(
         action: String,
         params: Map<String, JsonElement> = emptyMap(),
@@ -544,6 +580,9 @@ class NapCatClient(
         }
     }
 
+    /**
+     * 按当前发送模式预处理图片段，确保 base64 模式下只把可验证的本地文件转成内联载荷。
+     */
     private suspend fun prepareSegmentsForSend(segments: List<MessageSegment>): List<MessageSegment>? {
         if (sendMode != "base64") {
             logger.debug("图片发送模式: file")
@@ -604,6 +643,9 @@ class NapCatClient(
         return convertedSegments
     }
 
+    /**
+     * 仅接受本地路径或 file:// 作为 base64 转换来源，避免远程 URL 被误当成可读本地文件。
+     */
     private fun resolveLocalFile(imageSource: String): File? {
         if (imageSource.startsWith("http://") || imageSource.startsWith("https://")) {
             return null
@@ -621,6 +663,9 @@ class NapCatClient(
         }
     }
 
+    /**
+     * 在字符串发送模式下把消息段编码为 CQ 码文本，兼容 NapCat 的旧格式接口。
+     */
     private fun List<MessageSegment>.toCqCode(): String {
         return joinToString("") { segment ->
             if (segment.type == "text") {
@@ -642,11 +687,20 @@ class NapCatClient(
     }
 
     /** 获取连接状态 */
+    /**
+     * 返回 NapCat 当前连接状态，供适配器与运行时状态汇总复用。
+     */
     fun isConnected(): Boolean = isConnected.get()
 
     /** 获取重连次数 */
+    /**
+     * 返回当前已累积的重连次数，供监控与退避观察使用。
+     */
     fun getReconnectAttempts(): Int = reconnectAttempts.get()
 
+    /**
+     * 通过群列表查询确认 Bot 当前是否仍在目标群中，避免把发送失败误当成群不可达。
+     */
     suspend fun isBotInGroup(groupId: Long): Boolean {
         val response = sendActionAndAwaitResponse(
             action = "get_group_list",
@@ -666,6 +720,9 @@ class NapCatClient(
         }
     }
 
+    /**
+     * 通过登录信息与群成员角色查询判断当前群上下文是否允许 @全体。
+     */
     suspend fun canAtAllInGroup(groupId: Long): Boolean {
         val selfId = getLoginInfo() ?: return false
         val response = sendActionAndAwaitResponse(
@@ -689,6 +746,9 @@ class NapCatClient(
     }
 
     /** 获取登录信息（Bot QQ 号） */
+    /**
+     * 请求当前登录 Bot 的 QQ 号，供权限探测和自消息识别复用。
+     */
     private suspend fun getLoginInfo(): Long? {
         if (!isConnected.get()) {
             if (stopping.get()) {

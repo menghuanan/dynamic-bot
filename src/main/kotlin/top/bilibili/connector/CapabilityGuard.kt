@@ -55,6 +55,9 @@ object CapabilityGuard {
         return CapabilityGuardResult.Unsupported(reason = reason)
     }
 
+    /**
+     * 按能力类型下钻到联系人或图片级校验，避免上层重复书写 capability 到 adapter 方法的映射。
+     */
     private suspend fun isAvailable(
         adapter: PlatformAdapter,
         request: CapabilityRequest,

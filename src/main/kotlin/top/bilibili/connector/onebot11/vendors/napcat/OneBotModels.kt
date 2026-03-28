@@ -46,10 +46,25 @@ data class MessageSegment(
     val data: Map<String, String> = emptyMap()
 ) {
     companion object {
+        /**
+         * 快速构造文本段，避免调用方重复拼装 `type + data` 结构。
+         */
         fun text(text: String) = MessageSegment("text", mapOf("text" to text))
+        /**
+         * 快速构造图片段，保持图片发送统一走 `file` 字段约定。
+         */
         fun image(file: String) = MessageSegment("image", mapOf("file" to file))
+        /**
+         * 构造指定成员的 @ 提及段，供命令链和通知链统一复用。
+         */
         fun at(qq: Long) = MessageSegment("at", mapOf("qq" to qq.toString()))
+        /**
+         * 构造 @全体 段，交由支持该能力的平台在发送阶段判定是否可用。
+         */
         fun atAll() = MessageSegment("at", mapOf("qq" to "all"))
+        /**
+         * 构造回复段，保持回复语义统一落在标准 OneBot 字段上。
+         */
         fun reply(id: Int) = MessageSegment("reply", mapOf("id" to id.toString()))
     }
 }

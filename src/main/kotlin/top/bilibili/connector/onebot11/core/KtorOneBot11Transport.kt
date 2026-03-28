@@ -80,6 +80,9 @@ class KtorOneBot11Transport(
     private val inboundEvents = MutableSharedFlow<OneBot11MessageEvent>(replay = 0, extraBufferCapacity = 100)
     override val eventFlow: Flow<OneBot11MessageEvent> = inboundEvents.asSharedFlow()
 
+    /**
+     * 启动 generic OneBot11 长连接循环，供适配器层统一接通协议传输。
+     */
     override fun start() {
         if (connectionJob?.isActive == true) {
             logger.info("generic OneBot11 transport 已在运行中")
@@ -91,6 +94,9 @@ class KtorOneBot11Transport(
         }
     }
 
+    /**
+     * 停止 generic OneBot11 传输并关闭底层客户端，避免停机后遗留悬挂连接。
+     */
     override suspend fun stop() {
         if (!stopping.compareAndSet(false, true)) {
             return
@@ -156,6 +162,9 @@ class KtorOneBot11Transport(
         }.isSuccess
     }
 
+    /**
+     * 返回 generic OneBot11 传输当前连接态与重连次数，供上层统一汇总运行时状态。
+     */
     override fun runtimeStatus(): PlatformRuntimeStatus {
         return PlatformRuntimeStatus(
             connected = connected.get(),
@@ -163,6 +172,9 @@ class KtorOneBot11Transport(
         )
     }
 
+    /**
+     * 串行维护 generic OneBot11 的重连循环，避免外层重复感知协议重试细节。
+     */
     private suspend fun connectLoop() {
         while (scope.coroutineContext[Job]?.isActive == true && !stopping.get()) {
             try {
@@ -213,9 +225,13 @@ class KtorOneBot11Transport(
         session = null
     }
 
+    /**
+     * 仅接收 OneBot11 message 事件并转换为通用模型，避免元事件进入业务入站流。
+     */
     private suspend fun handleFrame(payload: String) {
         val event = runCatching { json.decodeFromString<InboundMessageEvent>(payload) }.getOrNull() ?: return
         if (event.postType != "message") {
+            // generic 路径只暴露消息事件，避免上层在未声明能力时误依赖元事件副作用。
             return
         }
         inboundEvents.emit(

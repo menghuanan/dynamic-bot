@@ -49,10 +49,16 @@ private class NapCatTransport(
     override val eventFlow: Flow<OneBot11MessageEvent> =
         napCatClient.eventFlow.map(::toOneBot11MessageEvent)
 
+    /**
+     * 将通用传输启动请求桥接到 NapCat client，保持 OneBot11 适配层只依赖统一契约。
+     */
     override fun start() {
         napCatClient.start()
     }
 
+    /**
+     * 将通用传输停机请求桥接到 NapCat client 的 suspend 生命周期。
+     */
     override suspend fun stop() {
         napCatClient.stop()
     }
@@ -72,6 +78,9 @@ private class NapCatTransport(
         }
     }
 
+    /**
+     * 汇总 NapCat 连接与发送背压状态，供平台层统一暴露运行时健康信息。
+     */
     override fun runtimeStatus(): PlatformRuntimeStatus {
         return PlatformRuntimeStatus(
             connected = napCatClient.isConnected(),

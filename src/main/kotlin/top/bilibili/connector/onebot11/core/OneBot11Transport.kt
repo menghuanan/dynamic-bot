@@ -7,6 +7,9 @@ import top.bilibili.connector.PlatformRuntimeStatus
 interface OneBot11Transport {
     val eventFlow: Flow<OneBot11MessageEvent>
 
+    /**
+     * 启动底层 OneBot11 连接与事件循环，供适配器统一接通协议传输。
+     */
     fun start()
 
     /**
@@ -23,5 +26,8 @@ interface OneBot11Transport {
         message: List<OneBot11MessageSegment>,
     ): Boolean
 
+    /**
+     * 返回 OneBot11 传输当前运行状态，供平台层统一读取连接与重连信息。
+     */
     fun runtimeStatus(): PlatformRuntimeStatus
 }

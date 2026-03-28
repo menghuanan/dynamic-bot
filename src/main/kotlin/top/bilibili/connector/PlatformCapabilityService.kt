@@ -110,6 +110,9 @@ object PlatformCapabilityService {
         message = "使用 canSendMessageTo(contact) 统一表达发送能力",
         replaceWith = ReplaceWith("canSendMessageTo(contact)"),
     )
+    /**
+     * 兼容旧调用方沿用“可达性”命名读取发送能力，避免迁移期同时维护两套实现。
+     */
     suspend fun isContactReachable(contact: PlatformContact): Boolean = canSendMessageTo(contact)
 
     /**
@@ -119,6 +122,9 @@ object PlatformCapabilityService {
         message = "使用 canSendMessageTo(PlatformContact(...)) 统一表达发送能力",
         replaceWith = ReplaceWith("canSendMessageTo(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()))"),
     )
+    /**
+     * 兼容旧的 Long 群号能力判断入口，避免新旧调用链在迁移期各自访问底层 adapter。
+     */
     suspend fun isGroupReachable(groupId: Long): Boolean {
         if (!BiliBiliBot.isPlatformAdapterInitialized()) {
             return false
@@ -140,6 +146,9 @@ object PlatformCapabilityService {
         message = "使用 canAtAllInContact(contact) 统一表达联系人能力",
         replaceWith = ReplaceWith("canAtAllInContact(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()))"),
     )
+    /**
+     * 兼容旧的群号 @全体 判断入口，避免历史命令链在迁移完成前直接接触 connector 实现。
+     */
     suspend fun canAtAllInGroup(groupId: Long): Boolean {
         if (!BiliBiliBot.isPlatformAdapterInitialized()) {
             return false

@@ -5,6 +5,9 @@ import kotlinx.coroutines.flow.Flow
 interface PlatformAdapter {
     val eventFlow: Flow<PlatformInboundMessage>
 
+    /**
+     * 启动底层平台连接与事件分发，供 manager 在完成初始化后显式接通适配器生命周期。
+     */
     fun start()
 
     /**
@@ -57,6 +60,9 @@ interface PlatformAdapter {
         message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",
         replaceWith = ReplaceWith("sendMessage(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()), message)"),
     )
+    /**
+     * 为旧群号调用链保留兼容发送入口，避免迁移期间重新分叉出独立的发送实现。
+     */
     suspend fun sendGroupMessage(groupId: Long, message: List<OutgoingPart>): Boolean {
         return sendMessage(
             PlatformContact(PlatformType.ONEBOT11, PlatformChatType.GROUP, groupId.toString()),
@@ -71,6 +77,9 @@ interface PlatformAdapter {
         message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",
         replaceWith = ReplaceWith("sendMessage(PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, userId.toString()), message)"),
     )
+    /**
+     * 为旧私聊调用链保留兼容发送入口，避免迁移期间重新分叉出独立的发送实现。
+     */
     suspend fun sendPrivateMessage(userId: Long, message: List<OutgoingPart>): Boolean {
         return sendMessage(
             PlatformContact(PlatformType.ONEBOT11, PlatformChatType.PRIVATE, userId.toString()),
@@ -78,6 +87,9 @@ interface PlatformAdapter {
         )
     }
 
+    /**
+     * 暴露适配器当前运行态，供监控、守护与能力判断统一读取连接健康度。
+     */
     fun runtimeStatus(): PlatformRuntimeStatus
 
     /**
