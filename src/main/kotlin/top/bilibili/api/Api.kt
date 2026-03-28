@@ -1,5 +1,9 @@
 package top.bilibili.api
 
+/**
+ * B 站接口地址常量定义。
+ */
+
 // Login
 const val LOGIN_QRCODE = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate"
 const val LOGIN_INFO = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll"
