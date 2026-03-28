@@ -130,11 +130,11 @@ inline fun <R> useParagraphs(paragraphs: List<Paragraph>, block: () -> R): R {
 
 /**
  * 使用 DrawingSession 创建图片（推荐）
- * 自动追踪和释放 Skia 资源，防止内存泄漏
+ * Surface 会由当前 DrawingSession 追踪并在绘制结束后释放。
  * @param width 图片宽度
  * @param height 图片高度
  * @param block 绑定操作，在 DrawingSession 上下文中执行
- * @return 生成的 Image
+ * @return 生成的 Image，返回的 Image 由调用方负责关闭
  */
 suspend inline fun createImageWithSession(
     width: Int,

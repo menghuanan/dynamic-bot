@@ -107,4 +107,21 @@ object FontUtils {
         }
     }
 
+    /**
+     * 重置全局 ParagraphCache，避免长时间运行时排版缓存持续积累。
+     */
+    fun resetParagraphCache() {
+        runCatching {
+            val cachedCount = runCatching { fonts.paragraphCache.count }.getOrDefault(-1)
+            fonts.paragraphCache.reset()
+            if (cachedCount >= 0) {
+                logger.debug("已重置全局 ParagraphCache，重置前条目数: $cachedCount")
+            } else {
+                logger.debug("已重置全局 ParagraphCache")
+            }
+        }.onFailure { error ->
+            logger.warn("重置全局 ParagraphCache 失败: ${error.message}")
+        }
+    }
+
 }

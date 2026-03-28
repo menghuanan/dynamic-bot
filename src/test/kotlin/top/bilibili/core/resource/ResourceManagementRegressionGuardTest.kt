@@ -303,6 +303,65 @@ class ResourceManagementRegressionGuardTest {
         )
     }
 
+    // 段落缓存属于全局 FontCollection 状态，必须提供显式重置入口供清理任务调用。
+    @Test
+    fun `font utils should expose paragraph cache reset hook`() {
+        val fontUtils = read("src/main/kotlin/top/bilibili/utils/FontUtils.kt")
+
+        assertTrue(
+            fontUtils.contains("fun resetParagraphCache()"),
+            "FontUtils should expose a paragraph cache reset helper",
+        )
+        assertTrue(
+            fontUtils.contains("fonts.paragraphCache.reset()"),
+            "FontUtils paragraph cache reset helper should clear the global paragraph cache",
+        )
+    }
+
+    // Skia 清理流程需要触达段落缓存，否则链接解析产生的排版缓存会持续累积。
+    @Test
+    fun `skia cleanup should clear global paragraph cache`() {
+        val skiaManager = read("src/main/kotlin/top/bilibili/skia/SkiaManager.kt")
+
+        assertTrue(
+            skiaManager.contains("FontUtils.resetParagraphCache()"),
+            "SkiaManager cleanup should reset the global paragraph cache",
+        )
+    }
+
+    // 周期清理任务需要使用 cleanupInterval 配置，避免仅靠 idle timeout 导致缓存长期不清。
+    @Test
+    fun `skia cleanup task should honor periodic cleanup interval`() {
+        val tasker = read("src/main/kotlin/top/bilibili/tasker/SkiaCleanupTasker.kt")
+
+        assertTrue(
+            tasker.contains("cleanupIntervalMs"),
+            "SkiaCleanupTasker should consult cleanupIntervalMs for periodic cleanup",
+        )
+    }
+
+    // 二维码备用 Logo 分支拿到临时 Typeface 后必须在本次绘制结束前释放。
+    @Test
+    fun `qr code fallback logo should close temporary typeface`() {
+        val qrCodeDraw = read("src/main/kotlin/top/bilibili/draw/QrCodeDraw.kt")
+
+        assertTrue(
+            qrCodeDraw.contains(".use { typeface ->"),
+            "QrCodeDraw fallback logo path should scope temporary Typeface with use",
+        )
+    }
+
+    // createImageWithSession 返回的是调用方拥有的快照，注释不能误导为自动释放。
+    @Test
+    fun `create image with session docs should state caller owns returned image`() {
+        val general = read("src/main/kotlin/top/bilibili/draw/General.kt")
+
+        assertTrue(
+            general.contains("返回的 Image 由调用方负责关闭"),
+            "createImageWithSession docs should state caller ownership for returned Image",
+        )
+    }
+
     @Test
     fun `svg dom hot paths should load through drawing session factories`() {
         val dynamicDraw = read("src/main/kotlin/top/bilibili/draw/DynamicDraw.kt")

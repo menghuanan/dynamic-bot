@@ -4,6 +4,7 @@ import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
 import top.bilibili.draw.FontManager
 import top.bilibili.utils.ImageCache
+import top.bilibili.utils.FontUtils
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
@@ -90,6 +91,14 @@ object SkiaManager {
      * 清理全局缓存
      */
     private fun clearGlobalCaches() {
+        // 段落缓存会随不同文本内容持续增长，空闲清理时需要显式重置。
+        runCatching {
+            FontUtils.resetParagraphCache()
+            logger.debug("FontUtils paragraph cache cleared successfully")
+        }.onFailure { e ->
+            logger.warn("Failed to clear FontUtils paragraph cache", e)
+        }
+
         // 清理图片缓存
         runCatching {
             ImageCache.cleanCache()

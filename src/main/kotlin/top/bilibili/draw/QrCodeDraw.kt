@@ -34,11 +34,16 @@ internal fun drawFallbackLogo(session: DrawingSession, canvas: Canvas) {
     val defaultTypeface = FontMgr.default.matchFamilyStyle("", FontStyle.NORMAL)
         ?: FontMgr.default.matchFamiliesStyle(arrayOf("sans-serif"), FontStyle.NORMAL)
         ?: return
-    val fallbackFont = session.createFont(defaultTypeface, 50f)
-    val textLine = session.createTextLine("B", fallbackFont)
-    canvas.drawTextLine(textLine, 110f, 140f, session.createPaint {
-        color = Color.WHITE
-    })
+    // 备用 Logo 只在当前绘制分支临时使用字体对象，必须在函数返回前释放。
+    defaultTypeface.use { typeface ->
+        Font(typeface, 50f).use { fallbackFont ->
+            TextLine.make("B", fallbackFont).use { textLine ->
+                canvas.drawTextLine(textLine, 110f, 140f, session.createPaint {
+                    color = Color.WHITE
+                })
+            }
+        }
+    }
 }
 
 fun qrCode(session: DrawingSession, url: String, width: Int, color: Int): Image {

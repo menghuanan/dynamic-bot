@@ -12,48 +12,66 @@ import top.bilibili.utils.logger
 object SkiaCleanupTasker : BiliTasker() {
     override var interval: Int = 60  // 每 60 秒检查一次
 
+    // 记录最近一次周期清理时间，避免高频任务在短时间内反复重置全局缓存。
+    private var lastPeriodicCleanupAt: Long = System.currentTimeMillis()
+
     override suspend fun main() {
-        // 1. 检查是否空闲超时并执行清理
+        // 同时支持 idle timeout 和固定清理周期，避免高频但非持续占用场景长期跳过缓存清理。
+        var status = try {
+            SkiaManager.getStatus()
+        } catch (e: Exception) {
+            logger.warn("获取 Skia 状态失败: ${e.message}")
+            return
+        }
+
+        // 队列空闲时按 cleanupIntervalMs 周期补做清理，防止仅靠 idle timeout 导致 ParagraphCache 持续积累。
+        val queueStatusBeforeCleanup = status.queueStatus
+        val now = System.currentTimeMillis()
+        val periodicCleanupDue =
+            queueStatusBeforeCleanup.activeCount == 0 &&
+                queueStatusBeforeCleanup.pendingCount == 0 &&
+                now - lastPeriodicCleanupAt >= SkiaConfig.cleanupIntervalMs
+
         try {
             if (DrawingQueueManager.isIdleTimeout()) {
                 logger.debug("Skia 空闲超时，执行清理")
                 SkiaManager.performCleanup()
+                lastPeriodicCleanupAt = now
+                status = SkiaManager.getStatus()
+            } else if (periodicCleanupDue) {
+                logger.debug("Skia 达到周期清理间隔，执行清理")
+                SkiaManager.performCleanup()
+                lastPeriodicCleanupAt = now
+                status = SkiaManager.getStatus()
             }
         } catch (e: Exception) {
             logger.warn("Skia 清理检查失败: ${e.message}")
         }
 
-        // 2. 获取并记录状态
-        try {
-            val status = SkiaManager.getStatus()
-
-            // 3. 检查内存警告
-            if (status.memoryUsage >= SkiaConfig.memoryWarningThreshold) {
-                logger.warn(
-                    "Skia 内存使用率过高: ${(status.memoryUsage * 100).toInt()}% " +
-                    "(阈值: ${(SkiaConfig.memoryWarningThreshold * 100).toInt()}%)"
-                )
-            }
-
-            // 4. 记录队列状态（当队列非空时）
-            val queueStatus = status.queueStatus
-            if (queueStatus.pendingCount > 0 || queueStatus.activeCount > 0) {
-                logger.debug(
-                    "Skia 队列状态: 待处理=${queueStatus.pendingCount}, " +
-                    "活动中=${queueStatus.activeCount}, " +
-                    "已满=${queueStatus.isFull}"
-                )
-            }
-
-            // 5. 记录整体状态
-            logger.debug(
-                "Skia 状态: 模式=${status.mode}, " +
-                "内存=${(status.memoryUsage * 100).toInt()}%, " +
-                "绘图=${status.totalDrawingCount}, " +
-                "清理=${status.totalCleanupCount}"
+        // 3. 检查内存警告
+        if (status.memoryUsage >= SkiaConfig.memoryWarningThreshold) {
+            logger.warn(
+                "Skia 内存使用率过高: ${(status.memoryUsage * 100).toInt()}% " +
+                "(阈值: ${(SkiaConfig.memoryWarningThreshold * 100).toInt()}%)"
             )
-        } catch (e: Exception) {
-            logger.warn("获取 Skia 状态失败: ${e.message}")
         }
+
+        // 4. 记录队列状态（当队列非空时）
+        val queueStatus = status.queueStatus
+        if (queueStatus.pendingCount > 0 || queueStatus.activeCount > 0) {
+            logger.debug(
+                "Skia 队列状态: 待处理=${queueStatus.pendingCount}, " +
+                "活动中=${queueStatus.activeCount}, " +
+                "已满=${queueStatus.isFull}"
+            )
+        }
+
+        // 5. 记录整体状态
+        logger.debug(
+            "Skia 状态: 模式=${status.mode}, " +
+            "内存=${(status.memoryUsage * 100).toInt()}%, " +
+            "绘图=${status.totalDrawingCount}, " +
+            "清理=${status.totalCleanupCount}"
+        )
     }
 }
