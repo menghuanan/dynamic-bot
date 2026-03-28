@@ -52,6 +52,7 @@ object SkiaManager {
      */
     private suspend fun <T> executeInProcess(block: suspend DrawingSession.() -> T): T {
         return DrawingQueueManager.submit {
+            // 每次绘制隔离会话，可确保异常路径也能收口本次创建的全部原生资源。
             DrawingSession().use { session ->
                 session.block()
             }
@@ -79,6 +80,7 @@ object SkiaManager {
 
         // 3. 强制 GC
         repeat(3) {
+            // 连续执行 GC 与 finalization，可尽量促使已释放的原生包装对象尽快完成回收。
             System.gc()
             System.runFinalization()
             delay(100)
@@ -154,6 +156,13 @@ object SkiaManager {
 
 /**
  * SkiaManager 状态
+ *
+ * @param mode 当前运行模式
+ * @param memoryUsage 当前内存使用率
+ * @param totalDrawingCount 累计绘图次数
+ * @param totalCleanupCount 累计清理次数
+ * @param queueStatus 当前队列状态
+ * @param uptimeMs 管理器运行时长
  */
 data class SkiaManagerStatus(
     val mode: SkiaManager.Mode,

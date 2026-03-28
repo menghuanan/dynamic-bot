@@ -58,6 +58,7 @@ object DrawingQueueManager {
                 activeCount.decrementAndGet()
                 semaphore.release()
             } else if (needsRollback) {
+                // 仅在真正进入等待队列失败时回滚，避免 pending 计数被重复扣减。
                 // Exception occurred before acquiring semaphore
                 pendingCount.decrementAndGet()
             }
@@ -103,6 +104,11 @@ object DrawingQueueManager {
 
 /**
  * 队列状态
+ *
+ * @param pendingCount 等待中的任务数
+ * @param activeCount 执行中的任务数
+ * @param isFull 队列是否已满
+ * @param lastActivityTime 最近一次活动时间戳
  */
 data class QueueStatus(
     val pendingCount: Int,

@@ -22,6 +22,9 @@ import top.bilibili.draw.loadSVG
 import java.util.Collections
 import java.util.UUID
 
+/**
+ * 单次 Skia 绘制会话，统一追踪并释放本次绘制创建的原生资源。
+ */
 class DrawingSession : AutoCloseable {
     private val resources = Collections.synchronizedList(mutableListOf<AutoCloseable>())
     private val sessionId = UUID.randomUUID().toString().take(8)
@@ -32,6 +35,9 @@ class DrawingSession : AutoCloseable {
 
     private val logger = LoggerFactory.getLogger(DrawingSession::class.java)
 
+    /**
+     * 将可关闭资源纳入当前会话追踪。
+     */
     fun <T : AutoCloseable> T.track(): T {
         if (!isClosed) {
             resources.add(this)
@@ -39,14 +45,23 @@ class DrawingSession : AutoCloseable {
         return this
     }
 
+    /**
+     * 创建并追踪 Surface。
+     */
     fun createSurface(width: Int, height: Int): Surface {
         return Surface.makeRasterN32Premul(width, height).track()
     }
 
+    /**
+     * 创建并追踪图片对象。
+     */
     fun createImage(bytes: ByteArray): Image {
         return Image.makeFromEncoded(bytes).track()
     }
 
+    /**
+     * 创建并追踪段落对象。
+     */
     fun createParagraph(
         style: ParagraphStyle,
         fonts: FontCollection,
@@ -59,34 +74,58 @@ class DrawingSession : AutoCloseable {
         return paragraph.track()
     }
 
+    /**
+     * 创建并追踪文本行对象。
+     */
     fun createTextLine(text: String, font: Font): TextLine {
         return TextLine.make(text, font).track()
     }
 
+    /**
+     * 创建并追踪字体对象。
+     */
     fun createFont(typeface: Typeface, size: Float): Font {
         return Font(typeface, size).track()
     }
 
+    /**
+     * 创建并追踪画笔对象。
+     */
     fun createPaint(configure: Paint.() -> Unit = {}): Paint {
         return Paint().apply(configure).track()
     }
 
+    /**
+     * 创建并追踪线性渐变着色器。
+     */
     fun createLinearGradient(start: Point, end: Point, colors: IntArray): Shader {
         return Shader.makeLinearGradient(start, end, colors).track()
     }
 
+    /**
+     * 创建并追踪扫描渐变着色器。
+     */
     fun createSweepGradient(cx: Float, cy: Float, colors: IntArray): Shader {
         return Shader.makeSweepGradient(cx, cy, colors).track()
     }
 
+    /**
+     * 创建并追踪颜色混合滤镜。
+     */
     fun createBlendColorFilter(color: Int, mode: BlendMode): ColorFilter {
         return ColorFilter.makeBlend(color, mode).track()
     }
 
+    /**
+     * 加载并追踪 SVG 资源。
+     */
     fun createSvg(path: String): SVGDOM? {
         return loadSVG(path)?.track()
     }
 
+    /**
+     * 将绘制结果直接编码为字节数组。
+     */
     inline fun drawToBytes(
         width: Int,
         height: Int,
@@ -101,10 +140,14 @@ class DrawingSession : AutoCloseable {
         return try {
             data.bytes
         } finally {
+            // 编码产物只需要字节副本，Data 对象必须在本次会话内立即释放。
             data.close()
         }
     }
 
+    /**
+     * 将绘制结果直接返回为图片对象。
+     */
     inline fun drawToImage(
         width: Int,
         height: Int,
@@ -119,6 +162,9 @@ class DrawingSession : AutoCloseable {
         }
     }
 
+    /**
+     * 关闭当前绘制会话并按逆序释放所有追踪资源。
+     */
     override fun close() {
         if (isClosed) return
         isClosed = true
@@ -126,6 +172,7 @@ class DrawingSession : AutoCloseable {
         val duration = System.currentTimeMillis() - creationTime
         val resourceCount = resources.size
 
+        // 逆序释放更接近资源的创建依赖链，能减少仍被上层对象引用时的关闭异常。
         resources.asReversed().forEach { resource ->
             runCatching {
                 if (resource is org.jetbrains.skia.impl.Managed && resource.isClosed) {
