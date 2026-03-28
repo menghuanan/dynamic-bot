@@ -32,12 +32,22 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 
+/**
+ * API 请求追踪信息，用于日志中标记调用来源与接口名称。
+ *
+ * @param source 请求来源
+ * @param api 接口标识
+ * @param url 请求地址
+ */
 data class ApiRequestTrace(
     val source: String,
     val api: String,
     val url: String,
 )
 
+/**
+ * 将请求来源转换为更易读的日志标签。
+ */
 private fun ApiRequestTrace.logSourceLabel(): String {
     return when (source) {
         "DynamicCheckTasker.poll" -> "动态轮询"
@@ -49,6 +59,9 @@ private fun ApiRequestTrace.logSourceLabel(): String {
     }
 }
 
+/**
+ * 将接口标识转换为更易读的日志标签。
+ */
 private fun ApiRequestTrace.logApiLabel(): String {
     return when (api) {
         "NEW_DYNAMIC" -> "动态列表"
@@ -59,6 +72,9 @@ private fun ApiRequestTrace.logApiLabel(): String {
     }
 }
 
+/**
+ * 将异常类型归类为统一日志标签。
+ */
 private fun Throwable.logTypeLabel(): String {
     return when (this) {
         is HttpRequestTimeoutException, is SocketTimeoutException -> "请求超时"
@@ -69,10 +85,16 @@ private fun Throwable.logTypeLabel(): String {
     }
 }
 
+/**
+ * 读取当前请求超时配置，失败时回退到默认值。
+ */
 private fun requestTimeoutSeconds(): Int {
     return runCatching { BiliConfigManager.config.checkConfig.timeout }.getOrDefault(10)
 }
 
+/**
+ * 生成适合日志展示的失败原因描述。
+ */
 private fun Throwable.logReason(): String {
     return when (this) {
         is HttpRequestTimeoutException, is SocketTimeoutException -> "${requestTimeoutSeconds()}秒内未收到响应"
@@ -84,6 +106,9 @@ private fun Throwable.logReason(): String {
 }
 
 @Suppress("UNUSED_PARAMETER")
+/**
+ * 构建 API 重试日志文案。
+ */
 fun buildRetryLogMessage(
     trace: ApiRequestTrace,
     retryNumber: Int,
@@ -108,6 +133,9 @@ fun buildRetryLogMessage(
 }
 
 @Suppress("UNUSED_PARAMETER")
+/**
+ * 构建 API 重试耗尽日志文案。
+ */
 fun buildRetryExhaustedLogMessage(
     trace: ApiRequestTrace,
     attemptsUsed: Int,
@@ -133,6 +161,9 @@ fun buildRetryExhaustedLogMessage(
     }
 }
 
+/**
+ * B 站 API 客户端，封装请求头、代理、重试与超时配置。
+ */
 open class BiliClient : Closeable {
     override fun close() = clients.forEach { it.close() }
 
@@ -150,6 +181,9 @@ open class BiliClient : Closeable {
 
     val clients = MutableList(3) { client() }
 
+    /**
+     * 创建单个底层 HTTP 客户端实例。
+     */
     protected fun client() = HttpClient(OkHttp) {
         engine {
             config {
@@ -180,6 +214,9 @@ open class BiliClient : Closeable {
         }
     }
 
+    /**
+     * 发送 GET 请求并将响应解码为指定类型。
+     */
     suspend inline fun <reified T> get(
         url: String,
         trace: ApiRequestTrace = ApiRequestTrace(source = "未知任务", api = url, url = url),
@@ -192,6 +229,9 @@ open class BiliClient : Closeable {
             }.body()
         }.decode()
 
+    /**
+     * 发送 POST 请求并将响应解码为指定类型。
+     */
     suspend inline fun <reified T> post(
         url: String,
         trace: ApiRequestTrace = ApiRequestTrace(source = "未知任务", api = url, url = url),
@@ -209,6 +249,9 @@ open class BiliClient : Closeable {
 
     private val logger = org.slf4j.LoggerFactory.getLogger(BiliClient::class.java)
 
+    /**
+     * 使用底层 HTTP 客户端执行请求，并在可重试错误上做有限次重试。
+     */
     suspend fun <T> useHttpClient(
         trace: ApiRequestTrace = ApiRequestTrace(source = "未知任务", api = "未知接口", url = "unknown"),
         block: suspend (HttpClient) -> T,
@@ -222,6 +265,7 @@ open class BiliClient : Closeable {
                 val proxies = proxys
                 val client = clients[selectedClientIndex]
                 if (!proxies.isNullOrEmpty() && BiliConfigManager.config.enableConfig.proxyEnable) {
+                    // 每次请求轮换代理可分散单节点抖动，避免连续重试都命中同一失效出口。
                     client.engineConfig.proxy = proxies[proxyIndex]
                     proxyIndex = (proxyIndex + 1) % proxies.size
                 }
@@ -256,6 +300,7 @@ open class BiliClient : Closeable {
                     )
                     retryCount++
                     delay(3000)
+                    // 失败后切换到底层客户端实例，可尽量避开连接池里已污染的连接状态。
                     clientIndex = (clientIndex + 1) % clients.size
                 } else {
                     logger.error("API请求发生不可重试异常: 异常=${throwable.logTypeLabel()}, 原因=${throwable.logReason()}", throwable)
