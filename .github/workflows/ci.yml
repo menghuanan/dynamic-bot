@@ -1,3 +1,8 @@
+# 本文件主要工作流程：
+# 1. 在主分支提交、PR 和手动触发时启动 CI。
+# 2. 准备 JDK 与 Gradle 构建环境。
+# 3. 采集环境信息并执行编译、测试、打包。
+# 4. 输出摘要并上传诊断文件。
 name: CI Build and Check
 
 on:
@@ -15,9 +20,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    # 步骤 1：拉取仓库代码。
     - name: Checkout Code
       uses: actions/checkout@v4
 
+    # 步骤 2：准备 JDK 17。
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
@@ -25,9 +32,11 @@ jobs:
         distribution: 'temurin'
         cache: 'gradle'
 
+    # 步骤 3：初始化 Gradle 环境。
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
 
+    # 步骤 4：先采集环境信息。
     - name: Environment Diagnostics
       run: |
         chmod +x gradlew
@@ -54,25 +63,28 @@ jobs:
           echo "## free -h"
           free -h || true
         } 2>&1 | tee diagnostics/ci/environment.log
-
+    # 步骤 5：执行编译。
     - name: Compile with Gradle
       id: gradle_compile
       run: |
         set -o pipefail
         ./gradlew compileKotlin compileTestKotlin --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/ci/compile.log
 
+    # 步骤 6：执行测试。
     - name: Test with Gradle
       id: gradle_test
       run: |
         set -o pipefail
         ./gradlew test --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/ci/test.log
 
+    # 步骤 7：执行打包。
     - name: Package with Gradle
       id: gradle_package
       run: |
         set -o pipefail
         ./gradlew assemble --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/ci/package.log
 
+    # 步骤 8：发布构建摘要。
     - name: Publish CI Summary
       if: always()
       run: |
@@ -89,7 +101,7 @@ jobs:
           echo "### Diagnostic files"
           find diagnostics/ci build/reports build/test-results -type f 2>/dev/null | sed 's#^#- #'
         } >> "$GITHUB_STEP_SUMMARY"
-
+    # 步骤 9：上传诊断文件。
     - name: Upload CI Diagnostics
       if: always()
       uses: actions/upload-artifact@v4
@@ -102,7 +114,7 @@ jobs:
           build/tmp/**
         retention-days: 7
         if-no-files-found: warn
-
+    # 步骤 10：仅在成功时上传构建产物。
     - name: Upload Build Artifact
       if: success()
       uses: actions/upload-artifact@v4

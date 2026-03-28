@@ -1,3 +1,6 @@
+# 本文件主要工作流程：
+# 1. 为仓库里的常见文本文件统一声明 UTF-8 编码，避免不同编辑器保存后出现乱码和无意义差异。
+# 2. 为 Kotlin 与 Kotlin DSL 文件统一约束排版规则，保证 IDE、格式化工具和提交结果尽量一致。
 [*.{bat,gradle,java,json,kt,kts,md,properties,sh,txt,xml,yaml,yml}]
 charset = utf-8
 
@@ -5,6 +8,7 @@ charset = utf-8
 charset = utf-8
 
 [*.{kt, kts}]
+# 步骤 2：单独约束 Kotlin 行宽和缩进。
 max_line_length = 120
 tab_width = 4
 ij_continuation_indent_size = 4
