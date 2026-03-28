@@ -21,6 +21,9 @@ import top.bilibili.service.matchingAllRegular
 import top.bilibili.utils.toSubject
 import top.bilibili.utils.logger
 
+/**
+ * 监听聊天消息并在命中规则时执行链接解析。
+ */
 object ListenerTasker : BiliTasker("ListenerTasker") {
     override var interval: Int = -1
     override val wrapMainInBusinessLifecycle = false
@@ -42,6 +45,9 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         awaitCancellation()
     }
 
+    /**
+     * 持续监听平台入站消息流。
+     */
     private suspend fun listenMessages() {
         BiliBiliBot.requireConnectorManager().eventFlow.collect { event ->
             try {
@@ -54,6 +60,11 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         }
     }
 
+    /**
+     * 处理群消息中的链接解析请求。
+     *
+     * @param event 入站消息事件
+     */
     private suspend fun handleGroupMessage(event: PlatformInboundMessage) {
         if (event.fromSelf) {
             logger.debug("忽略 Bot 自己发送的消息 (selfId=${event.selfId}, userId=${event.senderId})")
@@ -109,6 +120,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
             candidates = matchedLinks.map { it.second },
         )
 
+        // 审批结果只保留命中的候选集合，按原遍历顺序回填可避免多条同类链接时回复顺序抖动。
         val approvedQueue = ArrayDeque(policyDecision.approvedLinks)
         val approvedMatchedLinks = mutableListOf<Pair<String, ResolvedLinkInfo>>()
         for (matchedLink in matchedLinks) {
@@ -131,6 +143,12 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         }
     }
 
+    /**
+     * 顺序处理已通过策略审批的链接。
+     *
+     * @param groupContact 目标群联系人
+     * @param matchedLinks 已通过审批的匹配链接
+     */
     private suspend fun processApprovedMatchedLinks(
         groupContact: top.bilibili.connector.PlatformContact,
         matchedLinks: List<Pair<String, ResolvedLinkInfo>>,
@@ -173,6 +191,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
                         val isTargetError = msg.contains("CODE: 500") || msg.contains("MISS_OPUS_DETAIL_DATA")
 
                         if (isTargetError && retryCount < maxRetries) {
+                            // 这类错误常见于上游详情接口短暂未就绪，短延迟重试可覆盖最终一致性窗口。
                             retryCount++
                             logger.warn("解析链接失败，3 秒后重试 ($retryCount/$maxRetries): $msg")
                             delay(3000)
@@ -224,10 +243,17 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         }
     }
 
+    /**
+     * 将解析结果转换为标准的 B 站链接。
+     *
+     * @param link 原始链接
+     * @param linkInfo 解析后的结构化信息
+     */
     private fun convertToStandardLink(link: String, linkInfo: ResolvedLinkInfo): String {
         return when (val type = linkInfo.type) {
             top.bilibili.service.LinkType.VideoLink -> {
                 val id = linkInfo.id
+                // 统一补成标准视频路径，可避免纯数字 ID 在不同平台上被识别成非 bilibili 链接。
                 val videoId = if (id.contains("BV") || id.contains("av")) id else "av$id"
                 "https://www.bilibili.com/video/$videoId"
             }

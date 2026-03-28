@@ -286,6 +286,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
      * 估算 Channel 内存占用
      */
     private fun estimateChannelMemory(): Long {
+        // 用保守估算值即可满足监控排序目的，避免为精确统计引入高成本运行时探测。
         // Channel 容量: dynamicChannel(20) + liveChannel(20) + messageChannel(20) = 60
         // 假设每个消息平均 2KB
         return (60 * 2 * 1024L) / 1024 / 1024
@@ -524,6 +525,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         if (!logFile.exists()) {
             try {
                 logFile.createNewFile()
+                // 首次创建时写入文件头，便于按天轮转后直接人工排查。
                 // 写入文件头
                 PrintWriter(OutputStreamWriter(FileOutputStream(logFile), StandardCharsets.UTF_8)).use { writer ->
                     writer.println("=" .repeat(60))

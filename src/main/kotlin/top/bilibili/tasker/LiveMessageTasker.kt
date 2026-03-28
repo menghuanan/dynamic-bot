@@ -17,6 +17,9 @@ import top.bilibili.service.DynamicService
 import top.bilibili.service.FeatureSwitchService
 import top.bilibili.service.resolveGradientPalette
 
+/**
+ * 将直播详情转换为可发送消息。
+ */
 object LiveMessageTasker : BiliTasker() {
     override var interval: Int = 0
     override val wrapMainInBusinessLifecycle = false
@@ -43,6 +46,11 @@ object LiveMessageTasker : BiliTasker() {
         }
     }
 
+    /**
+     * 构建直播推送消息。
+     *
+     * @param contact 指定投递联系人
+     */
     suspend fun LiveInfo.buildMessage(contact: String? = null): LiveMessage {
         return LiveMessage(
             roomId,
@@ -59,6 +67,11 @@ object LiveMessageTasker : BiliTasker() {
         )
     }
 
+    /**
+     * 生成直播推送配图。
+     *
+     * @param contact 指定投递联系人
+     */
     suspend fun LiveInfo.makeLive(contact: String? = null): String? {
         return if (FeatureSwitchService.canRenderPushDraw()) {
             logger.info("开始生成直播封面图片...")

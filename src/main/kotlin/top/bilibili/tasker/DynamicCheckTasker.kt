@@ -15,6 +15,9 @@ import top.bilibili.utils.logger
 import top.bilibili.utils.sendAll
 import top.bilibili.utils.time
 
+/**
+ * 轮询最新动态并将需要推送的动态投递到消息流水线。
+ */
 object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
 
     override var interval = BiliConfigManager.config.checkConfig.interval
@@ -70,6 +73,7 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
         val dynamics = dynamicList.items
             .filter { !banType.contains(it.type) }
             .filter { it.time > lastDynamic }
+            // 历史去重需要同时覆盖重启恢复和接口回流场景，单靠时间戳不足以避免重复推送。
             .filter { !historyDynamic.contains(it.did) }
             .filter {
                 if (listenAllDynamicMode) {
@@ -114,7 +118,7 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
     }
 
     /**
-     * Manual check, ignores time/history limits, used by /check.
+     * 手动触发一次动态检查，忽略时间窗口和历史去重限制。
      */
     suspend fun executeManualCheck(): Int = withTimeout(180001) {
         logger.info("$taskerName manual check triggered")
@@ -122,6 +126,12 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
         return@withTimeout handleManualCheckResult(dynamicList, "manual-check")
     }
 
+    /**
+     * 处理手动检查结果，并在命中时向下游投递最近一条动态。
+     *
+     * @param dynamicList 动态列表响应
+     * @param source 触发来源
+     */
     private suspend fun handleManualCheckResult(dynamicList: DynamicList?, source: String): Int {
         if (dynamicList == null) {
             logger.warn("$source failed to fetch dynamic list")
@@ -142,6 +152,7 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
                 }
             }
             .sortedByDescending { it.time }
+            // 手动检查只回传最近一条，避免一次命令把历史堆积内容全部补推到聊天窗口。
             .take(1)
 
         if (dynamics.isEmpty()) {
@@ -163,9 +174,13 @@ object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
         return dynamics.size
     }
 
+    /**
+     * 将最近已推送的动态 ID 持久化到历史文件。
+     */
     private fun saveHistory() {
         try {
             historyFile.parentFile?.mkdirs()
+            // 每次全量覆盖历史文件，可保证崩溃恢复后磁盘状态与内存队列一致。
             historyFile.writeText(historyDynamic.joinToString("\n"))
         } catch (e: Exception) {
             logger.error("failed to save dynamic history", e)

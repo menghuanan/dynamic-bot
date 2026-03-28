@@ -11,6 +11,9 @@ import top.bilibili.utils.formatTime
 import java.time.Instant
 
 
+/**
+ * 检查已推送直播是否下播，并生成下播通知。
+ */
 object LiveCloseCheckTasker : BiliCheckTasker("LiveCloseCheckTasker")  {
 
     override var interval: Int = BiliConfigManager.config.checkConfig.liveInterval

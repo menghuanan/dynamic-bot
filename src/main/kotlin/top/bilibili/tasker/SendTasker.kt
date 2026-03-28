@@ -78,6 +78,7 @@ object SendTasker : BiliTasker("SendTasker") {
                 var success = gateway.sendMessageGuarded(contact, segments)
 
                 if (!success && contact.type == PlatformChatType.GROUP && containsAtAllSegment(segments)) {
+                    // @全体 失败时优先降级普通消息，避免整条推送因权限或次数问题完全丢失。
                     val downgradedSegments = segments.filterNot { it is OutgoingPart.MentionAll }
                     if (downgradedSegments.isNotEmpty()) {
                         BiliBiliBot.logger.warn("检测到 @全体 发送失败，尝试降级重发: ${contact.toSubject()}")
@@ -216,6 +217,14 @@ object SendTasker : BiliTasker("SendTasker") {
         }
     }
 
+    /**
+     * 在群消息满足条件时自动注入 @全体。
+     *
+     * @param contact 平台联系人
+     * @param contactStr 联系人字符串表示
+     * @param message 待发送消息
+     * @param segments 原始消息段
+     */
     private suspend fun applyAtAllIfNeeded(
         contact: PlatformContact,
         contactStr: String,
@@ -241,6 +250,7 @@ object SendTasker : BiliTasker("SendTasker") {
                 atAllGuard.marker ?: CapabilityGuard.UNSUPPORTED_MESSAGE,
                 contact.id,
             )
+            // 权限不足时只降级当前增强分支，保留普通推送可避免错过实际通知。
             notifyAtAllPermissionMissing(contact.id, message.mid)
             return segments
         }
@@ -248,6 +258,12 @@ object SendTasker : BiliTasker("SendTasker") {
         return listOf(OutgoingPart.atAll()) + segments
     }
 
+    /**
+     * 节流发送缺失 @全体 权限的管理员提醒。
+     *
+     * @param groupId 群 ID
+     * @param uid 触发该提醒的订阅 UID
+     */
     private suspend fun notifyAtAllPermissionMissing(groupId: String, uid: Long) {
         val now = System.currentTimeMillis()
         val groupKey = groupId
@@ -260,6 +276,11 @@ object SendTasker : BiliTasker("SendTasker") {
             .onFailure { BiliBiliBot.logger.warn("发送 @全体 降级提醒失败: ${it.message}") }
     }
 
+    /**
+     * 节流发送 @全体 降级重试提醒。
+     *
+     * @param groupId 群 ID
+     */
     private suspend fun notifyAtAllFallback(groupId: String) {
         val now = System.currentTimeMillis()
         val groupKey = groupId
@@ -272,10 +293,19 @@ object SendTasker : BiliTasker("SendTasker") {
             .onFailure { BiliBiliBot.logger.warn("发送 @全体 重试降级提醒失败: ${it.message}") }
     }
 
+    /**
+     * 判断消息段中是否包含 @全体。
+     */
     private fun containsAtAllSegment(segments: List<OutgoingPart>): Boolean {
         return segments.any { it is OutgoingPart.MentionAll }
     }
 
+    /**
+     * 判断消息是否应该发送到指定联系人。
+     *
+     * @param message 待发送消息
+     * @param contactStr 联系人字符串表示
+     */
     private fun shouldSendToContact(message: BiliMessage, contactStr: String): Boolean {
         return when (message) {
             is DynamicMessage -> shouldSendDynamicToContact(message, contactStr)
@@ -283,6 +313,12 @@ object SendTasker : BiliTasker("SendTasker") {
         }
     }
 
+    /**
+     * 根据联系人过滤配置判断动态消息是否应被发送。
+     *
+     * @param message 动态消息
+     * @param contactStr 联系人字符串表示
+     */
     private fun shouldSendDynamicToContact(message: DynamicMessage, contactStr: String): Boolean {
         val filterKey = if (
             (message.type == DynamicType.DYNAMIC_TYPE_PGC || message.type == DynamicType.DYNAMIC_TYPE_PGC_UNION) &&
@@ -300,11 +336,23 @@ object SendTasker : BiliTasker("SendTasker") {
         return true
     }
 
+    /**
+     * 获取指定联系人对目标订阅项的动态过滤器。
+     *
+     * @param contactStr 联系人字符串表示
+     * @param mid 订阅项标识
+     */
     private fun getDynamicFilter(contactStr: String, mid: Long): DynamicFilter? {
         val byContact = BiliData.filter[contactStr] ?: return null
         return byContact[mid] ?: byContact[0L]
     }
 
+    /**
+     * 判断动态类型是否通过过滤。
+     *
+     * @param type 动态类型
+     * @param filter 过滤规则
+     */
     private fun passesTypeFilter(type: DynamicType, filter: DynamicFilter): Boolean {
         val typeSelect = filter.typeSelect
         if (typeSelect.list.isEmpty()) return true
@@ -316,6 +364,12 @@ object SendTasker : BiliTasker("SendTasker") {
         }
     }
 
+    /**
+     * 判断动态正文是否通过正则过滤。
+     *
+     * @param content 动态正文
+     * @param filter 过滤规则
+     */
     private fun passesRegularFilter(content: String, filter: DynamicFilter): Boolean {
         val regularSelect = filter.regularSelect
         if (regularSelect.list.isEmpty()) return true
@@ -326,6 +380,7 @@ object SendTasker : BiliTasker("SendTasker") {
                 regularSelect.list.all { pattern ->
                     val regex = runCatching { Regex(pattern) }.getOrNull()
                     if (regex == null) {
+                        // 白名单配置写错时默认放行，避免错误规则把所有消息都误杀。
                         BiliBiliBot.logger.warn("忽略非法正则: $pattern")
                         true
                     } else {
@@ -337,6 +392,7 @@ object SendTasker : BiliTasker("SendTasker") {
                 regularSelect.list.none { pattern ->
                     val regex = runCatching { Regex(pattern) }.getOrNull()
                     if (regex == null) {
+                        // 黑名单配置写错时默认不拦截，避免单条坏规则导致整组推送不可用。
                         BiliBiliBot.logger.warn("忽略非法正则: $pattern")
                         false
                     } else {
@@ -347,6 +403,11 @@ object SendTasker : BiliTasker("SendTasker") {
         }
     }
 
+    /**
+     * 将运行时动态类型映射为过滤器使用的类型枚举。
+     *
+     * @param type 动态类型
+     */
     private fun mapDynamicType(type: DynamicType): DynamicFilterType {
         return when (type) {
             DynamicType.DYNAMIC_TYPE_FORWARD -> DynamicFilterType.FORWARD
@@ -366,6 +427,7 @@ object SendTasker : BiliTasker("SendTasker") {
         message: BiliMessage,
         contactStr: String
     ): List<OutgoingPart> {
+        // 消息模板渲染统一下沉到服务层，避免发送链路和命令链路各自维护一套拼装逻辑。
         return TemplateRenderService.buildSegments(message, contactStr)
     }
 }

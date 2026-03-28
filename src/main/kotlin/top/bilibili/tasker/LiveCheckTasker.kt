@@ -11,6 +11,9 @@ import top.bilibili.utils.logger
 import top.bilibili.utils.sendAll
 import java.time.Instant
 
+/**
+ * 轮询关注列表中的新开播直播并投递到消息流水线。
+ */
 object LiveCheckTasker : BiliCheckTasker("LiveCheckTasker") {
     override var interval = BiliConfigManager.config.checkConfig.liveInterval
     private val liveCloseEnable = BiliConfigManager.config.enableConfig.liveCloseNotifyEnable
@@ -70,6 +73,7 @@ object LiveCheckTasker : BiliCheckTasker("LiveCheckTasker") {
             logger.debug("直播已发送到 liveChannel")
 
             if (liveCloseEnable) {
+                // 仅记录已实际推送过的直播，避免下播提醒覆盖到未订阅或未通知的直播间。
                 liveUsers.putAll(lives.map { it.uid to it.liveTime })
                 logger.debug("已记录 ${lives.size} 个直播用于下播检测")
             }

@@ -20,6 +20,9 @@ import top.bilibili.service.normalizeArticleOpusDisplayTree
 import top.bilibili.service.parseGradientColors
 import top.bilibili.service.resolveGradientPalette
 
+/**
+ * 将动态详情转换为可发送消息。
+ */
 object DynamicMessageTasker : BiliTasker() {
 
     override var interval: Int = 0
@@ -51,6 +54,12 @@ object DynamicMessageTasker : BiliTasker() {
         }
     }
 
+    /**
+     * 同步更新订阅记录中的昵称。
+     *
+     * @param uid 用户 ID
+     * @param latestName 最新昵称
+     */
     internal fun syncSubscriptionName(uid: Long, latestName: String) {
         val subData = dynamic[uid] ?: return
         if (subData.name != latestName) {
@@ -58,11 +67,20 @@ object DynamicMessageTasker : BiliTasker() {
         }
     }
 
+    /**
+     * 判断当前动态是否为仅限专属展示的动态。
+     */
     fun DynamicItem.isUnlocked(): Boolean =
         modules.moduleDynamic.major?.type != "MAJOR_TYPE_BLOCKED"
             && modules.moduleAuthor.iconBadge?.text == "专属动态"
 
+    /**
+     * 构建动态推送消息。
+     *
+     * @param contact 指定投递联系人
+     */
     suspend fun DynamicItem.buildMessage(contact: String? = null): DynamicMessage {
+        // 先规整专栏/opus 展示树，可减少后续取标题、摘要时的分支差异。
         normalizeArticleOpusDisplayTree()
 
         val pgcSeasonId = if (type == DYNAMIC_TYPE_PGC || type == DYNAMIC_TYPE_PGC_UNION) {
@@ -85,6 +103,9 @@ object DynamicMessageTasker : BiliTasker() {
         )
     }
 
+    /**
+     * 提取动态的主要文本内容。
+     */
     fun DynamicItem.textContent(): String {
         if(isUnlocked()){
             return "此动态为专属动态\n请自行查看详情内容"
@@ -111,6 +132,9 @@ object DynamicMessageTasker : BiliTasker() {
         }
     }
 
+    /**
+     * 提取动态相关图片列表。
+     */
     suspend fun DynamicItem.dynamicImages(): List<String>? {
         if (isUnlocked()) {
             if (!FeatureSwitchService.canRenderPushDraw()) {
@@ -118,6 +142,7 @@ object DynamicMessageTasker : BiliTasker() {
             }
             val path = SkiaManager.executeDrawing {
                 val blockedImg = drawBlockedDefault(this)
+                // 专属动态原图不可直接获取，缓存默认占位图可保持推送结构稳定。
                 cacheImage(blockedImg, "blocked_default.png", CacheType.IMAGES)
                 // All resources automatically released when session closes
             }
@@ -154,6 +179,9 @@ object DynamicMessageTasker : BiliTasker() {
         }
     }
 
+    /**
+     * 构建动态消息中的相关跳转链接。
+     */
     suspend fun DynamicItem.dynamicLinks(): List<DynamicMessage.Link> {
         return when (type) {
             DYNAMIC_TYPE_FORWARD -> {
@@ -238,9 +266,15 @@ object DynamicMessageTasker : BiliTasker() {
 
     }
 
+    /**
+     * 生成动态卡片图片。
+     *
+     * @param contact 指定投递联系人
+     */
     suspend fun DynamicItem.makeDynamic(contact: String? = null): String? {
         return if (FeatureSwitchService.canRenderPushDraw()) {
             if (this.type == DYNAMIC_TYPE_PGC) {
+                // 番剧订阅可能配置了专属主题色，优先沿用可让推送风格与订阅来源保持一致。
                 val color = bangumi[mid]?.color ?: BiliConfigManager.config.imageConfig.defaultColor
                 val colors = parseGradientColors(color)
                 makeDrawDynamic(colors, contact, color)

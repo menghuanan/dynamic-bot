@@ -3,6 +3,9 @@ package top.bilibili.tasker
 import org.slf4j.LoggerFactory
 import java.io.File
 
+/**
+ * 定时清理历史日志文件。
+ */
 object LogClearTasker : BiliTasker() {
     private val logger = LoggerFactory.getLogger(LogClearTasker::class.java)
     override var interval: Int = 60 * 60 * 24 * 7
@@ -17,6 +20,15 @@ object LogClearTasker : BiliTasker() {
         logger.info("日志清理完成，删除 ${normalDeleted + daemonDeleted} 个过期日志文件（普通: $normalDeleted, 守护: $daemonDeleted）")
     }
 
+    /**
+     * 清理目录中匹配模式且已过期的日志文件。
+     *
+     * @param directory 待清理目录
+     * @param pattern 文件名匹配规则
+     * @param now 当前时间戳
+     * @param expireMillis 过期时长
+     * @param tag 日志类型标识
+     */
     private fun cleanDirectory(
         directory: File,
         pattern: Regex,
@@ -37,6 +49,7 @@ object LogClearTasker : BiliTasker() {
             val age = now - file.lastModified()
             if (age < expireMillis) return@forEach
 
+            // 仅删除符合命名规则的历史文件，避免误删运行中或人工放置的其他日志。
             if (file.delete()) {
                 deleted++
             } else {

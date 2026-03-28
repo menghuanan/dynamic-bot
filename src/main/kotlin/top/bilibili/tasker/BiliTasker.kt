@@ -27,11 +27,26 @@ import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.CoroutineContext
 
+/**
+ * 单个任务停止失败的信息。
+ *
+ * @param taskerName 任务名称
+ * @param error 失败原因
+ */
 data class TaskerStopFailure(
     val taskerName: String,
     val error: String,
 )
 
+/**
+ * 批量停止任务后的汇总结果。
+ *
+ * @param success 是否全部停止成功
+ * @param totalTaskers 本次处理的任务总数
+ * @param stoppedTaskers 成功停止的任务数量
+ * @param failedTaskers 停止失败的任务数量
+ * @param failures 失败明细
+ */
 data class TaskerStopReport(
     val success: Boolean,
     val totalTaskers: Int,
@@ -40,6 +55,15 @@ data class TaskerStopReport(
     val failures: List<TaskerStopFailure>,
 )
 
+/**
+ * 单个受管 worker 的运行快照。
+ *
+ * @param workerName worker 名称
+ * @param active 当前是否处于活跃状态
+ * @param restartCount 已执行的重启次数
+ * @param lastFailureMessage 最近一次失败原因
+ * @param restartExhausted 是否已耗尽重启预算
+ */
 data class TaskWorkerSnapshot(
     val workerName: String,
     val active: Boolean,
@@ -48,6 +72,13 @@ data class TaskWorkerSnapshot(
     val restartExhausted: Boolean,
 )
 
+/**
+ * 单个 tasker 的健康快照。
+ *
+ * @param taskerName 任务名称
+ * @param active 主任务是否活跃
+ * @param workerSnapshots 受管 worker 快照列表
+ */
 data class TaskHealthSnapshot(
     val taskerName: String,
     val active: Boolean,
@@ -58,6 +89,11 @@ data class TaskHealthSnapshot(
 }
 
 @OptIn(InternalForInheritanceCoroutinesApi::class)
+/**
+ * 所有任务器的基础抽象，负责生命周期、调度、自愈 worker 与停机收敛。
+ *
+ * @param taskerName 任务名称
+ */
 abstract class BiliTasker(
     private val taskerName: String? = null,
 ) : CoroutineScope, CompletableJob by SupervisorJob(BiliBiliBot.coroutineContext[Job]) {
@@ -71,10 +107,18 @@ abstract class BiliTasker(
         private const val DEFAULT_STOP_TIMEOUT_MS = 10_000L
         val taskers = Collections.synchronizedList(mutableListOf<BiliTasker>())
 
+        /**
+         * 使用默认超时停止全部任务。
+         */
         fun cancelAll(): TaskerStopReport = runBlocking {
             cancelAll(DEFAULT_STOP_TIMEOUT_MS)
         }
 
+        /**
+         * 停止全部任务，并返回逐项结果。
+         *
+         * @param timeoutMs 单个任务等待停止的超时时间
+         */
         suspend fun cancelAll(timeoutMs: Long): TaskerStopReport {
             val snapshot = synchronized(taskers) { taskers.toList() }
             snapshot.forEach { tasker -> tasker.cancel() }
@@ -134,6 +178,9 @@ abstract class BiliTasker(
         return launchManagedWorker(definition, allowReplace = false)
     }
 
+    /**
+     * 获取当前任务及其受管 worker 的健康快照。
+     */
     fun healthSnapshot(): TaskHealthSnapshot {
         val snapshots = managedWorkers.values
             .sortedBy { it.workerName }
@@ -186,6 +233,7 @@ abstract class BiliTasker(
         operation: String,
         block: suspend BusinessLifecycleSession.() -> T,
     ): T {
+        // 在实际执行前强制校验资源策略，避免任务遗漏声明后直接绕过生命周期约束。
         val policy = TaskResourcePolicyRegistry.policyOf(taskDisplayName)
             ?: error("任务未声明资源策略: $taskDisplayName")
         return BusinessLifecycleManager.run(
@@ -223,6 +271,7 @@ abstract class BiliTasker(
             return null
         }
 
+        // 停止过程需要转换成结构化结果，避免批量停机时某一个异常直接中断整批统计。
         return try {
             withTimeout(timeoutMs) {
                 currentJob.join()
@@ -309,6 +358,11 @@ abstract class BiliTasker(
         return taskers.add(this)
     }
 
+    /**
+     * 取消当前任务及其受管 worker。
+     *
+     * @param cause 取消原因
+     */
     override fun cancel(cause: CancellationException?) {
         managedWorkers.values.forEach { state ->
             state.job?.cancel(cause)
@@ -420,6 +474,7 @@ abstract class BiliTasker(
         }
         require(allowReplace || existing == null) { "重复注册受管 worker: ${definition.workerName}" }
 
+        // worker 显式挂到主任务 Job 之下，保证停机和健康恢复都能收敛到同一父生命周期。
         val workerJob = launch(parentJob + CoroutineName("$taskDisplayName.worker.${definition.workerName}")) {
             runManagedWorkerLoop(state, definition.maxRestarts, definition.backoffPolicy, definition.block)
         }

@@ -6,6 +6,11 @@ import top.bilibili.utils.logger
 import java.time.Instant
 import java.time.LocalTime
 
+/**
+ * 轮询检查类任务的基础抽象，统一处理低频时段与检查心跳上报。
+ *
+ * @param taskerName 任务名称
+ */
 abstract class BiliCheckTasker(
     val taskerName: String? = null
 ) : BiliTasker(taskerName) {
@@ -26,6 +31,9 @@ abstract class BiliCheckTasker(
         @Volatile
         private var sharedClient: BiliClient? = null
 
+        /**
+         * 获取共享的 BiliClient 实例。
+         */
         @Synchronized
         private fun getSharedClient(): BiliClient {
             return sharedClient ?: BiliClient().also { sharedClient = it }
@@ -35,6 +43,9 @@ abstract class BiliCheckTasker(
         protected val client: BiliClient
             get() = getSharedClient()
 
+        /**
+         * 主动关闭共享的 BiliClient 实例。
+         */
         @JvmStatic
         fun closeSharedClient() {
             val toClose = synchronized(this) {
@@ -109,6 +120,11 @@ abstract class BiliCheckTasker(
         if (lowSpeedEnable) interval = calcTime(intervalTime)
     }
 
+    /**
+     * 根据当前时间段计算下一次轮询间隔。
+     *
+     * @param time 默认轮询间隔
+     */
     private fun calcTime(time: Int): Int {
         if (!lowSpeedEnable) return time
 
@@ -142,6 +158,7 @@ abstract class BiliCheckTasker(
      * 手动执行一次检查（用于测试）
      */
     suspend fun executeOnce() {
+        // 手动触发需要复用与定时任务完全一致的执行路径，避免测试行为与线上轮询脱节。
         logger.info("$taskerName 手动触发检查...")
         main()
     }

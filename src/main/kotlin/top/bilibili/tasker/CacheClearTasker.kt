@@ -10,6 +10,9 @@ import java.nio.file.Path
 import kotlin.io.path.forEachDirectoryEntry
 import kotlin.io.path.isDirectory
 
+/**
+ * 定时清理配置缓存与图片缓存。
+ */
 object CacheClearTasker : BiliTasker() {
     private val logger = LoggerFactory.getLogger(CacheClearTasker::class.java)
     override var interval: Int = 60 * 60 * 24
@@ -76,6 +79,11 @@ object CacheClearTasker : BiliTasker() {
         }
     }
 
+    /**
+     * 递归删除当前目录下已过期的缓存文件。
+     *
+     * @param expire 过期天数
+     */
     private fun Path.clearExpireFile(expire: Int): Int {
         var count = 0
         val expireMillis = expire * 24L * 60 * 60 * 1000  // 天数转换为毫秒
@@ -85,6 +93,7 @@ object CacheClearTasker : BiliTasker() {
             } else {
                 val fileAge = System.currentTimeMillis() - it.toFile().lastModified()
                 if (fileAge >= expireMillis) {
+                    // 仅按最后修改时间淘汰，避免把仍在使用但路径较深的缓存误判为可删目录。
                     logger.debug("删除过期文件: ${it.fileName} (${fileAge / (24 * 60 * 60 * 1000)} 天前)")
                     it.toFile().delete()
                     count++
