@@ -49,6 +49,9 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
 import kotlin.io.path.Path
 
+/**
+ * Bot 当前所处的生命周期状态。
+ */
 enum class BotLifecycleState {
     STARTING,
     RUNNING,
@@ -56,6 +59,9 @@ enum class BotLifecycleState {
     STOPPED,
 }
 
+/**
+ * Bot 运行期入口，负责启动、停机与公共资源管理。
+ */
 object BiliBiliBot : CoroutineScope {
     val logger = LoggerFactory.getLogger(BiliBiliBot::class.java)
 
@@ -86,12 +92,24 @@ object BiliBiliBot : CoroutineScope {
     private var eventCollectorJob: Job? = null
     private val resourceSupervisor = ResourceSupervisor()
 
+    /**
+     * 判断平台适配器是否已经完成初始化。
+     */
     fun isPlatformAdapterInitialized(): Boolean = connectorManager?.isInitialized() == true
 
+    /**
+     * 判断运行期配置是否已经加载完成。
+     */
     fun isConfigInitialized(): Boolean = ::config.isInitialized
 
+    /**
+     * 判断 Bot 是否处于停机流程中。
+     */
     fun isStopping(): Boolean = lifecycleState.get() == BotLifecycleState.STOPPING
 
+    /**
+     * 返回已初始化的运行期配置，不存在时抛出异常。
+     */
     fun requireConfig(): top.bilibili.config.BotConfig {
         require(::config.isInitialized) {
             "配置尚未加载。"
@@ -115,17 +133,26 @@ object BiliBiliBot : CoroutineScope {
         return connectorManager ?: error("平台连接管理器尚未初始化，请先完成启动。")
     }
 
+    /**
+     * 读取类路径资源流。
+     */
     @Deprecated("使用 useResourceAsStream 或 getResourceBytes 替代", ReplaceWith("useResourceAsStream(path) { it.readBytes() }"))
     fun getResourceAsStream(path: String): InputStream? {
         val resourcePath = if (path.startsWith("/")) path.substring(1) else path
         return this::class.java.classLoader.getResourceAsStream(resourcePath)
     }
 
+    /**
+     * 以 `use` 语义读取类路径资源流，确保流被及时关闭。
+     */
     inline fun <T> useResourceAsStream(path: String, block: (InputStream) -> T): T? {
         val resourcePath = if (path.startsWith("/")) path.substring(1) else path
         return this::class.java.classLoader.getResourceAsStream(resourcePath)?.use(block)
     }
 
+    /**
+     * 读取类路径资源的完整字节数组。
+     */
     fun getResourceBytes(path: String): ByteArray? {
         val resourcePath = if (path.startsWith("/")) path.substring(1) else path
         return this::class.java.classLoader.getResourceAsStream(resourcePath)?.use {
@@ -133,6 +160,9 @@ object BiliBiliBot : CoroutineScope {
         }
     }
 
+    /**
+     * 启动 Bot 并初始化配置、平台适配器、任务与资源分区。
+     */
     fun start(enableDebug: Boolean? = null) {
         if (!isRunning.compareAndSet(false, true)) {
             logger.warn("Bot 已在运行中，忽略重复启动请求")
@@ -151,6 +181,7 @@ object BiliBiliBot : CoroutineScope {
             val debugMode = commandLineDebugMode ?: BiliConfigManager.config.enableConfig.debugMode
             if (debugMode) {
                 System.setProperty("APP_LOG_LEVEL", "DEBUG")
+                // 这里直接提升 logger level，是为了让已初始化的日志上下文也能立即切到调试模式。
                 ch.qos.logback.classic.LoggerContext::class.java.cast(
                     org.slf4j.LoggerFactory.getILoggerFactory(),
                 ).let { context ->
@@ -240,6 +271,7 @@ object BiliBiliBot : CoroutineScope {
             launch {
                 try {
                     withTimeout(60_000) {
+                        // 适当延迟能给平台连接和基础资源留出稳定时间，避免冷启动时初始化链路相互争抢。
                         delay(3_000)
                         StartupDataInitService.initBiliData()
                     }
@@ -252,6 +284,7 @@ object BiliBiliBot : CoroutineScope {
             launch {
                 try {
                     withTimeout(30_000) {
+                        // 任务启动放到连接与基础数据之后，可以减少首屏启动时的并发峰值。
                         delay(5_000)
                         TaskBootstrapService.startTasks()
                         delay(1_000)
@@ -270,6 +303,9 @@ object BiliBiliBot : CoroutineScope {
         }
     }
 
+    /**
+     * 触发一次完整的停机流程，并在必要时执行兜底资源回收。
+     */
     fun stop(reason: String = "shutdown-request") {
         val currentState = lifecycleState.get()
         if (currentState == BotLifecycleState.STOPPING || currentState == BotLifecycleState.STOPPED) {
@@ -296,6 +332,7 @@ object BiliBiliBot : CoroutineScope {
                 logger.error("资源总管停止失败: ${it.message}", it)
             }.getOrNull()
 
+            // 资源总管缺报告、未覆盖资源或出现失败时，仍要继续兜底回收，避免残留后台任务和连接。
             if (report == null || report.totalPartitions == 0 || !report.success) {
                 usedFallback = true
                 runBlocking { fallbackStopResources() }
@@ -314,6 +351,9 @@ object BiliBiliBot : CoroutineScope {
         }
     }
 
+    /**
+     * 返回当前运行状态是否满足基本健康条件。
+     */
     fun isHealthy(): Boolean {
         return lifecycleState.get() == BotLifecycleState.RUNNING &&
             isRunning.get() &&
@@ -321,6 +361,9 @@ object BiliBiliBot : CoroutineScope {
             isPlatformAdapterInitialized()
     }
 
+    /**
+     * 返回本次运行已持续的秒数。
+     */
     fun getUptimeSeconds(): Long {
         return if (isRunning.get()) {
             (System.currentTimeMillis() - startTime) / 1000
@@ -330,7 +373,7 @@ object BiliBiliBot : CoroutineScope {
     }
 
     /**
-     * 为仍在迁移中的 OneBot11 调用方保留数字群号发送入口。
+     * 为仍在迁移中的 OneBot11 调用方保留数字群消息发送入口。
      */
     @Deprecated(
         message = "优先使用 sendMessage(contact, message) 统一走 PlatformContact 发送入口",
@@ -357,14 +400,23 @@ object BiliBiliBot : CoroutineScope {
         )
     }
 
+    /**
+     * 向已配置的管理员联系人发送纯文本消息。
+     */
     suspend fun sendAdminMessage(message: String): Boolean {
         return MessageGatewayProvider.require().sendAdminMessage(message)
     }
 
+    /**
+     * 通过统一平台联系人向目标发送消息。
+     */
     suspend fun sendMessage(contact: PlatformContact, message: List<OutgoingPart>): Boolean {
         return MessageGatewayProvider.require().sendMessage(contact, message)
     }
 
+    /**
+     * 注册停机时需要按阶段回收的全部资源分区。
+     */
     private fun registerResourcePartitions() {
         resourceSupervisor.reset()
 
@@ -476,6 +528,7 @@ object BiliBiliBot : CoroutineScope {
                 strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
                 shutdownPhase = ShutdownPhase.INGRESS,
                 stopAction = {
+                    // 先停入口再清空发送网关，避免停机过程中继续接收事件或产生新的发送请求。
                     if (isPlatformAdapterInitialized()) {
                         requireConnectorManager().stop()
                     }
@@ -514,6 +567,9 @@ object BiliBiliBot : CoroutineScope {
         )
     }
 
+    /**
+     * 在资源总管异常或覆盖不足时，按旧流程兜底回收关键资源。
+     */
     private suspend fun fallbackStopResources() {
         runCatching {
             if (isPlatformAdapterInitialized()) {
@@ -570,11 +626,15 @@ object BiliBiliBot : CoroutineScope {
             }
         }.onFailure {
             logger.warn("兜底停止根协程作用域失败: ${it.message}", it)
+            // join 超时时直接取消即可，避免停机线程被永久阻塞在根作用域回收上。
             job?.cancel()
         }
         job = null
     }
 
+    /**
+     * 输出一次包含阶段统计与失败详情的停机摘要。
+     */
     private fun logShutdownSummary(
         reason: String,
         report: ResourceStopReport?,

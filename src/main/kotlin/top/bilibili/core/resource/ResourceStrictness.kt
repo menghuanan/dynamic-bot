@@ -1,5 +1,8 @@
 package top.bilibili.core.resource
 
+/**
+ * 定义资源停止和业务执行时的超时与告警策略。
+ */
 enum class ResourceStrictness {
     STRICT {
         override val stopTimeoutMs: Long = 10_000L
