@@ -3,6 +3,9 @@ package top.bilibili.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * 登录轮询接口响应模型。
+ */
 @Serializable
 data class LoginData(
     @SerialName("code")
@@ -17,6 +20,9 @@ data class LoginData(
     val url: String? = null,
 )
 
+/**
+ * 登录二维码信息模型。
+ */
 @Serializable
 data class LoginQrcode(
     @SerialName("url")

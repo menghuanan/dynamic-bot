@@ -36,6 +36,9 @@ data class DynamicDetail(
     val contact: String? = null
 )
 
+/**
+ * 动态类型枚举。
+ */
 enum class DynamicType(val text: String) {
     DYNAMIC_TYPE_WORD("动态"),
     DYNAMIC_TYPE_DRAW("动态"),
@@ -95,12 +98,16 @@ data class DynamicItem(
     val orig: DynamicItem? = null,
 ): BiliDetail {
 
+    // 未知枚举值需要平稳降级，否则新类型会直接导致整个动态解析失败。
     val type: DynamicType get() = try {
         DynamicType.valueOf(typeStr)
     }catch (e: IllegalArgumentException){
         DynamicType.DYNAMIC_TYPE_UNKNOWN
     }
 
+    /**
+     * 返回可安全使用的动态 ID。
+     */
     val did: String get() = idStr ?: "0"
 
     /**

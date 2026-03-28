@@ -3,7 +3,9 @@ package top.bilibili.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-
+/**
+ * 专栏详情响应模型。
+ */
 @Serializable
 data class ArticleDetail(
     @SerialName("id")
@@ -24,12 +26,18 @@ data class ArticleDetail(
     val words: Int,
 ): BiliDetail
 
+/**
+ * 专栏查看页补充信息。
+ */
 @Serializable
 data class ArticleViewInfo(
     @SerialName("dyn_id_str")
     val dynIdStr: String? = null,
 )
 
+/**
+ * 专栏信息响应模型。
+ */
 @Serializable
 data class ArticleInfo(
     @SerialName("like")

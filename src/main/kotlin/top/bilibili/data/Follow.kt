@@ -3,6 +3,9 @@ package top.bilibili.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * 关注状态响应模型。
+ */
 @Serializable
 data class IsFollow(
     //0：未关注
@@ -13,6 +16,9 @@ data class IsFollow(
     val attribute: Int
 )
 
+/**
+ * 关注分组信息模型。
+ */
 @Serializable
 data class FollowGroup(
     @SerialName("tagid")

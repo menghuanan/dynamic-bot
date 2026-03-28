@@ -3,6 +3,9 @@ package top.bilibili.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * B 站请求所需的核心 Cookie 字段。
+ */
 @Serializable
 data class BiliCookie(
     @SerialName("SESSDATA")
@@ -10,15 +13,22 @@ data class BiliCookie(
     @SerialName("bili_jct")
     var biliJct: String = ""
 ) {
+    /**
+     * 从原始 Cookie 字符串中提取 `SESSDATA` 与 `bili_jct`。
+     */
     fun parse(cookie: String): BiliCookie {
         cookie.split("; ", ";").forEach {
             val cookieKV = it.split("=")
+            // 这里保留最小转义是为了兼容请求头传输，避免特殊字符在后续拼接时被截断。
             if (cookieKV[0] == "SESSDATA") sessData = cookieKV[1].replace(",", "%2C").replace("*", "%2A")
             if (cookieKV[0] == "bili_jct") biliJct = cookieKV[1]
         }
         return this
     }
 
+    /**
+     * 判断当前 Cookie 是否尚未填入有效字段。
+     */
     fun isEmpty(): Boolean = sessData == "" && biliJct == ""
 
     /**
@@ -48,6 +58,9 @@ data class BiliCookie(
     }
 }
 
+/**
+ * EditThisCookie 导出的单条 Cookie 结构。
+ */
 @Serializable
 data class EditThisCookie(
     @SerialName("domain")
@@ -76,6 +89,9 @@ data class EditThisCookie(
     val value: String
 )
 
+/**
+ * 将 EditThisCookie 导出的列表转换为运行期使用的 Cookie 对象。
+ */
 fun List<EditThisCookie>.toCookie(): BiliCookie {
     val bc = BiliCookie()
     for (cookie in this) {

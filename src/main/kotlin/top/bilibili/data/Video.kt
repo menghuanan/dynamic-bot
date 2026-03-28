@@ -3,6 +3,9 @@ package top.bilibili.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * 视频详情响应模型。
+ */
 @Serializable
 data class VideoDetail(
     @SerialName("bvid")
@@ -212,6 +215,9 @@ data class VideoDetail(
     )
 }
 
+/**
+ * 用户视频列表响应模型。
+ */
 @Serializable
 data class VideoList(
     val list: VList
@@ -222,6 +228,9 @@ data class VideoList(
     )
 }
 
+/**
+ * 视频列表项模型。
+ */
 @Serializable
 data class VideoInfo(
     val aid: Long,

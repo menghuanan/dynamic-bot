@@ -2,7 +2,9 @@ package top.bilibili.data
 
 import kotlinx.serialization.Serializable
 
-
+/**
+ * Bot 内部消息投递模型的统一接口。
+ */
 @Serializable
 sealed interface BiliMessage {
     val mid: Long
@@ -13,6 +15,9 @@ sealed interface BiliMessage {
     val contact: String?
 }
 
+/**
+ * 动态推送消息模型。
+ */
 @Serializable
 data class DynamicMessage(
     val did: String,
@@ -28,6 +33,9 @@ data class DynamicMessage(
     override val drawPath: String? = null,
     override val contact: String? = null
 ) : BiliMessage {
+    /**
+     * 动态消息中提取出的链接片段。
+     */
     @Serializable
     data class Link(
         val tag: String,
@@ -35,6 +43,9 @@ data class DynamicMessage(
     )
 }
 
+/**
+ * 开播通知消息模型。
+ */
 @Serializable
 data class LiveMessage(
     val rid: Long,
@@ -50,6 +61,9 @@ data class LiveMessage(
     override val contact: String? = null
 ) : BiliMessage
 
+/**
+ * 下播通知消息模型。
+ */
 @Serializable
 data class LiveCloseMessage(
     val rid: Long,

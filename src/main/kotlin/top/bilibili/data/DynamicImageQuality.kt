@@ -5,6 +5,9 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.Serializable
 import java.io.File
 
+/**
+ * 动态图片绘制时使用的尺寸与字号配置。
+ */
 @Serializable
 data class Quality(
     val imageWidth: Int,
@@ -209,9 +212,13 @@ object BiliImageQuality {
         )
     )
 
+    /**
+     * 重新加载自定义图片质量配置。
+     */
     fun reload() {
         val configFile = File("config/ImageQuality.custom.yml")
         if (!configFile.exists()) {
+            // 文件不存在时显式关闭自定义覆盖，确保调用方继续走内置档位。
             customOverload = false
             return
         }
@@ -221,6 +228,7 @@ object BiliImageQuality {
             customQuality = loaded
             customOverload = true
         }.onFailure {
+            // 自定义配置解析失败时宁可回退默认值，也不让绘图流程带着半残数据继续运行。
             customOverload = false
         }
     }

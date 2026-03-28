@@ -3,6 +3,9 @@ package top.bilibili.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * PGC 关注状态响应模型。
+ */
 @Serializable
 data class PgcFollow(
     @SerialName("fmid")
@@ -15,6 +18,9 @@ data class PgcFollow(
     val toast: String,
 )
 
+/**
+ * PGC 媒体详情响应模型。
+ */
 @Serializable
 data class PgcMedia(
     @SerialName("media")
@@ -65,6 +71,9 @@ data class PgcMedia(
 }
 
 
+/**
+ * PGC 季度详情响应模型。
+ */
 @Serializable
 data class PgcSeason(
     @SerialName("cover")

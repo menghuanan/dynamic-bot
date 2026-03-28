@@ -3,6 +3,9 @@ package top.bilibili.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * 用户详情响应模型。
+ */
 @Serializable
 data class BiliUser(
     @SerialName("mid")
@@ -71,6 +74,9 @@ data class BiliUser(
     //val sysNotice: ?,
 
 ): BiliDetail {
+    /**
+     * 用户勋章信息。
+     */
     @Serializable
     data class Nameplate(
         @SerialName("nid")
@@ -87,6 +93,9 @@ data class BiliUser(
         val condition: String
     )
 
+    /**
+     * 用户荣誉标签信息。
+     */
     @Serializable
     data class UserHonourInfo(
         @SerialName("mid")
@@ -97,12 +106,18 @@ data class BiliUser(
         val tags: List<String>,
     )
 
+    /**
+     * 用户学校信息。
+     */
     @Serializable
     data class School(
         @SerialName("name")
         val name: String,
     )
 
+    /**
+     * 用户职业信息。
+     */
     @Serializable
     data class Profession(
         @SerialName("name")
@@ -115,6 +130,9 @@ data class BiliUser(
         val isShow: Int,
     )
 
+    /**
+     * 用户升级引导信息。
+     */
     @Serializable
     data class Series(
         @SerialName("user_upgrade_status")
@@ -125,6 +143,9 @@ data class BiliUser(
 
 }
 
+/**
+ * WBI 鉴权图片信息。
+ */
 @Serializable
 data class WbiImg(
     @SerialName("img_url")
@@ -133,6 +154,9 @@ data class WbiImg(
     val subUrl: String,
 )
 
+/**
+ * 粉丝勋章信息。
+ */
 @Serializable
 data class FansMedal(
     @SerialName("show")
@@ -142,6 +166,9 @@ data class FansMedal(
     @SerialName("medal")
     val medal: Medal,
 ) {
+    /**
+     * 粉丝勋章详情。
+     */
     @Serializable
     data class Medal(
         @SerialName("uid")
@@ -179,6 +206,9 @@ data class FansMedal(
     )
 }
 
+/**
+ * 官方认证信息。
+ */
 @Serializable
 data class Official(
     @SerialName("role")
@@ -191,6 +221,9 @@ data class Official(
     val type: Int,
 )
 
+/**
+ * 用户直播间信息。
+ */
 @Serializable
 data class LiveRoom(
     @SerialName("roomStatus")
@@ -212,6 +245,9 @@ data class LiveRoom(
     @SerialName("watched_show")
     val watchedShow: WatchedShow,
 ) {
+    /**
+     * 直播间观看展示信息。
+     */
     @Serializable
     data class WatchedShow(
         @SerialName("switch")

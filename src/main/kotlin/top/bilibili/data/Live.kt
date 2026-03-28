@@ -3,13 +3,18 @@ package top.bilibili.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-
+/**
+ * 直播列表响应模型。
+ */
 @Serializable
 data class LiveList(
     @SerialName("rooms")
     val rooms: List<LiveInfo>
 )
 
+/**
+ * 单个直播详情响应模型。
+ */
 @Serializable
 data class LiveDetail(
     @SerialName("item")
@@ -19,6 +24,9 @@ data class LiveDetail(
     val contact: String? = null
 )
 
+/**
+ * 直播间基础信息模型。
+ */
 @Serializable
 data class LiveInfo(
     @SerialName("title")
@@ -42,9 +50,13 @@ data class LiveInfo(
     @SerialName("area_v2_name")
     val area: String,
 ){
+    // 开播时间字段在不同接口里语义不完全一致，这里统一向上层暴露一个可消费值。
     val liveTime get() = liveTimeStart ?: liveTimeDuration
 }
 
+/**
+ * 直播间详细信息模型。
+ */
 @Serializable
 data class LiveRoomDetail(
     @SerialName("uid")

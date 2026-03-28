@@ -4,6 +4,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
+/**
+ * 通用 B 站接口响应包装。
+ */
 @Serializable
 data class BiliResult(
     @SerialName("code")
@@ -16,6 +19,9 @@ data class BiliResult(
     val data: JsonElement? = null
 )
 
+/**
+ * PGC 接口响应包装。
+ */
 @Serializable
 data class PgcResult(
     @SerialName("code")
@@ -26,6 +32,9 @@ data class PgcResult(
     val result: JsonElement? = null
 )
 
+/**
+ * 短链接解析结果模型。
+ */
 @Serializable
 data class ShortLinkData(
     @SerialName("title")

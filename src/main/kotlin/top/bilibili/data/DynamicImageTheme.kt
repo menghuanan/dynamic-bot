@@ -7,6 +7,9 @@ import org.jetbrains.skia.Color
 import top.bilibili.draw.makeRGB
 import java.io.File
 
+/**
+ * 动态卡片绘制时使用的颜色主题配置。
+ */
 @Serializable
 data class Theme(
     val cardBgColorHex: String,
@@ -33,6 +36,9 @@ data class Theme(
 
 ) {
 
+    /**
+     * 阴影样式配置。
+     */
     @Serializable
     data class Shadow(
         val shadowColorHex: String,
@@ -44,6 +50,9 @@ data class Theme(
         val shadowColor: Int get() = Color.makeRGB(shadowColorHex)
     }
 
+    /**
+     * 徽章文本与背景颜色配置。
+     */
     @Serializable
     data class BadgeColor(
         val fontColorHex: String,
@@ -157,9 +166,13 @@ object BiliImageTheme {
         )
     )
 
+    /**
+     * 重新加载自定义图片主题配置。
+     */
     fun reload() {
         val configFile = File("config/ImageTheme.custom.yml")
         if (!configFile.exists()) {
+            // 文件缺失时回退内置主题，避免渲染流程依赖外部配置文件存在。
             customOverload = false
             return
         }
@@ -169,6 +182,7 @@ object BiliImageTheme {
             customTheme = loaded
             customOverload = true
         }.onFailure {
+            // 主题文件格式错误时禁用覆盖，优先保证图片仍可正常生成。
             customOverload = false
         }
     }

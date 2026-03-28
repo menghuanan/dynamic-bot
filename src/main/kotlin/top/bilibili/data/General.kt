@@ -4,7 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * 统计
+ * 通用统计信息模型。
  */
 @Serializable
 data class Stats(

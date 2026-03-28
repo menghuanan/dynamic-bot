@@ -3,6 +3,9 @@ package top.bilibili.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * 用户搜索接口响应模型。
+ */
 @Serializable
 data class BiliSearch(
     @SerialName("seid")
