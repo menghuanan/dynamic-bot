@@ -77,6 +77,7 @@ object ImageCache : Closeable {
             val rawExtension = url.substringAfterLast('.', "png").take(4).lowercase()
             val extension = when {
                 rawExtension in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp") -> rawExtension
+                // 未命中白名单时统一回退 png，是为了避免扩展名注入影响落盘和后续识别。
                 else -> "png" // 默认使用 png
             }
             val cacheFile = File(cacheDir, "$hash.$extension")
@@ -85,6 +86,7 @@ object ImageCache : Closeable {
             if (cacheFile.exists()) {
                 val fileAge = Instant.now().epochSecond - cacheFile.lastModified() / 1000
                 if (fileAge < 86400) { // 24 小时
+                    // 24 小时内直接复用缓存，是为了减少重复下载并降低外部接口压力。
                     logger.debug("使用已缓存的图片: ${cacheFile.name}")
                     return "file:///${cacheFile.absolutePath.replace("\\", "/")}"
                 }
@@ -176,6 +178,7 @@ object ImageCache : Closeable {
             false
         } catch (e: Exception) {
             // 解析失败，保守起见认为是内网地址
+            // 遇到解析异常直接拒绝，是为了避免特殊构造 URL 从异常路径绕过防护。
             true
         }
     }
@@ -206,6 +209,7 @@ object ImageCache : Closeable {
             }
 
             if (retryCount < maxRetries) {
+                // 仅做有限重试，是为了处理瞬时网络抖动而不让下载线程长时间阻塞。
                 kotlinx.coroutines.delay(3000)
                 retryCount++
             } else {
@@ -345,11 +349,17 @@ object ImageCache : Closeable {
         }
     }
 
+    /**
+     * 图片缓存目录的统计信息。
+     */
     data class CacheStats(
         val fileCount: Int,
         val totalSizeBytes: Long,
         val cacheDir: String
     ) {
+        /**
+         * 缓存总大小的 MB 表示。
+         */
         val totalSizeMB: Long get() = totalSizeBytes / 1024 / 1024
     }
 }

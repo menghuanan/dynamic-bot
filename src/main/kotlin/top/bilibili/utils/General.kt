@@ -41,11 +41,13 @@ private fun sanitizeFileName(fileName: String): String {
 
     // 如果清理后为空，使用默认名称
     if (safe.isBlank()) {
+        // 回退到时间戳命名，是为了在拒绝危险文件名的同时仍让缓存流程可继续。
         safe = "file_${System.currentTimeMillis()}"
     }
 
     // 限制文件名长度
     if (safe.length > 200) {
+        // 这里截断尾部长度，是为了兼容深层缓存目录时的文件系统路径限制。
         safe = safe.takeLast(200)
     }
 
@@ -58,16 +60,28 @@ internal val logger by lazy {
 
 val biliClient = BiliClient()
 
+/**
+ * 判断字符串列表中的元素是否全部为空串。
+ */
 fun List<String>.isBlank(): Boolean {
     if (size == 0) return true
     forEach { if (it != "") return false }
     return true
 }
 
+/**
+ * 判断字符串列表中是否至少存在一个非空串元素。
+ */
 fun List<String>.isNotBlank(): Boolean = !isBlank()
 
+/**
+ * 将集合中的元素依次发送到协程通道。
+ */
 suspend fun <E> Channel<E>.sendAll(list: Collection<E>) = list.forEach { send(it) }
 
+/**
+ * 当元素非空时追加到集合副本中；为空时尽量复用原列表。
+ */
 fun <T> Collection<T>.plusOrNull(element: T?): List<T> {
     return if (element != null) {
         val result = ArrayList<T>(size + 1)
@@ -79,23 +93,41 @@ fun <T> Collection<T>.plusOrNull(element: T?): List<T> {
     }
 }
 
+/**
+ * 为 Ktor 请求体追加 `application/x-www-form-urlencoded` 参数。
+ */
 fun HttpRequestBuilder.bodyParameter(key: String, value: Any) {
     headers.append("Content-Type", "application/x-www-form-urlencoded")
     setBody(if (body is EmptyContent) "$key=$value" else "$body&$key=$value")
 }
 
+/**
+ * 返回动态作者的 UID。
+ */
 val DynamicItem.mid: Long
     get() = modules.moduleAuthor.mid
 
+/**
+ * 根据动态 ID 计算近似发布时间戳。
+ */
 val DynamicItem.time: Long
     get() = (did.toLong() shr 32) + 1498838400L
 
+/**
+ * 将动态发布时间格式化为默认中文时间字符串。
+ */
 val DynamicItem.formatTime: String
     get() = time.formatTime
 
+/**
+ * 将时间戳格式化为默认中文时间字符串。
+ */
 val Long.formatTime: String
     get() = formatTime()
 
+/**
+ * 按给定模板格式化秒级时间戳。
+ */
 fun Long.formatTime(template: String = "yyyy年MM月dd日 HH:mm"): String = DateTimeFormatter.ofPattern(template)
     .format(LocalDateTime.ofEpochSecond(this, 0, OffsetDateTime.now().offset))
 
@@ -150,9 +182,15 @@ val Long.formatRelativeTime: String
         }
     }
 
+/**
+ * 将动态发布时间格式化为相对时间文案。
+ */
 val DynamicItem.formatRelativeTime: String
     get() = time.formatRelativeTime
 
+/**
+ * 将秒数格式化为文本或时分秒样式的时长字符串。
+ */
 fun Long.formatDuration(isText: Boolean = true): String {
     val duration = Duration.ofSeconds(this)
     val day = duration.toDays()
@@ -172,14 +210,28 @@ fun Long.formatDuration(isText: Boolean = true): String {
     }
 }
 
+/**
+ * 将整型秒数格式化为时长字符串。
+ */
 fun Int.formatDuration(isText: Boolean = true): String = this.toLong().formatDuration(isText)
 
+/**
+ * 将一位数字补零为两位字符串。
+ */
 val Long.formatZero: String get() = if (this in 1..9) "0$this" else this.toString()
+
+/**
+ * 将一位数字补零为两位字符串。
+ */
 val Int.formatZero: String get() = this.toLong().formatZero
 
+/**
+ * 规范化图片来源地址，只保留当前下载链路支持的协议与路径。
+ */
 fun normalizeImageSourceUrl(url: String): String? {
     val trimmed = url.trim()
     if (trimmed.isBlank()) return null
+    // 这里显式拒绝 `@` 前缀，是为了避免把业务占位符误当作真实图片地址继续传播。
     if (trimmed.startsWith("cache/") || trimmed.startsWith("file://")) return trimmed
     if (trimmed.startsWith("@")) return null
     if (trimmed.startsWith("//")) return "https:$trimmed"
@@ -187,12 +239,18 @@ fun normalizeImageSourceUrl(url: String): String? {
     return null
 }
 
+/**
+ * 为 B 站图片地址追加缩放参数；本地缓存路径不参与该转换。
+ */
 fun imgApi(imgUrl: String, width: Int, height: Int): String {
     val normalized = normalizeImageSourceUrl(imgUrl) ?: return ""
     if (normalized.startsWith("cache/") || normalized.startsWith("file://")) return ""
     return "${normalized}@${width}w_${height}h_1e_1c.png"
 }
 
+/**
+ * 返回动态对应的页面链接。
+ */
 val DynamicItem.link: String
     get() = when (type) {
         DYNAMIC_TYPE_WORD,
@@ -214,10 +272,16 @@ val DynamicItem.link: String
     }
 
 
+/**
+ * 从类路径加载资源文件并返回本地路径字符串。
+ */
 fun loadResource(file: String) =
     BiliBiliBot::class.java.getResource(file)?.path!!
 //BiliBiliBot::class.java.getResource(file)!!.openStream().use { it.readBytes() }
 
+/**
+ * 从类路径读取资源字节数组。
+ */
 fun loadResourceBytes(path: String): ByteArray {
     // 确保路径以 / 开头，从 classpath 根目录开始查找
     val resourcePath = if (path.startsWith("/")) path else "/$path"
@@ -229,16 +293,25 @@ fun loadResourceBytes(path: String): ByteArray {
     return stream.use { it.readBytes() }
 }
 
+/**
+ * 图片及其他缓存文件的根目录。
+ */
 val cachePath: Path by lazy {
     dataFolderPath.resolve("cache")
 }
 
+/**
+ * 返回指定缓存类型对应的目录路径，不存在时自动创建。
+ */
 fun CacheType.cachePath(): Path {
     return cachePath.resolve(path).apply {
         if (notExists()) createDirectories()
     }
 }
 
+/**
+ * 根据相对文件路径返回指定缓存类型下的缓存文件位置。
+ */
 fun CacheType.cacheFile(filePath: String): Path {
     val split = filePath.split("/")
     val path = split.dropLast(1).joinToString("/")
@@ -248,6 +321,9 @@ fun CacheType.cacheFile(filePath: String): Path {
     }.resolve(file)
 }
 
+/**
+ * 统一定义项目内可用的缓存目录分类。
+ */
 enum class CacheType(val path: String) {
     DRAW("draw"),
     DRAW_DYNAMIC("draw/dynamic"),
@@ -260,6 +336,9 @@ enum class CacheType(val path: String) {
     UNKNOWN(""),
 }
 
+/**
+ * 在目录树中递归查找指定文件名。
+ */
 fun Path.findFile(file: String): Path? {
     forEachDirectoryEntry {
         if (it.isDirectory()) {
@@ -368,10 +447,14 @@ private fun isPrivateNetwork(url: String): Boolean {
         false
     } catch (e: Exception) {
         // 解析失败，保守起见认为是内网地址
+        // 解析异常直接按高风险处理，是为了避免边界输入绕过 SSRF 防护。
         true
     }
 }
 
+/**
+ * 从缓存读取资源，不存在时下载并按缓存策略落盘。
+ */
 suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN): ByteArray? {
      try {
         val normalizedUrl = normalizeImageSourceUrl(url) ?: run {
@@ -389,6 +472,7 @@ suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN)
             cacheType.cacheFile(fileName)
         }
          if (filePath.exists()) {
+            // 命中缓存时刷新时间戳，是为了让仍在使用的文件不要被清理策略过早回收。
             filePath.setLastModifiedTime(FileTime.from(Instant.now()))
             return prepareDownloadedImageBytes(filePath)
          } else if(normalizedUrl.startsWith("cache/")){
@@ -418,6 +502,7 @@ suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN)
                 }catch (t: Throwable) {
                     logger.warn("下载资源失败 (尝试 ${retryCount + 1}/${maxRetries + 1}): $normalizedUrl")
                     if (retryCount < maxRetries) {
+                        // 失败后短暂等待，是为了给临时网络抖动和 CDN 回源留出恢复时间。
                         kotlinx.coroutines.delay(3000)
                         retryCount++
                     } else {
@@ -434,6 +519,9 @@ suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN)
     }
 }
 
+/**
+ * 获取并解析图片资源，失败时返回 `null`。
+ */
 suspend fun getOrDownloadImage(url: String, cacheType: CacheType = CacheType.UNKNOWN) = try {
     getOrDownload(url, cacheType)?.let { Image.makeFromEncoded(it) }
 }catch (t: Throwable){
@@ -441,6 +529,9 @@ suspend fun getOrDownloadImage(url: String, cacheType: CacheType = CacheType.UNK
     null
 }
 
+/**
+ * 获取原图失败时回退到兜底图片，并最终保证返回可用 [Image]。
+ */
 suspend fun getOrDownloadImageDefault(url: String, fallbackUrl: String, cacheType: CacheType = CacheType.UNKNOWN): Image {
     val normalizedUrl = normalizeImageSourceUrl(url)
     val normalizedFallbackUrl = normalizeImageSourceUrl(fallbackUrl)
@@ -566,6 +657,9 @@ val Contact.delegate get() = (if (this is Group) id * -1 else id).toString()
 */
 
 
+/**
+ * 按本地配置中的 UID 或昵称查找匹配候选。
+ */
 fun findLocalIdOrName(target: String): List<Pair<Long, Double>> {
     return try {
         listOf(Pair(target.toLong(), 1.0))
@@ -575,6 +669,9 @@ fun findLocalIdOrName(target: String): List<Pair<Long, Double>> {
     }
 }
 
+/**
+ * 触发一次远端用户搜索后，再按本地缓存数据返回匹配候选。
+ */
 suspend fun findRemoteIdOrName(target: String): List<Pair<Long, Double>> {
     return try {
         listOf(Pair(target.toLong(), 1.0))
@@ -586,6 +683,9 @@ suspend fun findRemoteIdOrName(target: String): List<Pair<Long, Double>> {
     }
 }
 
+/**
+ * 对 UID 与昵称列表执行简单模糊匹配，并在结果明显时自动消歧。
+ */
 fun fuzzySearch(
     list: List<Pair<Long, String>>,
     target: String,
@@ -608,6 +708,7 @@ fun fuzzySearch(
         else -> {
             if (bestMatches.first().second - bestMatches.last().second <= disambiguationRate) {
                 // resolution ambiguity
+                // 分差过小时保留候选集合，是为了避免把多个相近昵称错误收敛成单一用户。
                 candidates
             } else {
                 listOf(bestMatches.first().first to 1.0)
@@ -616,6 +717,9 @@ fun fuzzySearch(
     }
 }
 
+/**
+ * 计算当前字符串与目标字符串的顺序匹配得分。
+ */
 internal fun String.fuzzyMatchWith(target: String): Double {
     if (this == target) {
         return 1.0
@@ -634,6 +738,9 @@ internal fun String.fuzzyMatchWith(target: String): Double {
     return match.toDouble() / (longerLength + (shorterLength - match))
 }
 
+/**
+ * 管理员操作通知的结构化消息体。
+ */
 @Serializable
 data class ActionMessage(
     val operator: String,
@@ -643,10 +750,16 @@ data class ActionMessage(
 )
 
 // TODO: 以下通知函数需要使用新的消息发送机制重新实现
+/**
+ * 按字段构造管理员操作通知并发送。
+ */
 suspend fun actionNotify(subject: String?, operator: String, target: String, action: String, message: String) {
     actionNotify(subject, ActionMessage(operator, target, action, message))
 }
 
+/**
+ * 发送结构化管理员操作通知。
+ */
 suspend fun actionNotify(subject: String?, message: ActionMessage) {
     if (top.bilibili.connector.PlatformCapabilityService.canSendManagedAdminNotice(subject = subject)) {
         actionNotify(buildString {
@@ -658,14 +771,21 @@ suspend fun actionNotify(subject: String?, message: ActionMessage) {
     }
 }
 
+/**
+ * 发送纯文本管理员通知；发送失败时回退为日志记录。
+ */
 suspend fun actionNotify(message: String) {
     if (!top.bilibili.connector.PlatformCapabilityService.canSendManagedAdminNotice()) return
     val success = top.bilibili.service.MessageGatewayProvider.require().sendAdminMessage(message)
     if (!success) {
+        // 回退到日志输出，是为了在网关不可用时仍保留关键管理审计信息。
         logger.info("通知消息: $message")
     }
 }
 
+/**
+ * 根据用户输入匹配目标用户，并将唯一匹配结果交给回调处理。
+ */
 inline fun matchUser(user: String, matchSuccess: (uid: Long) -> String?): String? {
     val u = findLocalIdOrName(user)
     return if (u.isEmpty()) {
@@ -682,6 +802,9 @@ inline fun matchUser(user: String, matchSuccess: (uid: Long) -> String?): String
     }
 }
 
+/**
+ * 计算字符串的 MD5 摘要。
+ */
 fun String.md5(): String {
     val md = MessageDigest.getInstance("MD5")
     return md.digest(toByteArray()).joinToString("") { "%02x".format(it) }

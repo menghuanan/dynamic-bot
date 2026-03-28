@@ -72,6 +72,9 @@ object MD5 {
         return null
     }
 
+    /**
+     * 计算输入流内容的 MD5 值。
+     */
     fun md5(`in`: InputStream): String? {
         try {
             val messagedigest = MessageDigest.getInstance("MD5")
@@ -93,6 +96,9 @@ object MD5 {
         return null
     }
 
+    /**
+     * 将字节数组转换为十六进制字符串。
+     */
     private fun byteArrayToHex(byteArray: ByteArray): String {
         // new一个字符数组，这个就是用来组成结果字符串的（解释一下：一个byte是八位二进制，也就是2位十六进制字符（2的8次方等于16的2次方））
         val resultCharArray = CharArray(byteArray.size * 2)

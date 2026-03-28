@@ -17,8 +17,14 @@ val json = Json {
     allowStructuredMapKeys = true
 }
 
+/**
+ * 将 JSON 字符串解析为目标类型。
+ */
 inline fun <reified T> String.decode(): T = json.parseToJsonElement(this).decode()
 
+/**
+ * 将 [JsonElement] 解析为目标类型，并在失败时落盘上下文供排查。
+ */
 inline fun <reified T> JsonElement.decode(): T {
     return try {
         json.decodeFromJsonElement(this)
@@ -32,6 +38,7 @@ inline fun <reified T> JsonElement.decode(): T {
             if (notExists()) createDirectories()
         }.resolve(fileName).apply {
             if (notExists()) {
+                // 只在首次失败时写入现场，是为了保留原始上下文并避免重复异常刷盘。
                 writeText(e.stackTraceToString())
                 appendText("\n\n\n")
                 appendText(json.encodeToString(JsonElement.serializer(), this@decode))

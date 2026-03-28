@@ -15,6 +15,9 @@ val allNullMode = true
 val noteValue = false
 private val jsonLogger = LoggerFactory.getLogger("Json2DataClass")
 
+/**
+ * 从远程 JSON 拉取数据并生成 Kotlin Data Class 文件。
+ */
 suspend fun json2DataClassFile(url: String, baseClassName: String, path: Path) {
     val data = json2DataClass(url, baseClassName)
     withContext(Dispatchers.IO) {
@@ -26,6 +29,9 @@ suspend fun json2DataClassFile(url: String, baseClassName: String, path: Path) {
     }
 }
 
+/**
+ * 从远程 JSON 拉取数据并生成 Kotlin Data Class 源码字符串。
+ */
 suspend fun json2DataClass(url: String, baseClassName: String): String {
     val client = HttpClient(OkHttp)
     var retryCount = 0
@@ -54,8 +60,12 @@ suspend fun json2DataClass(url: String, baseClassName: String): String {
 }
 
 
+/**
+ * 递归解析 JSON 对象并生成对应的 Kotlin Data Class 定义。
+ */
 private fun JsonObject.decodeJsonObject(objName: String): String {
     var obj = ""
+    // 统一为空安全模式，是为了让生成结果更适合直接对接字段不稳定的外部接口。
     val plus = if (allNullMode) "? = null," else ","
     return buildString {
         appendLine("@Serializable")
@@ -106,6 +116,9 @@ private fun JsonObject.decodeJsonObject(objName: String): String {
     }
 }
 
+/**
+ * 根据 JSON 原始值推断最合适的 Kotlin 基础类型。
+ */
 private fun JsonPrimitive.parse() =
     if (intOrNull != null) "Int"
     else if (longOrNull != null) "Long"
@@ -114,9 +127,15 @@ private fun JsonPrimitive.parse() =
     else if (isString) "String"
     else "String"
 
+/**
+ * 将下划线命名转换为首字母大写的驼峰命名。
+ */
 private fun snakeToCamel(name: String) =
     name.split("_").joinToString("") { s -> s.replaceRange(0, 1, s.first().uppercase()) }
 
+/**
+ * 将下划线命名转换为首字母小写的驼峰命名。
+ */
 private fun snakeToCamelLowerFirst(name: String): String {
     val k = snakeToCamel(name)
     return k.replaceRange(0, 1, k.first().lowercase())

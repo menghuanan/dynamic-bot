@@ -5,12 +5,21 @@ import top.bilibili.BiliConfigManager
 import top.bilibili.utils.json
 import top.bilibili.utils.logger
 
+/**
+ * 百度翻译接口的轻量封装。
+ */
 class TransApi(private val appid: String, private val securityKey: String) {
+    /**
+     * 请求百度翻译接口并返回原始响应字符串。
+     */
     fun getTransResult(query: String, from: String, to: String): String? {
         val params = buildParams(query, from, to)
         return HttpGet[TRANS_API_HOST, params]
     }
 
+    /**
+     * 按百度翻译接口要求构造签名参数。
+     */
     private fun buildParams(query: String, from: String, to: String): Map<String?, String?> {
         val params: MutableMap<String?, String?> = HashMap()
         params["q"] = query
@@ -42,11 +51,15 @@ private val api = TransApi(
 )
 
 //文本翻译
+/**
+ * 将非中文文本翻译为中文；已是中文或不满足翻译条件时返回 `null`。
+ */
 fun trans(text: String): String? {
     if (BiliConfigManager.config.enableConfig.translateEnable) {
         if (BiliConfigManager.config.translateConfig.baidu.SECURITY_KEY != "") {
             var msg = text
             while (msg.indexOf('[') != -1) {
+                // 先剔除方括号片段，是为了避免消息标记内容干扰语言检测与翻译结果。
                 msg = msg.replaceRange(msg.indexOf('['), msg.indexOf(']') + 1, "  ")
             }
             if (msg.contains(jp) || !msg.contains("[\u4e00-\u9fa5]".toRegex())) {

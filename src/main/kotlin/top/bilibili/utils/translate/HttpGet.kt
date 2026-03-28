@@ -24,6 +24,9 @@ internal object HttpGet {
     internal const val GET = "GET"
     private val logger = LoggerFactory.getLogger(HttpGet::class.java)
 
+    /**
+     * 向指定地址发起 GET 请求，并在可恢复错误时执行有限重试。
+     */
     operator fun get(host: String, params: Map<String?, String?>?): String? {
         val maxRetries = 1
         var retryCount = 0
@@ -32,6 +35,7 @@ internal object HttpGet {
             try {
                 // 设置SSLContext
                 val sslcontext = SSLContext.getInstance("TLS")
+                // 这里沿用宽松证书策略，是为了兼容历史翻译接口环境中的证书问题。
                 sslcontext.init(null, arrayOf(myX509TrustManager), null)
                 val sendUrl = getUrlWithQueryString(host, params)
 
@@ -91,6 +95,9 @@ internal object HttpGet {
         return null
     }
 
+    /**
+     * 将查询参数拼接到 URL 上，并对参数值进行编码。
+     */
     fun getUrlWithQueryString(url: String, params: Map<String?, String?>?): String {
         if (params == null) {
             return url
@@ -117,6 +124,9 @@ internal object HttpGet {
         return builder.toString()
     }
 
+    /**
+     * 安全关闭可关闭资源，避免清理阶段的异常影响主流程。
+     */
     internal fun close(closeable: Closeable?) {
         if (closeable != null) {
             try {

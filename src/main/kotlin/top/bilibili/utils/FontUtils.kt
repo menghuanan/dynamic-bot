@@ -16,6 +16,9 @@ object FontUtils {
 
     var defaultFont: Typeface? = null
 
+    /**
+     * 向全局字体集合注册字体，并按字体特征与别名去重。
+     */
     private fun registerTypeface(typeface: Typeface?, alias: String? = null) {
         if (typeface == null) return
 
@@ -30,16 +33,21 @@ object FontUtils {
             append(style.slant.ordinal)
         }
         if (registeredTypefaceKeys.add(baseKey)) {
+            // 这里先按完整样式键去重，是为了避免同一字体被重复注册后污染匹配结果。
             fontProvider.registerTypeface(typeface)
         }
 
         val aliasKey = alias?.trim()?.takeIf { it.isNotEmpty() }?.lowercase(Locale.ROOT)
         if (aliasKey != null && registeredAliasKeys.add(aliasKey)) {
+            // 别名单独去重，是为了允许同一字体本体与多个显式别名分开控制注册策略。
             fontProvider.registerTypeface(typeface, alias)
         }
     }
 
 
+    /**
+     * 按字体族名称匹配字体集合，优先查找运行时动态注册的字体。
+     */
     fun matchFamily(familyName: String): FontStyleSet {
         val providerFamily = fontProvider.matchFamily(familyName)
         if (providerFamily.count() != 0) {
@@ -49,6 +57,9 @@ object FontUtils {
         return fontMgr.matchFamily(familyName)
     }
 
+    /**
+     * 按字体族名称与样式匹配具体字体，优先使用运行时注册的字体。
+     */
     fun matchFamilyStyle(familyName: String, style: FontStyle): Typeface? {
         fontProvider.matchFamily(familyName).use { providerFamily ->
             if (providerFamily.count() != 0) {
@@ -60,6 +71,9 @@ object FontUtils {
         }
     }
 
+    /**
+     * 从文件系统加载字体并注册到全局字体集合。
+     */
     fun loadTypeface(path: String, alias: String? = null, index: Int = 0): Typeface {
         val face = fontMgr.makeFromFile(path, index) ?: throw IllegalArgumentException("无法加载字体: $path")
         if (defaultFont == null) defaultFont = face
@@ -68,6 +82,9 @@ object FontUtils {
         return face
     }
 
+    /**
+     * 从类路径资源加载字体并注册到全局字体集合。
+     */
     fun loadTypefaceFromResource(resourcePath: String, alias: String? = null, index: Int = 0): Typeface? {
         return try {
             // 使用 classLoader 加载资源，确保从 classpath 根目录开始查找
@@ -96,6 +113,9 @@ object FontUtils {
         }
     }
 
+    /**
+     * 从内存数据加载字体并注册到全局字体集合。
+     */
     fun loadTypeface(data: Data, index: Int = 0): Typeface {
         return try {
             val face = fontMgr.makeFromData(data, index) ?: throw IllegalArgumentException("无法从数据加载字体")

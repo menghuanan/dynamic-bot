@@ -22,6 +22,9 @@ internal const val LARGE_IMAGE_WIDTH_THRESHOLD = 4000
 internal const val LARGE_IMAGE_HEIGHT_THRESHOLD = 3000
 internal const val PREPROCESSED_IMAGE_MAX_LONG_EDGE = 2800
 
+/**
+ * 可从文件头快速识别的图片格式。
+ */
 internal enum class ImageHeaderFormat {
     PNG,
     JPEG,
@@ -29,6 +32,9 @@ internal enum class ImageHeaderFormat {
     WEBP,
 }
 
+/**
+ * 图片文件头中提取出的关键元信息。
+ */
 internal data class ImageHeaderInfo(
     val format: ImageHeaderFormat,
     val width: Int,
@@ -38,6 +44,9 @@ internal data class ImageHeaderInfo(
 
 private val imagePreprocessMutex = Mutex()
 
+/**
+ * 根据文件头快速探测图片格式、尺寸与是否为动图。
+ */
 internal fun inspectImageHeader(bytes: ByteArray): ImageHeaderInfo? {
     return inspectPngHeader(bytes)
         ?: inspectJpegHeader(bytes)
@@ -45,6 +54,9 @@ internal fun inspectImageHeader(bytes: ByteArray): ImageHeaderInfo? {
         ?: inspectWebpHeader(bytes)
 }
 
+/**
+ * 判断图片是否需要在下载后做静态大图预处理。
+ */
 internal fun shouldPreprocessLargeStaticImage(
     header: ImageHeaderInfo,
     widthThreshold: Int = LARGE_IMAGE_WIDTH_THRESHOLD,
@@ -55,6 +67,9 @@ internal fun shouldPreprocessLargeStaticImage(
         header.height > heightThreshold
 }
 
+/**
+ * 计算在最长边限制下的等比缩放尺寸。
+ */
 internal fun computeDownscaledSize(
     width: Int,
     height: Int,
@@ -74,10 +89,16 @@ internal fun computeDownscaledSize(
     return scaledWidth to scaledHeight
 }
 
+/**
+ * 返回原图对应的预处理缩放缓存路径。
+ */
 internal fun resizedVariantPath(originalPath: Path): Path {
     return originalPath.resolveSibling("resized_${originalPath.name}")
 }
 
+/**
+ * 对下载后的图片字节做按需预处理，优先复用已存在的缩放缓存。
+ */
 internal suspend fun prepareDownloadedImageBytes(
     filePath: Path,
     originalBytes: ByteArray = filePath.readBytes(),
@@ -111,6 +132,7 @@ internal suspend fun prepareDownloadedImageBytes(
                 "正在预处理过大的静态图片: 文件名=${filePath.name}, " +
                     "原始尺寸=${header.width}x${header.height}, 目标尺寸=${targetWidth}x${targetHeight}, 格式=${header.format}",
             )
+            // 锁内再次检查并执行缩放，是为了避免并发下载同一张大图时重复生成缓存文件。
             createResizedVariant(originalBytes, resizedPath, header, targetWidth, targetHeight)
             resizedPath.readBytes()
         }.getOrElse { error ->
@@ -124,6 +146,9 @@ internal suspend fun prepareDownloadedImageBytes(
     }
 }
 
+/**
+ * 将原图缩放后编码为新的缓存变体文件。
+ */
 private fun createResizedVariant(
     originalBytes: ByteArray,
     resizedPath: Path,
@@ -168,15 +193,22 @@ private fun createResizedVariant(
     }
 }
 
+/**
+ * 将识别到的文件头格式映射为可输出的编码格式。
+ */
 private fun encodedFormatFor(format: ImageHeaderFormat): EncodedImageFormat {
     return when (format) {
         ImageHeaderFormat.PNG -> EncodedImageFormat.PNG
         ImageHeaderFormat.JPEG -> EncodedImageFormat.JPEG
         ImageHeaderFormat.WEBP -> EncodedImageFormat.WEBP
+        // GIF 缩放后统一编码为 PNG，是为了避免静态化过程中引入额外的 GIF 编码复杂度。
         ImageHeaderFormat.GIF -> EncodedImageFormat.PNG
     }
 }
 
+/**
+ * 解析 PNG 文件头。
+ */
 private fun inspectPngHeader(bytes: ByteArray): ImageHeaderInfo? {
     if (bytes.size < 24) return null
     val signature = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
@@ -188,6 +220,9 @@ private fun inspectPngHeader(bytes: ByteArray): ImageHeaderInfo? {
     return ImageHeaderInfo(ImageHeaderFormat.PNG, width, height, animated)
 }
 
+/**
+ * 解析 GIF 文件头。
+ */
 private fun inspectGifHeader(bytes: ByteArray): ImageHeaderInfo? {
     if (bytes.size < 10) return null
     val header = String(bytes.copyOfRange(0, 6))
@@ -200,6 +235,9 @@ private fun inspectGifHeader(bytes: ByteArray): ImageHeaderInfo? {
     return ImageHeaderInfo(ImageHeaderFormat.GIF, width, height, animated)
 }
 
+/**
+ * 解析 JPEG 文件头中的尺寸信息。
+ */
 private fun inspectJpegHeader(bytes: ByteArray): ImageHeaderInfo? {
     if (bytes.size < 4 || bytes[0] != 0xFF.toByte() || bytes[1] != 0xD8.toByte()) return null
 
@@ -240,6 +278,9 @@ private fun inspectJpegHeader(bytes: ByteArray): ImageHeaderInfo? {
     return null
 }
 
+/**
+ * 解析 WebP 扩展头中的尺寸与动画标记。
+ */
 private fun inspectWebpHeader(bytes: ByteArray): ImageHeaderInfo? {
     if (bytes.size < 30) return null
     if (!bytes.containsAsciiAt(0, "RIFF")) return null
@@ -253,6 +294,9 @@ private fun inspectWebpHeader(bytes: ByteArray): ImageHeaderInfo? {
     return ImageHeaderInfo(ImageHeaderFormat.WEBP, width, height, animated)
 }
 
+/**
+ * 按大端序读取 32 位整数。
+ */
 private fun readInt32BE(bytes: ByteArray, offset: Int): Int {
     return ((bytes[offset].toInt() and 0xFF) shl 24) or
         ((bytes[offset + 1].toInt() and 0xFF) shl 16) or
@@ -260,22 +304,34 @@ private fun readInt32BE(bytes: ByteArray, offset: Int): Int {
         (bytes[offset + 3].toInt() and 0xFF)
 }
 
+/**
+ * 按大端序读取 16 位无符号整数。
+ */
 private fun readUInt16BE(bytes: ByteArray, offset: Int): Int {
     return ((bytes[offset].toInt() and 0xFF) shl 8) or
         (bytes[offset + 1].toInt() and 0xFF)
 }
 
+/**
+ * 按小端序读取 16 位无符号整数。
+ */
 private fun readUInt16LE(bytes: ByteArray, offset: Int): Int {
     return (bytes[offset].toInt() and 0xFF) or
         ((bytes[offset + 1].toInt() and 0xFF) shl 8)
 }
 
+/**
+ * 按小端序读取 24 位无符号整数。
+ */
 private fun readUInt24LE(bytes: ByteArray, offset: Int): Int {
     return (bytes[offset].toInt() and 0xFF) or
         ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
         ((bytes[offset + 2].toInt() and 0xFF) shl 16)
 }
 
+/**
+ * 判断字节数组中是否包含指定 ASCII 文本片段。
+ */
 private fun ByteArray.containsAscii(value: String): Boolean {
     val needle = value.encodeToByteArray()
     if (needle.isEmpty() || needle.size > size) return false
@@ -293,6 +349,9 @@ private fun ByteArray.containsAscii(value: String): Boolean {
     return false
 }
 
+/**
+ * 判断字节数组在指定偏移处是否匹配指定 ASCII 文本。
+ */
 private fun ByteArray.containsAsciiAt(offset: Int, value: String): Boolean {
     val needle = value.encodeToByteArray()
     if (offset < 0 || offset + needle.size > size) return false

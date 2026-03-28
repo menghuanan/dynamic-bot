@@ -8,8 +8,14 @@ import top.bilibili.core.ContactId
 const val ONEBOT11_CONTACT_NAMESPACE = "onebot11"
 const val QQ_OFFICIAL_CONTACT_NAMESPACE = "qq_official"
 
+/**
+ * 将旧版 [ContactId] 转换为带平台命名空间的 subject。
+ */
 fun ContactId.toNamespacedSubject(): String = "$ONEBOT11_CONTACT_NAMESPACE:$type:$id"
 
+/**
+ * 将旧版 [ContactId] 转换为历史短格式 subject。
+ */
 fun ContactId.toLegacySubject(): String = "$type:$id"
 
 /**
@@ -59,13 +65,22 @@ fun parseCommandPlatformContact(
         ?: PlatformContact(defaultPlatform, defaultType, text)
 }
 
+/**
+ * 将新旧格式的联系人 subject 统一归一化为带命名空间的新格式。
+ */
 fun normalizeContactSubject(subject: String?): String? {
     val contact = parsePlatformContact(subject) ?: parseLegacyPlatformContact(subject) ?: return null
     return contact.toSubject()
 }
 
+/**
+ * 尝试归一化联系人 subject；无法识别时保留原值。
+ */
 fun normalizeContactSubjectOrKeep(subject: String): String = normalizeContactSubject(subject) ?: subject
 
+/**
+ * 将联系人 subject 转换为兼容旧权限数据的历史表示。
+ */
 fun legacyContactSubject(subject: String?): String? {
     val contact = parsePlatformContact(subject) ?: return null
     return if (contact.platform == PlatformType.ONEBOT11) {
@@ -75,6 +90,9 @@ fun legacyContactSubject(subject: String?): String? {
     }
 }
 
+/**
+ * 判断两个联系人 subject 在新旧格式混用时是否指向同一联系人。
+ */
 fun subjectsEquivalent(left: String?, right: String?): Boolean {
     if (left == null || right == null) return false
     val normalizedLeft = normalizeContactSubject(left)
@@ -86,14 +104,23 @@ fun subjectsEquivalent(left: String?, right: String?): Boolean {
     }
 }
 
+/**
+ * 判断集合内是否存在与候选 subject 语义等价的联系人标识。
+ */
 fun containsEquivalentSubject(subjects: Iterable<String>, candidate: String): Boolean {
     return subjects.any { subjectsEquivalent(it, candidate) }
 }
 
+/**
+ * 返回集合中与候选 subject 语义等价的原始键值。
+ */
 fun findEquivalentSubjectKey(subjects: Iterable<String>, candidate: String): String? {
     return subjects.firstOrNull { subjectsEquivalent(it, candidate) }
 }
 
+/**
+ * 从群聊 subject 中提取 OneBot11 风格的数字群号。
+ */
 fun groupIdFromSubject(subject: String?): Long? {
     val contact = parsePlatformContact(subject) ?: return null
     return if (contact.type == PlatformChatType.GROUP) contact.id.toLongOrNull() else null
