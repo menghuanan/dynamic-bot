@@ -11,6 +11,7 @@ import top.bilibili.core.BiliBiliBot.dataFolderPath
 import top.bilibili.BiliConfigManager
 import top.bilibili.core.ContactId
 import top.bilibili.BiliData
+import top.bilibili.TimeDisplayMode
 import top.bilibili.api.searchUser
 import top.bilibili.client.BiliClient
 import top.bilibili.data.DynamicItem
@@ -132,6 +133,16 @@ fun Long.formatTime(template: String = "yyyy年MM月dd日 HH:mm"): String = Date
     .format(LocalDateTime.ofEpochSecond(this, 0, OffsetDateTime.now().offset))
 
 /**
+ * 根据当前图片配置统一返回绘图链路使用的时间文案。
+ * 这里收口配置分支，是为了让绘图调用方只依赖一个入口，避免再次散落绝对/相对时间判断。
+ */
+val Long.displayTime: String
+    get() = when (runCatching { BiliConfigManager.config.imageConfig.timeDisplayMode }.getOrDefault(TimeDisplayMode.ABSOLUTE)) {
+        TimeDisplayMode.ABSOLUTE -> formatTime
+        TimeDisplayMode.RELATIVE -> formatRelativeTime
+    }
+
+/**
  * 相对时间显示
  * 年份不同        → yyyy年MM月dd日
  * < 1 分钟        → 刚刚
@@ -187,6 +198,12 @@ val Long.formatRelativeTime: String
  */
 val DynamicItem.formatRelativeTime: String
     get() = time.formatRelativeTime
+
+/**
+ * 根据当前图片配置统一返回动态绘图链路使用的时间文案。
+ */
+val DynamicItem.displayTime: String
+    get() = time.displayTime
 
 /**
  * 将秒数格式化为文本或时分秒样式的时长字符串。

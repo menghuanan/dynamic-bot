@@ -180,7 +180,7 @@ suspend fun DynamicItem.makeDrawDynamic(themeColor: Int, backgroundColors: IntAr
 suspend fun DynamicItem.drawDynamic(session: DrawingSession, themeColor: Int, isForward: Boolean = false): Image {
     val orig = orig?.drawDynamic(session, themeColor, type == DYNAMIC_TYPE_FORWARD)
 
-    var imgList = modules.makeGeneral(session, formatRelativeTime, link, type, themeColor, isForward, isUnlocked())
+    var imgList = modules.makeGeneral(session, displayTime, link, type, themeColor, isForward, isUnlocked())
 
     // 调整附加卡片顺序
     if (orig != null) {
@@ -202,7 +202,7 @@ suspend fun DynamicItem.drawDynamic(session: DrawingSession, themeColor: Int, is
     }
 
     val footer = if (!isForward) {
-        buildFooter(modules.moduleAuthor.name, modules.moduleAuthor.mid, did, formatRelativeTime, type.text)
+        buildFooter(modules.moduleAuthor.name, modules.moduleAuthor.mid, did, displayTime, type.text)
     } else null
 
     // assembleCard 会关闭 imgList 中的所有 Image

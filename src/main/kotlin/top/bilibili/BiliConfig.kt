@@ -92,12 +92,29 @@ data class TranslateConfig(
  * 图片渲染与配色配置。
  */
 @Serializable
+enum class TimeDisplayMode {
+    /**
+     * 使用绝对时间，格式由绘图时间格式化函数统一控制。
+     */
+    ABSOLUTE,
+
+    /**
+     * 使用相对时间，例如“2分钟前”“昨天 12:30”。
+     */
+    RELATIVE,
+}
+
+/**
+ * 图片渲染与配色配置。
+ */
+@Serializable
 data class ImageConfig(
     val quality: String = "1000w",
     val theme: String = "v3",
     var font: String = "",
     var defaultColor: String = "#d3edfa",
     var cardOrnament: String = "FanCard",
+    val timeDisplayMode: TimeDisplayMode = TimeDisplayMode.ABSOLUTE,
     val colorGenerator: ColorGenerator = ColorGenerator(),
     val badgeEnable: BadgeEnable = BadgeEnable(),
 ) {

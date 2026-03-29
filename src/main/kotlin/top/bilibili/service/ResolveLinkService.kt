@@ -282,10 +282,10 @@ private suspend fun drawVideoLink(id: String, subject: String? = null): String? 
         val author = biliClient.userInfo(owner.mid)?.toDrawAuthorData() ?: toDrawAuthorData()
         val videoData = toDrawData()
         val palette = resolveGradientPalette(author.mid, subject)
-        val footer = buildFooter(author.name, author.mid, id, pubdate.formatRelativeTime, "视频")
+        val footer = buildFooter(author.name, author.mid, id, pubdate.displayTime, "视频")
 
         SkiaManager.executeDrawing {
-            val authorImg = author.drawGeneral(this, pubdate.formatRelativeTime, VIDEO_LINK(id), palette.themeColor)
+            val authorImg = author.drawGeneral(this, pubdate.displayTime, VIDEO_LINK(id), palette.themeColor)
             val contentImg = videoData.drawGeneral(this, true)
             val imgList = listOf(authorImg, contentImg)
             val cimg = imgList.assembleCard(this, id, footer, tag = "搜索", closeInputImages = true)
@@ -308,10 +308,10 @@ private suspend fun drawArticleLink(id: String, subject: String? = null): String
     return biliClient.getArticleDetail("cv$id")?.run {
         val articleData = toDrawData()
         val palette = resolveGradientPalette(author.mid, subject)
-        val footer = buildFooter(author.name, author.mid, id, time.formatRelativeTime, "专栏")
+        val footer = buildFooter(author.name, author.mid, id, time.displayTime, "专栏")
 
         SkiaManager.executeDrawing {
-            val authorImg = author.drawGeneral(this, time.formatRelativeTime, ARTICLE_LINK(id), palette.themeColor)
+            val authorImg = author.drawGeneral(this, time.displayTime, ARTICLE_LINK(id), palette.themeColor)
             val contentImg = articleData.drawGeneral(this)
             val imgList = listOf(authorImg, contentImg)
             val cimg = imgList.assembleCard(this, id, footer, tag = "搜索", closeInputImages = true)

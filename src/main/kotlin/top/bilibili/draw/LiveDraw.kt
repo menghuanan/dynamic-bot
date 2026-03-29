@@ -54,7 +54,7 @@ suspend fun LiveInfo.drawLive(session: DrawingSession, qrCodeColor: Int): Image 
             .replace("{name}", uname)
             .replace("{uid}", uid.toString())
             .replace("{id}", roomId.toString())
-            .replace("{time}", liveTime.formatRelativeTime)
+            .replace("{time}", liveTime.displayTime)
             .replace("{type}", "直播")
             .replace("{area}", area)
         with(session) {
@@ -166,7 +166,7 @@ suspend fun LiveInfo.drawAvatar(session: DrawingSession, qrCodeColor: Int): Imag
         }
     }
     val timeParagraph =
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText("$liveUname  ${liveTime.formatRelativeTime}").build()
+        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText("$liveUname  ${liveTime.displayTime}").build()
             .layout(w)
 
     with(session) {
