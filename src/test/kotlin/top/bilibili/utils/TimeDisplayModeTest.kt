@@ -39,6 +39,13 @@ class TimeDisplayModeTest {
         assertEquals("2分钟前", timestamp.displayTime)
     }
 
+    @Test
+    fun `display time override should keep live draw time absolute even when config chooses relative`() {
+        setRuntimeConfig(BiliConfig(imageConfig = ImageConfig(timeDisplayMode = TimeDisplayMode.RELATIVE)))
+
+        assertEquals("2025年02月02日 12:22", 1738470120L.formatDisplayTime(TimeDisplayMode.ABSOLUTE))
+    }
+
     /**
      * 通过反射写入运行时配置，是为了复用现有单测设置方式而不改生产初始化路径。
      */

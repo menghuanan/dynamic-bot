@@ -25,7 +25,7 @@ class TimeDisplayModeSourceRegressionTest {
         assertTrue(dynamicDraw.contains("displayTime"))
         assertFalse(dynamicDraw.contains("formatRelativeTime"))
 
-        assertTrue(liveDraw.contains("displayTime"))
+        assertTrue(liveDraw.contains("formatDisplayTime(TimeDisplayMode.ABSOLUTE)"))
         assertFalse(liveDraw.contains("formatRelativeTime"))
 
         assertTrue(resolveLink.contains("displayTime"))

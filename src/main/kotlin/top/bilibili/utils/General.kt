@@ -137,10 +137,18 @@ fun Long.formatTime(template: String = "yyyy年MM月dd日 HH:mm"): String = Date
  * 这里收口配置分支，是为了让绘图调用方只依赖一个入口，避免再次散落绝对/相对时间判断。
  */
 val Long.displayTime: String
-    get() = when (runCatching { BiliConfigManager.config.imageConfig.timeDisplayMode }.getOrDefault(TimeDisplayMode.ABSOLUTE)) {
+    get() = formatDisplayTime()
+
+/**
+ * 根据指定模式或当前图片配置统一格式化绘图链路使用的时间文案。
+ * 允许少量场景显式覆盖配置，是为了在保持统一入口的前提下处理直播绘图这类固定绝对时间需求。
+ */
+fun Long.formatDisplayTime(mode: TimeDisplayMode? = null): String = when (
+    mode ?: runCatching { BiliConfigManager.config.imageConfig.timeDisplayMode }.getOrDefault(TimeDisplayMode.ABSOLUTE)
+) {
         TimeDisplayMode.ABSOLUTE -> formatTime
         TimeDisplayMode.RELATIVE -> formatRelativeTime
-    }
+}
 
 /**
  * 相对时间显示

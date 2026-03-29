@@ -6,6 +6,7 @@ import org.jetbrains.skia.paragraph.ParagraphBuilder
 import org.jetbrains.skia.paragraph.ParagraphStyle
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
+import top.bilibili.TimeDisplayMode
 import top.bilibili.data.LiveInfo
 import top.bilibili.utils.*
 import top.bilibili.service.DrawCacheKeyService
@@ -54,7 +55,7 @@ suspend fun LiveInfo.drawLive(session: DrawingSession, qrCodeColor: Int): Image 
             .replace("{name}", uname)
             .replace("{uid}", uid.toString())
             .replace("{id}", roomId.toString())
-            .replace("{time}", liveTime.displayTime)
+            .replace("{time}", liveTime.formatDisplayTime(TimeDisplayMode.ABSOLUTE))
             .replace("{type}", "直播")
             .replace("{area}", area)
         with(session) {
@@ -166,7 +167,7 @@ suspend fun LiveInfo.drawAvatar(session: DrawingSession, qrCodeColor: Int): Imag
         }
     }
     val timeParagraph =
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText("$liveUname  ${liveTime.displayTime}").build()
+        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText("$liveUname  ${liveTime.formatDisplayTime(TimeDisplayMode.ABSOLUTE)}").build()
             .layout(w)
 
     with(session) {
