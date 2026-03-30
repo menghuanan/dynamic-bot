@@ -87,12 +87,17 @@ inline fun <R> useParagraph(
     style: ParagraphStyle,
     fonts: FontCollection,
     width: Float,
-    buildBlock: (ParagraphBuilder) -> Unit,
+    buildBlock: ParagraphBuilder.() -> Unit,
     useBlock: (Paragraph) -> R
 ): R {
     val builder = ParagraphBuilder(style, fonts)
-    buildBlock(builder)
-    val paragraph = builder.build().layout(width)
+    val paragraph = try {
+        builder.buildBlock()
+        builder.build().layout(width)
+    } finally {
+        // ParagraphBuilder 与 Paragraph 拥有独立 native 生命周期，必须分别关闭。
+        builder.close()
+    }
     return try {
         useBlock(paragraph)
     } finally {
@@ -108,11 +113,16 @@ inline fun buildParagraph(
     style: ParagraphStyle,
     fonts: FontCollection,
     width: Float,
-    buildBlock: (ParagraphBuilder) -> Unit
+    buildBlock: ParagraphBuilder.() -> Unit
 ): Paragraph {
     val builder = ParagraphBuilder(style, fonts)
-    buildBlock(builder)
-    return builder.build().layout(width)
+    return try {
+        builder.buildBlock()
+        builder.build().layout(width)
+    } finally {
+        // 返回 Paragraph 后 builder 不再需要，立即收口 builder 的 native 资源。
+        builder.close()
+    }
 }
 
 /**

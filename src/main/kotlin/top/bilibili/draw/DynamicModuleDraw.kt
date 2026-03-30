@@ -2,7 +2,6 @@ package top.bilibili.draw
 
 import org.jetbrains.skia.*
 import org.jetbrains.skia.paragraph.Alignment
-import org.jetbrains.skia.paragraph.ParagraphBuilder
 import org.jetbrains.skia.paragraph.ParagraphStyle
 import org.jetbrains.skia.paragraph.TextStyle
 import top.bilibili.BiliConfigManager
@@ -188,8 +187,9 @@ suspend fun drawAdditionalCard(
     x += quality.cardPadding
 
     val titleParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build()
-            .layout(cardContentRect.width - x).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, cardContentRect.width - x) {
+            addText(title)
+        }.track()
     }
     paragraphStyle.apply {
         textStyle = descTextStyle.apply {
@@ -197,13 +197,15 @@ suspend fun drawAdditionalCard(
         }
     }
     val desc1Paragraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc1).build()
-            .layout(cardContentRect.width - x).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, cardContentRect.width - x) {
+            addText(desc1)
+        }.track()
     }
     val desc2Paragraph = desc2?.let {
         with(session) {
-            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(it).build()
-                .layout(cardContentRect.width - x).track()
+            buildParagraph(paragraphStyle, FontUtils.fonts, cardContentRect.width - x) {
+                addText(it)
+            }.track()
         }
     }
 
@@ -322,12 +324,15 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(session: DrawingSession): Imag
         cutLine = BiliConfigManager.config.translateConfig.cutLine,
     )
 
-    val textParagraph =
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(buildContentDescMeasureText(nodes)).build()
-            .layout(cardContentRect.width)
-
-    val textCardHeight = (quality.contentFontSize + quality.lineSpace * 2) * (textParagraph.lineNumber + 2)
-    textParagraph.close()
+    val textCardHeight = useParagraph(
+        paragraphStyle,
+        FontUtils.fonts,
+        cardContentRect.width,
+        buildBlock = { addText(buildContentDescMeasureText(nodes)) },
+        useBlock = { paragraph ->
+            (quality.contentFontSize + quality.lineSpace * 2) * (paragraph.lineNumber + 2)
+        }
+    )
 
     val textCardRect = Rect.makeXYWH(
         quality.cardPadding.toFloat(),

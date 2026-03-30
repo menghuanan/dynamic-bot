@@ -69,9 +69,13 @@ class DrawingSession : AutoCloseable {
         build: ParagraphBuilder.() -> Unit,
     ): Paragraph {
         val builder = ParagraphBuilder(style, fonts)
-        builder.apply(build)
-        val paragraph = builder.build().layout(width)
-        return paragraph.track()
+        return try {
+            builder.apply(build)
+            builder.build().layout(width).track()
+        } finally {
+            // ParagraphBuilder 自身也持有 native 资源，build 完成后必须显式关闭。
+            builder.close()
+        }
     }
 
     /**

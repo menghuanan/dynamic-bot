@@ -2,7 +2,6 @@ package top.bilibili.draw
 
 import org.jetbrains.skia.*
 import org.jetbrains.skia.paragraph.Alignment
-import org.jetbrains.skia.paragraph.ParagraphBuilder
 import org.jetbrains.skia.paragraph.ParagraphStyle
 import org.jetbrains.skia.paragraph.TextStyle
 import top.bilibili.core.BiliBiliBot
@@ -260,7 +259,9 @@ fun List<Image>.assembleCard(session: DrawingSession, id: String, footer: String
 
     val footerParagraph = if (footer != null) {
         with(session) {
-            ParagraphBuilder(footerParagraphStyle, FontUtils.fonts).addText(footer).build().layout(cardRect.width).track()
+            buildParagraph(footerParagraphStyle, FontUtils.fonts, cardRect.width) {
+                addText(footer)
+            }.track()
         }
     } else null
 
@@ -380,9 +381,9 @@ fun drawBlockedDefault(session: DrawingSession): Image {
         }
     }
     val text = with(session) {
-        ParagraphBuilder(textStyle, FontUtils.fonts)
-            .addText("此动态为专属动态\n请自行查看详情内容")
-            .build().layout(bgWidth).track()
+        buildParagraph(textStyle, FontUtils.fonts, bgWidth) {
+            addText("此动态为专属动态\n请自行查看详情内容")
+        }.track()
     }
 
     val surface = session.createSurface(

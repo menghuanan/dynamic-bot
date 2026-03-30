@@ -2,7 +2,6 @@ package top.bilibili.draw
 
 import org.jetbrains.skia.*
 import org.jetbrains.skia.paragraph.Alignment
-import org.jetbrains.skia.paragraph.ParagraphBuilder
 import org.jetbrains.skia.paragraph.ParagraphStyle
 import org.jetbrains.skia.paragraph.TextStyle
 import top.bilibili.BiliConfigManager
@@ -165,7 +164,9 @@ fun drawInfoText(session: DrawingSession, text: String): Image {
         textStyle = contentTextStyle
     }
     val contentParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(text).build().layout(cardContentRect.width).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, cardContentRect.width) {
+            addText(text)
+        }.track()
     }
     contentParagraph.paint(
         canvas,
@@ -195,7 +196,9 @@ suspend fun ModuleDynamic.Major.Opus.drawGeneral(session: DrawingSession): Image
     val safeTitle = title.orEmpty()
     val contentParagraph = if (safeTitle.isNotBlank()) {
         with(session) {
-            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(safeTitle).build().layout(cardContentRect.width).track()
+            buildParagraph(paragraphStyle, FontUtils.fonts, cardContentRect.width) {
+                addText(safeTitle)
+            }.track()
         }
     } else null
 
@@ -292,7 +295,9 @@ suspend fun ModuleDynamic.Major.Common.drawGeneral(session: DrawingSession): Ima
     }
 
     val titleParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build().layout(cardContentRect.width - x).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, cardContentRect.width - x) {
+            addText(title)
+        }.track()
     }
     paragraphStyle.apply {
         textStyle = descTextStyle.apply {
@@ -300,10 +305,14 @@ suspend fun ModuleDynamic.Major.Common.drawGeneral(session: DrawingSession): Ima
         }
     }
     val desc1Paragraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc).build().layout(cardContentRect.width - x).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, cardContentRect.width - x) {
+            addText(desc)
+        }.track()
     }
     val desc2Paragraph = if (label.isNotBlank()) with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(label).build().layout(cardContentRect.width - x).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, cardContentRect.width - x) {
+            addText(label)
+        }.track()
     } else null
 
     val top = (commonCardRect.height - (titleParagraph.height * 3)) / 2
@@ -336,7 +345,9 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, sho
     val paragraphWidth = cardContentRect.width - quality.cardPadding
 
     val titleParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build().layout(paragraphWidth).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, paragraphWidth) {
+            addText(title)
+        }.track()
     }
 
     paragraphStyle.apply {
@@ -345,8 +356,9 @@ suspend fun ModuleDynamic.Major.Archive.drawGeneral(session: DrawingSession, sho
     }
 
     val descParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText((desc?:"").replace("\r\n", " ").replace("\n", " ")).build()
-            .layout(paragraphWidth).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, paragraphWidth) {
+            addText((desc ?: "").replace("\r\n", " ").replace("\n", " "))
+        }.track()
     }
 
     val fallbackUrl = imgApi(cover, cardContentRect.width.toInt(), (cardContentRect.width * 0.625).toInt())
@@ -599,7 +611,9 @@ suspend fun drawPgcCard(
         textStyle = bigTitleTextStyle
     }
     val titleParagraph = with(session) {
-        ParagraphBuilder(titleStyle, FontUtils.fonts).addText(title).build().layout(textAreaWidth).track()
+        buildParagraph(titleStyle, FontUtils.fonts, textAreaWidth) {
+            addText(title)
+        }.track()
     }
 
     // 第二行：开播时间
@@ -617,7 +631,9 @@ suspend fun drawPgcCard(
         }
     }
     val broadcastParagraph = with(session) {
-        ParagraphBuilder(broadcastStyle, FontUtils.fonts).addText(broadcastTime).build().layout(textAreaWidth).track()
+        buildParagraph(broadcastStyle, FontUtils.fonts, textAreaWidth) {
+            addText(broadcastTime)
+        }.track()
     }
 
     // 第三行：状态 + 评分
@@ -643,7 +659,9 @@ suspend fun drawPgcCard(
         }
     }
     val statusParagraph = with(session) {
-        ParagraphBuilder(statusStyle, FontUtils.fonts).addText(statusText).build().layout(textAreaWidth).track()
+        buildParagraph(statusStyle, FontUtils.fonts, textAreaWidth) {
+            addText(statusText)
+        }.track()
     }
 
     // 第四行：播放数、弹幕数（格式化为万）
@@ -669,7 +687,9 @@ suspend fun drawPgcCard(
         }
     }
     val statParagraph = with(session) {
-        ParagraphBuilder(statStyle, FontUtils.fonts).addText(statInfo).build().layout(textAreaWidth).track()
+        buildParagraph(statStyle, FontUtils.fonts, textAreaWidth) {
+            addText(statInfo)
+        }.track()
     }
 
     // 第五行：介绍
@@ -690,7 +710,9 @@ suspend fun drawPgcCard(
     }
     val evaluateParagraph = if (evaluateTextForRender.isNotEmpty()) {
         with(session) {
-            ParagraphBuilder(evaluateStyle, FontUtils.fonts).addText(evaluateTextForRender).build().layout(textAreaWidth).track()
+            buildParagraph(evaluateStyle, FontUtils.fonts, textAreaWidth) {
+                addText(evaluateTextForRender)
+            }.track()
         }
     } else null
 
@@ -837,7 +859,9 @@ suspend fun drawLiveSmallCard(
         textStyle = titleTextStyle
     }
     val titleParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build().layout(cardContentRect.width - quality.cardPadding * 2).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, cardContentRect.width - quality.cardPadding * 2) {
+            addText(title)
+        }.track()
     }
 
     paragraphStyle.apply {
@@ -845,7 +869,9 @@ suspend fun drawLiveSmallCard(
         textStyle = descTextStyle
     }
     val descParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc ?: "").build().layout(cardContentRect.width - quality.cardPadding * 2).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, cardContentRect.width - quality.cardPadding * 2) {
+            addText(desc ?: "")
+        }.track()
     }
 
     val contentHeight = scaledCoverHeight + titleParagraph.height + descParagraph.height + quality.cardPadding
@@ -961,7 +987,9 @@ suspend fun drawSmallCard(
 
     val textAreaWidth = cardContentRect.width - quality.cardPadding - desiredCoverWidth
     val titleParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build().layout(textAreaWidth).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, textAreaWidth) {
+            addText(title)
+        }.track()
     }
 
     paragraphStyle.apply {
@@ -969,7 +997,9 @@ suspend fun drawSmallCard(
         textStyle = descTextStyle
     }
     val descParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc ?: "").build().layout(textAreaWidth).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, textAreaWidth) {
+            addText(desc ?: "")
+        }.track()
     }
 
     // 计算出卡片最终高度
@@ -1192,9 +1222,6 @@ suspend fun ModuleDynamic.Major.Blocked.drawGeneral(session: DrawingSession): Im
             fontFamilies = arrayOf(mainTypeface.familyName)
         }
     }
-    val hintMessage = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText("包月充电专属动态").build().track()
-    }
     val bgImage = with(session) { getOrDownloadImage(bgImg.imgDay, CacheType.IMAGES)?.track() }!!
     val lockIcon = with(session) { getOrDownloadImage(icon.imgDay, CacheType.IMAGES)?.track() }!!
 
@@ -1203,8 +1230,11 @@ suspend fun ModuleDynamic.Major.Blocked.drawGeneral(session: DrawingSession): Im
 
     val lockWidth = bgWidth / 7
     val lockHeight = lockWidth / lockIcon.width * lockIcon.height
-
-    val hintMessageLayout = hintMessage.layout(bgWidth)
+    val hintMessageLayout = with(session) {
+        buildParagraph(paragraphStyle, FontUtils.fonts, bgWidth) {
+            addText("包月充电专属动态")
+        }.track()
+    }
 
     val surface = session.createSurface(
         cardContentRect.width.toInt(), (bgHeight + quality.cardPadding * 2).toInt()
@@ -1240,7 +1270,9 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
     val paragraphWidth = cardContentRect.width - quality.cardPadding
 
     val titleParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build().layout(paragraphWidth).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, paragraphWidth) {
+            addText(title)
+        }.track()
     }
 
     paragraphStyle.apply {
@@ -1249,7 +1281,9 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
     }
 
     val descParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc).build().layout(paragraphWidth).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, paragraphWidth) {
+            addText(desc)
+        }.track()
     }
     var articleCoverHeight = cardContentRect.width * if (covers.size == 1) 0.35f else 0.23166f
     val articleCovers = covers
@@ -1389,7 +1423,9 @@ suspend fun ModuleDynamic.Major.Music.drawGeneral(session: DrawingSession): Imag
     val paragraphWidth = cardContentRect.width - quality.cardPadding * 2 - musicCardHeight
 
     val titleParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build().layout(paragraphWidth).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, paragraphWidth) {
+            addText(title)
+        }.track()
     }
 
     paragraphStyle.apply {
@@ -1397,7 +1433,9 @@ suspend fun ModuleDynamic.Major.Music.drawGeneral(session: DrawingSession): Imag
     }
 
     val descParagraph = with(session) {
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(label).build().layout(paragraphWidth).track()
+        buildParagraph(paragraphStyle, FontUtils.fonts, paragraphWidth) {
+            addText(label)
+        }.track()
     }
 
     val musicCardRect = RRect.makeComplexXYWH(

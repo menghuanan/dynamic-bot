@@ -2,7 +2,6 @@ package top.bilibili.draw
 
 import org.jetbrains.skia.*
 import org.jetbrains.skia.paragraph.Alignment
-import org.jetbrains.skia.paragraph.ParagraphBuilder
 import org.jetbrains.skia.paragraph.ParagraphStyle
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
@@ -59,7 +58,9 @@ suspend fun LiveInfo.drawLive(session: DrawingSession, qrCodeColor: Int): Image 
             .replace("{type}", "直播")
             .replace("{area}", area)
         with(session) {
-            ParagraphBuilder(footerParagraphStyle, FontUtils.fonts).addText(footer).build().layout(cardRect.width).track()
+            buildParagraph(footerParagraphStyle, FontUtils.fonts, cardRect.width) {
+                addText(footer)
+            }.track()
         }
     } else null
 
@@ -158,17 +159,17 @@ suspend fun LiveInfo.drawAvatar(session: DrawingSession, qrCodeColor: Int): Imag
     val w = cardContentRect.width - quality.pendantSize -
         if (BiliConfigManager.config.imageConfig.cardOrnament == "QrCode" ) quality.ornamentHeight else 0f
 
-    val titleParagraph =
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(liveTitle).build()
-            .layout(w)
+    val titleParagraph = buildParagraph(paragraphStyle, FontUtils.fonts, w) {
+        addText(liveTitle)
+    }
     paragraphStyle.apply {
         textStyle = descTextStyle.apply {
             fontSize = quality.subTitleFontSize
         }
     }
-    val timeParagraph =
-        ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText("$liveUname  ${liveTime.formatDisplayTime(TimeDisplayMode.ABSOLUTE)}").build()
-            .layout(w)
+    val timeParagraph = buildParagraph(paragraphStyle, FontUtils.fonts, w) {
+        addText("$liveUname  ${liveTime.formatDisplayTime(TimeDisplayMode.ABSOLUTE)}")
+    }
 
     with(session) {
         titleParagraph.track()
