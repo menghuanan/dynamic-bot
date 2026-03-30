@@ -27,10 +27,15 @@ import top.bilibili.utils.decode
 import top.bilibili.utils.isNotBlank
 import top.bilibili.utils.json
 import java.io.IOException
+import java.lang.ref.WeakReference
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 
 /**
  * API 请求追踪信息，用于日志中标记调用来源与接口名称。
@@ -162,10 +167,121 @@ fun buildRetryExhaustedLogMessage(
 }
 
 /**
- * B 站 API 客户端，封装请求头、代理、重试与超时配置。
+ * 单个 retry 槽位的运行期快照。
+ *
+ * @param slotIndex 槽位索引
+ * @param created 该槽位是否已经创建底层客户端
+ * @param connectionCount 当前连接池中的连接总数
+ * @param idleConnectionCount 当前连接池中的空闲连接数
+ * @param queuedCallsCount 当前调度器中排队中的请求数
+ * @param runningCallsCount 当前调度器中运行中的请求数
  */
-open class BiliClient : Closeable {
-    override fun close() = clients.forEach { it.close() }
+data class BiliClientRetrySlotSnapshot(
+    val slotIndex: Int,
+    val created: Boolean,
+    val connectionCount: Int?,
+    val idleConnectionCount: Int?,
+    val queuedCallsCount: Int?,
+    val runningCallsCount: Int?,
+)
+
+/**
+ * 单个 BiliClient 实例的运行期快照。
+ *
+ * @param instanceId 进程内实例编号
+ * @param ownerTag 实例所属标签
+ * @param createdRetrySlotCount 已创建的 retry 槽位数量
+ * @param retrySlotCapacity retry 槽位容量
+ * @param retrySlots 各槽位运行态
+ */
+data class BiliClientInstanceSnapshot(
+    val instanceId: Int,
+    val ownerTag: String,
+    val createdRetrySlotCount: Int,
+    val retrySlotCapacity: Int,
+    val retrySlots: List<BiliClientRetrySlotSnapshot>,
+)
+
+/**
+ * 全局 BiliClient 运行期快照。
+ *
+ * @param totalCreatedCount 进程生命周期内累计创建的实例数
+ * @param activeInstanceCount 当前仍活跃的实例数
+ * @param createdRetrySlotCount 当前活跃实例中已创建的 retry 槽位数
+ * @param retrySlotCapacity 当前活跃实例理论总槽位容量
+ * @param instances 活跃实例快照列表
+ */
+data class BiliClientRuntimeSnapshot(
+    val totalCreatedCount: Int,
+    val activeInstanceCount: Int,
+    val createdRetrySlotCount: Int,
+    val retrySlotCapacity: Int,
+    val instances: List<BiliClientInstanceSnapshot>,
+)
+
+/**
+ * B 站 API 客户端，封装请求头、代理、重试与超时配置。
+ *
+ * @param ownerTag 运行期实例标签，用于守护日志区分共享客户端来源
+ */
+open class BiliClient(
+    private val ownerTag: String = "anonymous",
+) : Closeable {
+    companion object {
+        private const val RETRY_SLOT_CAPACITY = 3
+        private val instanceSequence = AtomicInteger(0)
+        private val totalCreatedCount = AtomicInteger(0)
+        private val activeClientRefs = ConcurrentHashMap<Int, WeakReference<BiliClient>>()
+
+        /**
+         * 聚合当前进程内所有仍活跃的 BiliClient 快照，供守护日志直接输出。
+         */
+        @JvmStatic
+        fun runtimeSnapshot(): BiliClientRuntimeSnapshot {
+            val staleIds = mutableListOf<Int>()
+            val instanceSnapshots = activeClientRefs.entries.mapNotNull { (instanceId, reference) ->
+                val client = reference.get()
+                if (client == null || client.closed) {
+                    staleIds.add(instanceId)
+                    null
+                } else {
+                    client.snapshot()
+                }
+            }.sortedBy { it.instanceId }
+
+            staleIds.forEach { staleId -> activeClientRefs.remove(staleId) }
+
+            return BiliClientRuntimeSnapshot(
+                totalCreatedCount = totalCreatedCount.get(),
+                activeInstanceCount = instanceSnapshots.size,
+                createdRetrySlotCount = instanceSnapshots.sumOf { it.createdRetrySlotCount },
+                retrySlotCapacity = instanceSnapshots.sumOf { it.retrySlotCapacity },
+                instances = instanceSnapshots,
+            )
+        }
+    }
+
+    private val instanceId = instanceSequence.incrementAndGet()
+
+    @Volatile
+    private var closed = false
+
+    init {
+        totalCreatedCount.incrementAndGet()
+        activeClientRefs[instanceId] = WeakReference(this)
+    }
+
+    override fun close() {
+        // 关闭时先摘出当前已创建的底层客户端，再逐个 close，避免并发请求路径继续拿到旧引用。
+        val snapshot = synchronized(retrySlots) {
+            retrySlots.toList().also {
+                retrySlots.indices.forEach { index -> retrySlots[index] = null }
+            }
+        }
+        closed = true
+        activeClientRefs.remove(instanceId)
+        snapshot.filterNotNull().forEach { it.client.close() }
+    }
 
     private val proxys = if (BiliConfigManager.config.proxyConfig.proxy.isNotBlank()) {
         mutableListOf<ProxyConfig>().apply {
@@ -179,21 +295,20 @@ open class BiliClient : Closeable {
         null
     }
 
-    val clients = MutableList(3) { client() }
+    // 重试槽位保留 3 个，但仅在真正轮到某个槽位发请求时才创建，避免轮询刚启动就一次性常驻 3 套 OkHttp 资源。
+    private val retrySlots = MutableList<RetrySlotEntry?>(RETRY_SLOT_CAPACITY) { null }
 
     /**
      * 创建单个底层 HTTP 客户端实例。
      */
-    protected fun client() = HttpClient(OkHttp) {
+    protected fun client(
+        connectionPool: ConnectionPool,
+        dispatcher: Dispatcher,
+    ) = HttpClient(OkHttp) {
         engine {
             config {
-                connectionPool(
-                    okhttp3.ConnectionPool(
-                        maxIdleConnections = 5,
-                        keepAliveDuration = 5,
-                        timeUnit = TimeUnit.MINUTES,
-                    )
-                )
+                dispatcher(dispatcher)
+                connectionPool(connectionPool)
             }
         }
         defaultRequest {
@@ -212,6 +327,76 @@ open class BiliClient : Closeable {
         install(UserAgent) {
             agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
         }
+    }
+
+    /**
+     * 延迟创建指定重试槽位的底层客户端，让健康路径只保留实际用到的连接池与线程资源。
+     *
+     * @param slotIndex 重试槽位索引
+     */
+    private fun getOrCreateClient(slotIndex: Int): HttpClient {
+        return synchronized(retrySlots) {
+            retrySlots[slotIndex]?.client ?: createRetrySlot(slotIndex).client
+        }
+    }
+
+    /**
+     * 首次命中某个 retry 槽位时，显式创建对应的连接池与调度器，供守护日志读取运行态。
+     *
+     * @param slotIndex 重试槽位索引
+     */
+    private fun createRetrySlot(slotIndex: Int): RetrySlotEntry {
+        val connectionPool = ConnectionPool(
+            5,
+            5,
+            TimeUnit.MINUTES,
+        )
+        val dispatcher = Dispatcher()
+        return RetrySlotEntry(
+            slotIndex = slotIndex,
+            client = client(connectionPool = connectionPool, dispatcher = dispatcher),
+            connectionPool = connectionPool,
+            dispatcher = dispatcher,
+        ).also { created ->
+            retrySlots[slotIndex] = created
+        }
+    }
+
+    /**
+     * 导出当前实例的可验证运行态，避免守护日志再去猜测 HTTP 栈内部资源占用。
+     */
+    private fun snapshot(): BiliClientInstanceSnapshot {
+        val slotSnapshots = synchronized(retrySlots) {
+            retrySlots.mapIndexed { slotIndex, entry ->
+                if (entry == null) {
+                    BiliClientRetrySlotSnapshot(
+                        slotIndex = slotIndex,
+                        created = false,
+                        connectionCount = null,
+                        idleConnectionCount = null,
+                        queuedCallsCount = null,
+                        runningCallsCount = null,
+                    )
+                } else {
+                    BiliClientRetrySlotSnapshot(
+                        slotIndex = slotIndex,
+                        created = true,
+                        connectionCount = entry.connectionPool.connectionCount(),
+                        idleConnectionCount = entry.connectionPool.idleConnectionCount(),
+                        queuedCallsCount = entry.dispatcher.queuedCallsCount(),
+                        runningCallsCount = entry.dispatcher.runningCallsCount(),
+                    )
+                }
+            }
+        }
+
+        return BiliClientInstanceSnapshot(
+            instanceId = instanceId,
+            ownerTag = ownerTag,
+            createdRetrySlotCount = slotSnapshots.count { it.created },
+            retrySlotCapacity = RETRY_SLOT_CAPACITY,
+            retrySlots = slotSnapshots,
+        )
     }
 
     /**
@@ -263,7 +448,7 @@ open class BiliClient : Closeable {
             try {
                 val selectedClientIndex = clientIndex
                 val proxies = proxys
-                val client = clients[selectedClientIndex]
+                val client = getOrCreateClient(selectedClientIndex)
                 if (!proxies.isNullOrEmpty() && BiliConfigManager.config.enableConfig.proxyEnable) {
                     // 每次请求轮换代理可分散单节点抖动，避免连续重试都命中同一失效出口。
                     client.engineConfig.proxy = proxies[proxyIndex]
@@ -301,7 +486,7 @@ open class BiliClient : Closeable {
                     retryCount++
                     delay(3000)
                     // 失败后切换到底层客户端实例，可尽量避开连接池里已污染的连接状态。
-                    clientIndex = (clientIndex + 1) % clients.size
+                    clientIndex = (clientIndex + 1) % retrySlots.size
                 } else {
                     logger.error("API请求发生不可重试异常: 异常=${throwable.logTypeLabel()}, 原因=${throwable.logReason()}", throwable)
                     throw throwable
@@ -310,4 +495,14 @@ open class BiliClient : Closeable {
         }
         throw CancellationException()
     }
+
+    /**
+     * 单个 retry 槽位的底层资源句柄，守护日志读取连接池和调度器状态时直接使用这里的引用。
+     */
+    private data class RetrySlotEntry(
+        val slotIndex: Int,
+        val client: HttpClient,
+        val connectionPool: ConnectionPool,
+        val dispatcher: Dispatcher,
+    )
 }

@@ -16,7 +16,8 @@ private object ServiceClientLifecycle {
     fun get(): BiliClient {
         sharedClient?.let { return it }
         return synchronized(this) {
-            sharedClient ?: BiliClient().also { sharedClient = it }
+            // 服务层共享客户端使用固定 owner 标签，便于守护日志区分轮询链路和命令服务链路。
+            sharedClient ?: BiliClient("service.shared").also { sharedClient = it }
         }
     }
 

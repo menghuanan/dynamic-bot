@@ -36,7 +36,8 @@ abstract class BiliCheckTasker(
          */
         @Synchronized
         private fun getSharedClient(): BiliClient {
-            return sharedClient ?: BiliClient().also { sharedClient = it }
+            // 共享轮询客户端使用固定 owner 标签，便于 ProcessGuardian 在日志中识别轮询链路资源。
+            return sharedClient ?: BiliClient("BiliCheckTasker.shared").also { sharedClient = it }
         }
 
         @JvmStatic

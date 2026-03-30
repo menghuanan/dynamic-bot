@@ -59,4 +59,19 @@ class ProcessGuardianResourceObservabilityTest {
             "ProcessGuardian should take synchronized tasker snapshots before iterating shared taskers list",
         )
     }
+
+    // 轮询链路的 RSS 问题需要在 daemon 日志里直接看到 BiliClient 和 OkHttp 连接池运行态。
+    @Test
+    fun `process guardian should include bili client and okhttp observability`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("BiliClient.runtimeSnapshot()"),
+            "ProcessGuardian should collect BiliClient runtime snapshot",
+        )
+        assertTrue(
+            source.contains("BiliClient / OkHttp"),
+            "ProcessGuardian should emit a dedicated BiliClient and OkHttp log section",
+        )
+    }
 }

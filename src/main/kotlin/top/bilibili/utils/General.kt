@@ -59,7 +59,10 @@ internal val logger by lazy {
     BiliBiliBot.logger
 }
 
-val biliClient = BiliClient()
+// 共享 biliClient 改为按需初始化，避免仅加载工具函数就提前常驻整套 API 客户端资源。
+val biliClient by lazy {
+    BiliClient("utils.shared")
+}
 
 /**
  * 判断字符串列表中的元素是否全部为空串。

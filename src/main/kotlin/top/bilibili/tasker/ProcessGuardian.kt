@@ -2,6 +2,7 @@ package top.bilibili.tasker
 
 import kotlinx.coroutines.isActive
 import org.slf4j.LoggerFactory
+import top.bilibili.client.BiliClient
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.ImageCache
@@ -253,6 +254,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         report.bufferPools = collectBufferPoolMetrics()
         report.threadMetrics = collectThreadMetrics()
         report.coroutineMetrics = collectManagedCoroutineMetrics()
+        report.biliClientMetrics = BiliClient.runtimeSnapshot()
         report.skiaStatus = SkiaManager.getStatus()
     }
 
@@ -817,7 +819,35 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     writer.println("  说明: ${coroutines.note}")
                 }
 
-                // 2.12 Skia 运行态
+                // 2.12 BiliClient / OkHttp 运行态
+                report.biliClientMetrics?.let { clients ->
+                    writer.println("[BiliClient / OkHttp]")
+                    writer.println(
+                        "  Instances: totalCreated=${clients.totalCreatedCount}, active=${clients.activeInstanceCount}"
+                    )
+                    writer.println(
+                        "  RetrySlots: created=${clients.createdRetrySlotCount}, capacity=${clients.retrySlotCapacity}"
+                    )
+                    clients.instances.forEach { instance ->
+                        writer.println(
+                            "  client#${instance.instanceId}(${instance.ownerTag}): " +
+                                "createdSlots=${instance.createdRetrySlotCount}/${instance.retrySlotCapacity}"
+                        )
+                        instance.retrySlots
+                            .filter { slot -> slot.created }
+                            .forEach { slot ->
+                                writer.println(
+                                    "    slot${slot.slotIndex}: " +
+                                        "connections=${slot.connectionCount}, " +
+                                        "idle=${slot.idleConnectionCount}, " +
+                                        "queued=${slot.queuedCallsCount}, " +
+                                        "running=${slot.runningCallsCount}"
+                                )
+                            }
+                    }
+                }
+
+                // 2.13 Skia 运行态
                 report.skiaStatus?.let { skia ->
                     writer.println("[Skia 状态]")
                     writer.println(
@@ -829,7 +859,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     )
                 }
 
-                // 2.13 可降级的 Native Memory Tracking 摘要
+                // 2.14 可降级的 Native Memory Tracking 摘要
                 report.nativeMemorySummary?.let { native ->
                     writer.println("[Native Memory Summary]")
                     writer.println("  状态: ${native.status}")
@@ -936,6 +966,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         var bufferPools: List<BufferPoolMetrics> = emptyList(),
         var threadMetrics: ThreadMetrics? = null,
         var coroutineMetrics: CoroutineMetrics? = null,
+        var biliClientMetrics: top.bilibili.client.BiliClientRuntimeSnapshot? = null,
         var skiaStatus: top.bilibili.skia.SkiaManagerStatus? = null,
         var nativeMemorySummary: NativeMemorySummary? = null,
 
