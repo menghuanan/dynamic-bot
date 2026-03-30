@@ -1,0 +1,8 @@
+# 固定启动脚本的换行风格，避免 Windows cmd 与 Linux shell 在 checkout 后误解析脚本。
+*.bat text eol=crlf
+*.sh text eol=lf
+gradlew text eol=lf
+
+# 固定 Gradle Kotlin DSL 的换行风格，避免根目录构建脚本继续产生混合换行。
+*.gradle text eol=lf
+*.kts text eol=lf

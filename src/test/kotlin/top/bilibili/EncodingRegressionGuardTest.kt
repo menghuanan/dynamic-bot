@@ -28,6 +28,31 @@ class EncodingRegressionGuardTest {
     }
 
     @Test
+    fun `wrapper scripts should declare and use platform compatible line endings`() {
+        // 批处理脚本包含中文注释时必须保持 CRLF，否则 cmd.exe 会把注释内容误判为命令。
+        val batchBytes = Files.readAllBytes(Path.of("gradlew.bat"))
+        assertTrue(
+            hasCrLfOnly(batchBytes),
+            "gradlew.bat should use CRLF only for Windows cmd compatibility",
+        )
+
+        // Shell 启动脚本必须保持 LF，避免 Linux 解释器读取到回车字符。
+        val shellBytes = Files.readAllBytes(Path.of("gradlew"))
+        assertTrue(
+            hasLfOnly(shellBytes),
+            "gradlew should use LF only for Linux shell compatibility",
+        )
+
+        // 根目录属性文件需要固定脚本换行规则，避免不同平台 checkout 后再次漂移。
+        val attributesPath = Path.of(".gitattributes")
+        assertTrue(Files.exists(attributesPath), ".gitattributes should pin wrapper script line endings")
+        val attributesText = Files.readString(attributesPath, StandardCharsets.UTF_8)
+        assertTrue(attributesText.contains("*.bat text eol=crlf"))
+        assertTrue(attributesText.contains("*.sh text eol=lf"))
+        assertTrue(attributesText.contains("gradlew text eol=lf"))
+    }
+
+    @Test
     fun `garbled chinese text should be restored in source files`() {
         val policy = read("src/main/kotlin/top/bilibili/core/resource/TaskResourcePolicyRegistry.kt")
         assertTrue(policy.contains("周期轮询任务"))
@@ -67,6 +92,14 @@ class EncodingRegressionGuardTest {
     }
 
     private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
+
+    // 逐字节校验 Windows 批处理脚本没有裸 LF，确保每个换行都由 CRLF 组成。
+    private fun hasCrLfOnly(bytes: ByteArray): Boolean = bytes.indices
+        .filter { bytes[it] == '\n'.code.toByte() }
+        .all { index -> index > 0 && bytes[index - 1] == '\r'.code.toByte() }
+
+    // 逐字节校验 Linux Shell 脚本没有 CR，避免 shebang 与命令解析携带回车。
+    private fun hasLfOnly(bytes: ByteArray): Boolean = bytes.none { it == '\r'.code.toByte() }
 
     private fun trackedTextFiles(root: Path): List<Path> {
         val process = ProcessBuilder("git", "ls-files")
