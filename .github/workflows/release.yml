@@ -67,7 +67,8 @@ jobs:
           # Docker 始终推送完整标签，latest 仅保留给正式版。
           {
             echo "docker_tags<<EOF"
-            echo "type=raw,value=${release_tag}"
+            # 精确版本标签直接复用 github.ref_name，保持与现有测试约束一致。
+            echo "type=raw,value=${{ github.ref_name }}"
             if [[ "${release_tag}" != *-* ]]; then
               echo "type=raw,value=latest"
             fi
