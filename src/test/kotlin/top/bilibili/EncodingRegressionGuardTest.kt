@@ -29,11 +29,16 @@ class EncodingRegressionGuardTest {
 
     @Test
     fun `wrapper scripts should declare and use platform compatible line endings`() {
-        // 批处理脚本包含中文注释时必须保持 CRLF，否则 cmd.exe 会把注释内容误判为命令。
+        // 批处理脚本必须保持 CRLF 且仅保留 ASCII，避免 Windows cmd 在默认环境下误解析注释。
         val batchBytes = Files.readAllBytes(Path.of("gradlew.bat"))
         assertTrue(
             hasCrLfOnly(batchBytes),
             "gradlew.bat should use CRLF only for Windows cmd compatibility",
+        )
+        val batchText = Files.readString(Path.of("gradlew.bat"), StandardCharsets.UTF_8)
+        assertTrue(
+            batchText.all { it == '\r' || it == '\n' || it.code in 0x20..0x7E || it == '\t' },
+            "gradlew.bat should remain ASCII-only for stable Windows cmd parsing",
         )
 
         // Shell 启动脚本必须保持 LF，避免 Linux 解释器读取到回车字符。

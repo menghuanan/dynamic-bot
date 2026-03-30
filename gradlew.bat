@@ -13,11 +13,6 @@
 @rem See the License for the specific language governing permissions and
 @rem limitations under the License.
 @rem
-@rem
-@rem 本文件主要工作流程：
-@rem 1. 定位当前工程目录并标准化路径。
-@rem 2. 检查可用的 Java 运行环境。
-@rem 3. 调用 gradle-wrapper.jar 接管后续构建。
 
 @if "%DEBUG%" == "" @echo off
 @rem ##########################################################################
@@ -35,14 +30,12 @@ set APP_BASE_NAME=%~n0
 set APP_HOME=%DIRNAME%
 
 @rem Resolve any "." and ".." in APP_HOME to make it shorter.
-@rem 步骤 1：先规范化 APP_HOME。
 for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
 
 @rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
 set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
 
 @rem Find java.exe
-@rem 步骤 2：先定位可用的 Java。
 if defined JAVA_HOME goto findJavaFromJavaHome
 
 set JAVA_EXE=java.exe
@@ -78,7 +71,6 @@ set CLASSPATH=%APP_HOME%\gradle\wrapper\gradle-wrapper.jar
 
 
 @rem Execute Gradle
-@rem 步骤 3：透传 JAVA_OPTS 和 GRADLE_OPTS。
 "%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
 
 :end
