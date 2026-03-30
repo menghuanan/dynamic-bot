@@ -577,8 +577,10 @@ suspend fun ModuleAuthor.drawForward(session: DrawingSession, time: String): Ima
 
     val nameFont = with(session) { font.makeWithSize(quality.nameFontSize).track() }
     val timeFont = with(session) { font.makeWithSize(quality.subTitleFontSize).track() }
+    // 这里仍使用 TextLine 的单字体单行渲染；如果昵称或副标题后续出现 emoji、组合字形或生僻字，
+    // 仍可能出现方框、拆分或宽度测量偏差，届时需要改成支持字体回退的排版方案，而不是继续在这里打补丁。
     val textLineName = with(session) { TextLine.make(authorName, nameFont).track() }
-    val textLineTime = with(session) { TextLine.make(time, timeFont).track() }
+    val textLineTime = with(session) { TextLine.make(normalizeSingleLineTemplateText(time), timeFont).track() }
 
     var x = faceSize + quality.cardPadding * 2.5f
     var y = ((faceSize - quality.nameFontSize) / 2) + quality.nameFontSize + quality.cardPadding
@@ -590,6 +592,22 @@ suspend fun ModuleAuthor.drawForward(session: DrawingSession, time: String): Ima
     canvas.drawTextLine(textLineTime, x, y, session.createPaint { color = theme.subTitleColor })
 
     return with(session) { surface.makeImageSnapshot().track() }
+}
+
+/**
+ * 将当前模板里只能单行展示的文本压成单行，避免控制字符在 Skia TextLine 中被绘成占位方框。
+ *
+ * 这次先把处理放在作者头模板入口，是因为问题目前稳定复现于直播/用户链接解析的个性签名单行渲染，
+ * 且用户要求先在对应模板逻辑上止血；如果后续更多链路要复用个性签名，应把规则上移到统一展示归一化层。
+ */
+private fun normalizeSingleLineTemplateText(text: String): String {
+    return text
+        .replace("\r\n", "\n")
+        .replace('\r', '\n')
+        .replace(Regex("\n+"), " ")
+        .filterNot(Char::isISOControl)
+        .replace(Regex(" {2,}"), " ")
+        .trim()
 }
 
 
@@ -613,8 +631,10 @@ suspend fun ModuleAuthor.drawGeneral(session: DrawingSession, time: String, link
 
     val nameFont = with(session) { font.makeWithSize(quality.nameFontSize).track() }
     val timeFont = with(session) { font.makeWithSize(quality.subTitleFontSize).track() }
+    // 这里仍使用 TextLine 的单字体单行渲染；如果昵称或副标题后续出现 emoji、组合字形或生僻字，
+    // 仍可能出现方框、拆分或宽度测量偏差，届时需要改成支持字体回退的排版方案，而不是继续在这里打补丁。
     val textLineName = with(session) { TextLine.make(authorName, nameFont).track() }
-    val textLineTime = with(session) { TextLine.make(time, timeFont).track() }
+    val textLineTime = with(session) { TextLine.make(normalizeSingleLineTemplateText(time), timeFont).track() }
 
     var x = quality.faceSize + quality.cardPadding * 3.2f
     val space = (quality.pendantSize - quality.nameFontSize - quality.subTitleFontSize) / 3
