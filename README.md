@@ -1,9 +1,5 @@
 # BiliBili 动态推送 Bot v1.8
 
-新部署的用户优先推荐v1.7.43版本。
-
-如果你使用napcat进行对接，可以使用v1.8.3版本。
-
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
@@ -87,11 +83,35 @@ dynamic-bot/
 
 ## 当前支持的协议
 
-- NapCat：`platform.type: onebot11` 且 `adapter: napcat`。当前能力最完整，推荐作为默认接入方案，现有底层业务以这条链路为基准验证。
-- llbot：`platform.type: onebot11` 且 `adapter: llbot`。保持 OneBot11 通用消息链路，并补齐当前业务需要的群可达性、`@全体` 和本地/二进制图片能力，适合作为 LuckyLilliaBot 接入路径。
-- 通用 OneBot11：`platform.type: onebot11` 且 `adapter: onebot11`。支持大部分协议通用能力；遇到适配器未实现或无法确认的能力时，会显式降级并输出日志，而不是让业务静默失效。
-- QQ 官方：`platform.type: qq_official`。当前定位为最低可用适配器，支持基础收发、回复、公网图片和链接解析；`@全体`、本地/二进制图片等不支持能力会显式降级并输出日志。
-- 配置要求：只要选择 OneBot11 协议，就必须显式填写 `adapter`。当前内置适配器包括 `napcat`、`llbot` 和 `onebot11`。
+当前版本采用 `platform.type` 与 `platform.adapter` 的两级选择结构：
+
+```yaml
+platform:
+  type: onebot11   # 可选: onebot11 / qq_official
+  adapter: napcat  # 仅当 type=onebot11 时填写: napcat / llbot / onebot11
+```
+
+| 平台类型 | `adapter` | 当前定位 | 适用场景 | 能力边界 | 配置要求 |
+| --- | --- | --- | --- | --- | --- |
+| `onebot11` | `napcat` | 默认推荐 | 当前最完整、最稳妥的接入方案 | 支持基础发送、图片发送、回复、链接解析；额外支持群可达性探测与 `@全体` 能力判断 | `type: onebot11` 时必须显式填写 `adapter: napcat`，并配置 `platform.onebot11` |
+| `onebot11` | `llbot` | 已适配 | 适用于 LuckyLilliaBot 接入场景 | 支持基础发送、图片发送、回复、链接解析；额外支持群可达性探测与 `@全体` 能力判断 | `type: onebot11` 时必须显式填写 `adapter: llbot`，并配置 `platform.onebot11` |
+| `onebot11` | `onebot11` | 通用兼容 | 适用于其他标准 OneBot11 实现或兼容场景 | 支持基础发送、图片发送、回复、链接解析；不默认声明 `@全体`，未覆盖能力会显式降级并输出日志 | `type: onebot11` 时必须显式填写 `adapter: onebot11`，并配置 `platform.onebot11` |
+| `qq_official` | 不需要 | 基础可用 | 适用于 QQ 官方开放平台接入 | 支持基础文本、公网图片、回复、链接解析；不支持 `@全体`；本地/二进制图片会显式降级；主动发送依赖已建立会话的联系人可达性 | `type: qq_official` 时无需填写 `adapter`，改为配置 `platform.qq_official` |
+
+### 选型建议
+
+- 优先选择 `onebot11 + napcat`：这是当前默认推荐方案，现有能力验证最完整。
+- 如果你的上游就是 LuckyLilliaBot，选择 `onebot11 + llbot` 更合适。
+- 如果你接的是其他 OneBot11 实现，先用 `onebot11 + onebot11`，再按实际能力决定是否需要 vendor 适配。
+- 只有在明确需要 QQ 官方开放平台链路时再使用 `qq_official`，因为该链路会对 `@全体`、本地图片等能力做显式降级。
+
+### 配置约束
+
+- 当 `platform.type: onebot11` 时，`adapter` 是必填项，取值仅支持 `napcat`、`llbot`、`onebot11`。
+- 当 `platform.type: qq_official` 时，不需要 `adapter`，需要改填 `app_id`、`app_secret`、`bot_token`。
+- 三种 OneBot11 适配器共用 `platform.onebot11` 配置块，差异主要体现在运行时能力声明与探测行为。
+
+
 
 ## 快速开始
 
@@ -592,7 +612,8 @@ docker logs -f dynamic-bot
 
 ### 容器配置
 
-- **基础镜像**: eclipse-temurin:17-jdk
+- **运行时基础镜像**: eclipse-temurin:17-jre
+- **源码构建环境**: JDK 17 及以上版本
 - **内存分配器**: jemalloc（5秒自动归还内存）
 - **JVM 启动参数**: 默认 `-Xms64m -Xmx160m`，其余 GC/Netty/Skiko 优化参数由 `JAVA_TOOL_OPTIONS` 注入
 - **网络模式**: bridge（默认）
