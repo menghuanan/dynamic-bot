@@ -22,9 +22,13 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import java.io.Closeable
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import top.bilibili.connector.PlatformHttpClientSnapshot
+import top.bilibili.connector.PlatformObservabilitySnapshot
 
 internal val llBotJson = Json {
     ignoreUnknownKeys = true
@@ -37,6 +41,11 @@ internal interface LlBotTransport : Closeable {
      * 打开 llbot WebSocket 会话，并把文本帧暴露为可测试的抽象会话。
      */
     suspend fun openGateway(url: String, headers: Map<String, String>): LlBotGatewaySession
+
+    /**
+     * 返回 llbot 底层 HttpClient / OkHttp 资源快照，供平台守护统一汇总。
+     */
+    fun runtimeObservability(): PlatformObservabilitySnapshot
 }
 
 internal interface LlBotGatewaySession {
@@ -58,6 +67,13 @@ internal interface LlBotGatewaySession {
  * llbot 的默认 Ktor WebSocket 传输实现，仅位于 vendor 层内供 client 组合使用。
  */
 internal class KtorLlBotTransport : LlBotTransport {
+    private val connectionPool = ConnectionPool(
+        3,
+        3,
+        TimeUnit.MINUTES,
+    )
+    private val okHttpDispatcher = Dispatcher()
+    private val webSocketSessionActive = AtomicBoolean(false)
     private val client = HttpClient(OkHttp) {
         install(HttpTimeout) {
             connectTimeoutMillis = 15_000
@@ -66,13 +82,8 @@ internal class KtorLlBotTransport : LlBotTransport {
         install(WebSockets)
         engine {
             config {
-                connectionPool(
-                    ConnectionPool(
-                        3,
-                        3,
-                        TimeUnit.MINUTES,
-                    ),
-                )
+                dispatcher(okHttpDispatcher)
+                connectionPool(connectionPool)
             }
         }
     }
@@ -98,6 +109,7 @@ internal class KtorLlBotTransport : LlBotTransport {
                     },
                 ) {
                     sessionRef.set(this)
+                    webSocketSessionActive.set(true)
                     val sendJob = launch {
                         for (text in outgoingChannel) {
                             send(Frame.Text(text))
@@ -119,6 +131,7 @@ internal class KtorLlBotTransport : LlBotTransport {
                 failure = throwable
             } finally {
                 outgoingChannel.close()
+                webSocketSessionActive.set(false)
                 if (!closeSignal.isCompleted) {
                     closeSignal.complete(failure)
                 }
@@ -151,9 +164,30 @@ internal class KtorLlBotTransport : LlBotTransport {
     }
 
     /**
+     * 导出 llbot 共享底层 OkHttp 资源与当前会话活跃态，便于 guardian 统一对比不同 transport 的占用情况。
+     */
+    override fun runtimeObservability(): PlatformObservabilitySnapshot {
+        return PlatformObservabilitySnapshot(
+            clients = listOf(
+                PlatformHttpClientSnapshot(
+                    adapterName = "onebot11",
+                    transportName = "llbot",
+                    connectionCount = connectionPool.connectionCount(),
+                    idleConnectionCount = connectionPool.idleConnectionCount(),
+                    queuedCallsCount = okHttpDispatcher.queuedCallsCount(),
+                    runningCallsCount = okHttpDispatcher.runningCallsCount(),
+                    webSocketSessionActive = webSocketSessionActive.get(),
+                ),
+            ),
+        )
+    }
+
+    /**
      * 关闭底层 Ktor 客户端，释放 WebSocket 与 HTTP 资源。
      */
     override fun close() {
         client.close()
+        connectionPool.evictAll()
+        okHttpDispatcher.executorService.shutdown()
     }
 }

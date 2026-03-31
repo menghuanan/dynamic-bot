@@ -2,6 +2,7 @@ package top.bilibili.connector.onebot11.core
 
 import kotlinx.coroutines.flow.Flow
 import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
 
 interface OneBot11Transport {
@@ -30,4 +31,9 @@ interface OneBot11Transport {
      * 返回 OneBot11 传输当前运行状态，供平台层统一读取连接与重连信息。
      */
     fun runtimeStatus(): PlatformRuntimeStatus
+
+    /**
+     * 返回 OneBot11 传输层的运行时资源观测快照，供 guardian 后续统一汇总 HttpClient / OkHttp 资源状态。
+     */
+    fun runtimeObservability(): PlatformObservabilitySnapshot
 }

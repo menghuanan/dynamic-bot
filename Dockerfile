@@ -1,8 +1,9 @@
 # ============================================
 # 运行时镜像
 # 注意: 需要先在本地执行 gradle shadowJar 编译
+# 这里保持 JDK 运行时，确保容器内可用 jcmd 和 NMT 诊断能力
 # ============================================
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:17-jdk
 
 # 设置工作目录
 WORKDIR /app
@@ -63,9 +64,11 @@ ENV MALLOC_CONF=background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000,n
 #   - 堆内存默认 64m~160m
 #   - 适度放宽 DirectMemory/线程栈，覆盖软件渲染场景的原生缓冲开销
 #   - 保持纯软件渲染（SOFTWARE + 禁用硬件加速），不再依赖 Xvfb
+#   - 默认开启 NMT(summary)，长期保留轻量摘要；detail 仅建议在专项排障时临时启用
 # ============================================
 ENV JAVA_TOOL_OPTIONS="\
     -XX:+UseG1GC \
+    -XX:NativeMemoryTracking=summary \
     -XX:MaxGCPauseMillis=100 \
     -XX:G1HeapRegionSize=4m \
     -XX:InitiatingHeapOccupancyPercent=30 \

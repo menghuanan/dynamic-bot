@@ -3,6 +3,7 @@ package top.bilibili.tasker
 import kotlinx.coroutines.isActive
 import org.slf4j.LoggerFactory
 import top.bilibili.client.BiliClient
+import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.ImageCache
@@ -255,7 +256,18 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         report.threadMetrics = collectThreadMetrics()
         report.coroutineMetrics = collectManagedCoroutineMetrics()
         report.biliClientMetrics = BiliClient.runtimeSnapshot()
+        report.platformObservability = collectPlatformRuntimeObservability()
         report.skiaStatus = SkiaManager.getStatus()
+    }
+
+    /**
+     * 平台层 transport 观测需要在未初始化时也返回统一空快照，避免 guardian 因平台尚未启动而中断日志写入。
+     */
+    private fun collectPlatformRuntimeObservability(): PlatformObservabilitySnapshot {
+        if (!BiliBiliBot.isPlatformAdapterInitialized()) {
+            return PlatformObservabilitySnapshot.empty("platform adapter is not initialized")
+        }
+        return BiliBiliBot.requireConnectorManager().runtimeObservability()
     }
 
     /**
@@ -847,7 +859,26 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     }
                 }
 
-                // 2.13 Skia 运行态
+                // 2.13 平台 transport HttpClient / OkHttp 运行态
+                writer.println("[Platform HttpClient / OkHttp]")
+                report.platformObservability.note?.let { writer.println("  说明: $it") }
+                if (report.platformObservability.clients.isEmpty()) {
+                    writer.println("  snapshots=0")
+                } else {
+                    report.platformObservability.clients.forEach { snapshot ->
+                        writer.println(
+                            "  ${snapshot.adapterName}/${snapshot.transportName}: " +
+                                "connections=${snapshot.connectionCount?.toString() ?: "未知"}, " +
+                                "idle=${snapshot.idleConnectionCount?.toString() ?: "未知"}, " +
+                                "queued=${snapshot.queuedCallsCount?.toString() ?: "未知"}, " +
+                                "running=${snapshot.runningCallsCount?.toString() ?: "未知"}, " +
+                                "webSocketSessionActive=${snapshot.webSocketSessionActive}"
+                        )
+                        snapshot.note?.let { writer.println("    note=$it") }
+                    }
+                }
+
+                // 2.14 Skia 运行态
                 report.skiaStatus?.let { skia ->
                     writer.println("[Skia 状态]")
                     writer.println(
@@ -859,7 +890,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     )
                 }
 
-                // 2.14 可降级的 Native Memory Tracking 摘要
+                // 2.15 可降级的 Native Memory Tracking 摘要
                 report.nativeMemorySummary?.let { native ->
                     writer.println("[Native Memory Summary]")
                     writer.println("  状态: ${native.status}")
@@ -967,6 +998,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         var threadMetrics: ThreadMetrics? = null,
         var coroutineMetrics: CoroutineMetrics? = null,
         var biliClientMetrics: top.bilibili.client.BiliClientRuntimeSnapshot? = null,
+        var platformObservability: PlatformObservabilitySnapshot = PlatformObservabilitySnapshot.empty("platform adapter is not initialized"),
         var skiaStatus: top.bilibili.skia.SkiaManagerStatus? = null,
         var nativeMemorySummary: NativeMemorySummary? = null,
 

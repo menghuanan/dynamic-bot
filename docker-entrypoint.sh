@@ -29,7 +29,7 @@ log_warn() {
 # 1. 构建 Java 启动参数
 # ============================================
 # 注意: JAVA_TOOL_OPTIONS 已在 Dockerfile 中配置 JVM 优化参数
-# 这里只处理通过 CMD 传入的堆内存参数
+# 其中默认包含 NMT(summary)；这里只处理通过 CMD 传入的堆内存参数，避免覆盖容器默认诊断能力
 JAVA_OPTS="${JAVA_OPTS:-}"
 
 if [ $# -gt 0 ]; then
@@ -37,7 +37,7 @@ if [ $# -gt 0 ]; then
     JAVA_OPTS="$JAVA_OPTS $*"
 fi
 
-# 补充固定的编码和时区参数
+# 补充固定的编码和时区参数，确保即使容器内切换额外 JVM 选项也不回退 UTF-8 与时区行为
 JAVA_OPTS="$JAVA_OPTS -Dfile.encoding=UTF-8"
 JAVA_OPTS="$JAVA_OPTS -Duser.timezone=Asia/Shanghai"
 

@@ -20,6 +20,7 @@ import top.bilibili.connector.ImageSource
 import top.bilibili.connector.PlatformCapability
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
+import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.PlatformType
 import top.bilibili.connector.onebot11.core.OneBot11MessageEvent
@@ -51,6 +52,13 @@ class OneBot11AdapterTest {
         }
 
         override fun runtimeStatus(): PlatformRuntimeStatus = PlatformRuntimeStatus(connected = true, reconnectAttempts = 0)
+
+        /**
+         * 测试桩只需返回空观测快照，保证 adapter 合同扩展后仍可聚焦验证行为语义。
+         */
+        override fun runtimeObservability(): PlatformObservabilitySnapshot {
+            return PlatformObservabilitySnapshot.empty("fake transport")
+        }
     }
 
     @Test

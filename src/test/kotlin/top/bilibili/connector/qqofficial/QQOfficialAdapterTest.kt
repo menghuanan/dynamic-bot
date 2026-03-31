@@ -34,6 +34,7 @@ import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformCapability
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
+import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformType
 
 class QQOfficialAdapterTest {
@@ -422,6 +423,24 @@ class QQOfficialAdapterTest {
         assertTrue(source.contains("runReconnectLoop"))
     }
 
+    @Test
+    fun `qq official gateway sessions should bind to transport scope instead of creating new root scopes`() {
+        val source = read("src/main/kotlin/top/bilibili/connector/qqofficial/QQOfficialTransport.kt")
+
+        assertTrue(
+            source.contains("private val transportScope = CoroutineScope(Dispatchers.IO + SupervisorJob())"),
+            "QQ Official transport should hold a single transport scope",
+        )
+        assertTrue(
+            source.contains("SupervisorJob(transportScope.coroutineContext[Job])"),
+            "QQ Official transport should create per-session jobs under the transport scope",
+        )
+        assertFalse(
+            source.contains("val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())"),
+            "QQ Official openGateway should no longer create a fresh root CoroutineScope per session",
+        )
+    }
+
     // 启动测试适配器时，预置 Hello/Ready 帧，确保启动路径能完成首轮网关握手。
     private fun createStartedAdapter(
         transport: FakeTransport,
@@ -567,6 +586,13 @@ class QQOfficialAdapterTest {
         override suspend fun openGateway(url: String, headers: Map<String, String>): QQOfficialGatewaySession {
             requests += RecordedRequest("WS", url, null, headers)
             return lastGatewaySession
+        }
+
+        /**
+         * QQ Official fake transport 只覆盖协议语义测试，这里返回空快照避免引入额外底层资源依赖。
+         */
+        override fun runtimeObservability(): PlatformObservabilitySnapshot {
+            return PlatformObservabilitySnapshot.empty("fake transport")
         }
 
         override fun close() = Unit

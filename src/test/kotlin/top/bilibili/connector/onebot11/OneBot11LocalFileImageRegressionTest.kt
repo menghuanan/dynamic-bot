@@ -7,6 +7,7 @@ import top.bilibili.connector.ImageSource
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
+import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.PlatformType
 import top.bilibili.connector.onebot11.core.OneBot11MessageEvent
@@ -40,6 +41,13 @@ class OneBot11LocalFileImageRegressionTest {
         }
 
         override fun runtimeStatus(): PlatformRuntimeStatus = PlatformRuntimeStatus(connected = true, reconnectAttempts = 0)
+
+        /**
+         * 本地文件图片回归测试不关心底层观测细节，这里返回空快照保持 transport 合同完整。
+         */
+        override fun runtimeObservability(): PlatformObservabilitySnapshot {
+            return PlatformObservabilitySnapshot.empty("fake transport")
+        }
     }
 
     @Test

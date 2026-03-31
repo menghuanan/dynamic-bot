@@ -38,6 +38,7 @@ import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformCapability
 import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformInboundMessage
+import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.PlatformType
 import top.bilibili.utils.toSubject
@@ -225,6 +226,13 @@ internal class QQOfficialAdapter(
             inboundPressureActive = inboundPressureActive.get(),
             inboundDroppedEvents = inboundDroppedEvents.get(),
         )
+    }
+
+    /**
+     * 透传 QQ 官方 transport 的底层 OkHttp 资源快照，供 manager 与 guardian 统一采集平台观测信息。
+     */
+    override fun runtimeObservability(): PlatformObservabilitySnapshot {
+        return transport.runtimeObservability()
     }
 
     // QQ 官方的群聊/私聊可达性依赖运行时已接受的会话，避免业务层误判“所有 openid 都可主动发送”。

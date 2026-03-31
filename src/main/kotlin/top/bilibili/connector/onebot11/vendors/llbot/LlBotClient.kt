@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory
 import top.bilibili.config.NapCatConfig
 import top.bilibili.connector.ConnectionBackoffPolicy
 import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.onebot11.core.OneBot11MessageEvent
 import top.bilibili.connector.onebot11.core.OneBot11MessageSegment
@@ -138,6 +139,13 @@ class LlBotClient internal constructor(
             connected = connected.get(),
             reconnectAttempts = reconnectAttempts.get(),
         )
+    }
+
+    /**
+     * 透传 llbot transport 的底层 OkHttp 资源快照，避免 adapter 层重复维护第二套观测状态。
+     */
+    fun runtimeObservability(): PlatformObservabilitySnapshot {
+        return transport.runtimeObservability()
     }
 
     /**
@@ -452,5 +460,12 @@ internal class LlBotAdapterTransport(
      */
     override fun runtimeStatus(): PlatformRuntimeStatus {
         return llBotClient.runtimeStatus()
+    }
+
+    /**
+     * 在 llbot client 尚未导出底层 OkHttp 快照前先返回空模型，保持统一观测入口可用。
+     */
+    override fun runtimeObservability(): PlatformObservabilitySnapshot {
+        return llBotClient.runtimeObservability()
     }
 }

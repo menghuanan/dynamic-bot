@@ -549,6 +549,13 @@ services:
 docker-compose up -d
 ```
 
+#### 4.1 Docker 默认 JVM 诊断参数说明
+
+- Docker 镜像默认使用 `eclipse-temurin:17-jdk` 运行时，以保证容器内 `jcmd` 与 Native Memory Tracking 可用。
+- `JAVA_TOOL_OPTIONS` 默认包含 `-XX:NativeMemoryTracking=summary`，用于长期保留低开销的 NMT 摘要，便于守护日志稳定输出 `Native Memory Summary`。
+- `NativeMemoryTracking=detail` 仅建议在专项排障时临时启用；它会带来更高的运行时开销，问题定位完成后应恢复到默认的 `summary`。
+- `docker-entrypoint.sh` 仍会补充 `-Dfile.encoding=UTF-8` 和 `-Duser.timezone=Asia/Shanghai`，不要在 `docker-compose.yml` 中用 `JAVA_OPTS` 覆盖整组默认参数。
+
 #### 5. 配置 NapCat 连接
 
 首次运行后，编辑 `config/bot.yml`：

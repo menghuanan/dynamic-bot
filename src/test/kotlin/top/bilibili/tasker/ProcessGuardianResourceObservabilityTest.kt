@@ -74,4 +74,31 @@ class ProcessGuardianResourceObservabilityTest {
             "ProcessGuardian should emit a dedicated BiliClient and OkHttp log section",
         )
     }
+
+    // guardian 需要把平台 transport 的独立 OkHttp 运行态拆成专门段落，避免与 BiliClient 监控混在一起。
+    @Test
+    fun `process guardian should include dedicated platform transport observability section`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("Platform HttpClient / OkHttp"),
+            "ProcessGuardian should emit a dedicated platform transport HttpClient and OkHttp log section",
+        )
+        assertTrue(
+            source.contains("runtimeObservability()"),
+            "ProcessGuardian should read platform transport runtime observability snapshots from connector manager",
+        )
+        assertTrue(
+            source.contains("collectPlatformRuntimeObservability()"),
+            "ProcessGuardian should centralize platform transport snapshot collection before writing logs",
+        )
+        assertTrue(
+            source.contains("PlatformObservabilitySnapshot.empty(\"platform adapter is not initialized\")"),
+            "ProcessGuardian should fall back to an empty platform snapshot when the adapter is not initialized",
+        )
+        assertTrue(
+            source.contains("report.platformObservability.note?.let"),
+            "ProcessGuardian should emit the empty snapshot note instead of failing when platform observability is unavailable",
+        )
+    }
 }

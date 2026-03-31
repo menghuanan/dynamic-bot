@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformCapability
+import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.onebot11.OneBot11Adapter
 import top.bilibili.connector.onebot11.core.OneBot11MessageEvent
@@ -87,6 +88,13 @@ private class NapCatTransport(
             reconnectAttempts = napCatClient.getReconnectAttempts(),
             outboundPressureActive = napCatClient.isSendQueueFull(),
         )
+    }
+
+    /**
+     * 在 NapCat client 尚未导出底层 OkHttp 快照前先返回空模型，保持平台层入口稳定。
+     */
+    override fun runtimeObservability(): PlatformObservabilitySnapshot {
+        return napCatClient.runtimeObservability()
     }
 
     /**

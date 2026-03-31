@@ -20,7 +20,9 @@ import io.ktor.websocket.readText
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -32,9 +34,13 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import java.io.Closeable
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import top.bilibili.connector.PlatformHttpClientSnapshot
+import top.bilibili.connector.PlatformObservabilitySnapshot
 
 internal const val QQ_OFFICIAL_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
 internal const val QQ_OFFICIAL_API_BASE = "https://api.sgroup.qq.com"
@@ -61,6 +67,11 @@ internal interface QQOfficialTransport : Closeable {
      * 打开 QQ 官方网关会话，并将文本帧暴露给适配器处理。
      */
     suspend fun openGateway(url: String, headers: Map<String, String>): QQOfficialGatewaySession
+
+    /**
+     * 返回 QQ 官方底层 HttpClient / OkHttp 资源快照，供平台守护汇总 transport 运行态。
+     */
+    fun runtimeObservability(): PlatformObservabilitySnapshot
 }
 
 internal interface QQOfficialGatewaySession {
@@ -89,6 +100,14 @@ internal class QQOfficialHttpException(
 internal class KtorQQOfficialTransport(
     private val json: Json = QQOfficialJson,
 ) : QQOfficialTransport {
+    private val connectionPool = ConnectionPool(
+        3,
+        3,
+        TimeUnit.MINUTES,
+    )
+    private val okHttpDispatcher = Dispatcher()
+    private val transportScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val webSocketSessionActive = AtomicBoolean(false)
     private val client = HttpClient(OkHttp) {
         install(HttpTimeout) {
             connectTimeoutMillis = 15_000
@@ -98,13 +117,8 @@ internal class KtorQQOfficialTransport(
         engine {
             config {
                 followRedirects(true)
-                connectionPool(
-                    ConnectionPool(
-                        3,
-                        3,
-                        TimeUnit.MINUTES,
-                    ),
-                )
+                dispatcher(okHttpDispatcher)
+                connectionPool(connectionPool)
             }
         }
     }
@@ -143,8 +157,10 @@ internal class KtorQQOfficialTransport(
         val closeSignal = CompletableDeferred<Throwable?>()
         val outgoingChannel = Channel<String>(64)
         val sessionRef = AtomicReference<DefaultClientWebSocketSession?>()
-        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-        val job = scope.launch {
+        // 每次建连只创建 session 级 job，统一挂到 transportScope 下，避免重连时遗留新的根协程树。
+        val sessionJob = SupervisorJob(transportScope.coroutineContext[Job])
+        val sessionScope = CoroutineScope(transportScope.coroutineContext + sessionJob)
+        val job = sessionScope.launch {
             var failure: Throwable? = null
             try {
                 client.webSocket(
@@ -156,6 +172,7 @@ internal class KtorQQOfficialTransport(
                     },
                 ) {
                     sessionRef.set(this)
+                    webSocketSessionActive.set(true)
                     val sendJob = launch {
                         for (text in outgoingChannel) {
                             send(Frame.Text(text))
@@ -177,6 +194,7 @@ internal class KtorQQOfficialTransport(
                 failure = throwable
             } finally {
                 outgoingChannel.close()
+                webSocketSessionActive.set(false)
                 if (!closeSignal.isCompleted) {
                     closeSignal.complete(failure)
                 }
@@ -200,6 +218,7 @@ internal class KtorQQOfficialTransport(
             override suspend fun close(reason: String) {
                 outgoingChannel.close()
                 sessionRef.get()?.close(CloseReason(CloseReason.Codes.NORMAL, reason))
+                sessionJob.cancel()
                 job.cancelAndJoin()
                 if (!closeSignal.isCompleted) {
                     closeSignal.complete(null)
@@ -209,10 +228,32 @@ internal class KtorQQOfficialTransport(
     }
 
     /**
+     * 导出 QQ 官方底层 OkHttp 连接池、调度器与网关会话活跃态，供 guardian 独立记录平台 transport 资源。
+     */
+    override fun runtimeObservability(): PlatformObservabilitySnapshot {
+        return PlatformObservabilitySnapshot(
+            clients = listOf(
+                PlatformHttpClientSnapshot(
+                    adapterName = "qq_official",
+                    transportName = "gateway",
+                    connectionCount = connectionPool.connectionCount(),
+                    idleConnectionCount = connectionPool.idleConnectionCount(),
+                    queuedCallsCount = okHttpDispatcher.queuedCallsCount(),
+                    runningCallsCount = okHttpDispatcher.runningCallsCount(),
+                    webSocketSessionActive = webSocketSessionActive.get(),
+                ),
+            ),
+        )
+    }
+
+    /**
      * 关闭 Ktor 客户端，释放 HTTP 与 WebSocket 资源。
      */
     override fun close() {
+        transportScope.cancel()
         client.close()
+        connectionPool.evictAll()
+        okHttpDispatcher.executorService.shutdown()
     }
 
     /**

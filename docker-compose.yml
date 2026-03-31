@@ -20,7 +20,7 @@ services:
 
     # 环境变量
     # 注意: JVM 内存参数已在 Dockerfile 中通过 JAVA_TOOL_OPTIONS 和 CMD 配置
-    # 不要在这里设置 JAVA_OPTS，否则会覆盖优化配置
+    # 其中默认包含 NMT(summary)；不要在这里设置 JAVA_OPTS，否则会覆盖优化配置与诊断参数
     environment:
       - TZ=Asia/Shanghai
 

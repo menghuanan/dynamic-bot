@@ -9,6 +9,7 @@ import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformCapability
 import top.bilibili.connector.PlatformContact
 import top.bilibili.connector.PlatformInboundMessage
+import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
 import top.bilibili.connector.PlatformType
 import top.bilibili.connector.onebot11.core.OneBot11MessageEvent
@@ -63,6 +64,13 @@ open class OneBot11Adapter(
      */
     override fun runtimeStatus(): PlatformRuntimeStatus {
         return transport.runtimeStatus()
+    }
+
+    /**
+     * 透传底层 OneBot11 传输资源观测快照，供 manager 与 guardian 在平台层统一读取。
+     */
+    override fun runtimeObservability(): PlatformObservabilitySnapshot {
+        return transport.runtimeObservability()
     }
 
     /**

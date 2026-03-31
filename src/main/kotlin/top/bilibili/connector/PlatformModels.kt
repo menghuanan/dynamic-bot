@@ -44,6 +44,42 @@ data class PlatformRuntimeStatus(
     val outboundDroppedEvents: Int = 0,
 )
 
+/**
+ * 单个平台 transport 的 HttpClient / OkHttp 运行态快照。
+ * 该模型独立于连接健康状态，专门承载连接池、调度器与 WebSocket 会话等资源观测信息。
+ */
+data class PlatformHttpClientSnapshot(
+    val adapterName: String,
+    val transportName: String,
+    val connectionCount: Int? = null,
+    val idleConnectionCount: Int? = null,
+    val queuedCallsCount: Int? = null,
+    val runningCallsCount: Int? = null,
+    val webSocketSessionActive: Boolean = false,
+    val note: String? = null,
+)
+
+/**
+ * 平台层独立运行时观测快照。
+ * manager 与 guardian 通过该模型聚合 transport 资源使用情况，而不是复用连接健康状态对象。
+ */
+data class PlatformObservabilitySnapshot(
+    val clients: List<PlatformHttpClientSnapshot> = emptyList(),
+    val note: String? = null,
+) {
+    companion object {
+        /**
+         * 为未初始化或暂未接入观测的场景提供统一空快照，避免外层守护逻辑继续判空。
+         */
+        fun empty(note: String? = null): PlatformObservabilitySnapshot {
+            return PlatformObservabilitySnapshot(
+                clients = emptyList(),
+                note = note,
+            )
+        }
+    }
+}
+
 sealed interface ImageSource {
     data class LocalFile(val path: String) : ImageSource
 

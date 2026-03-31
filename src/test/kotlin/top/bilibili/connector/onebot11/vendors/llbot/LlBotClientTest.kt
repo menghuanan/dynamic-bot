@@ -29,6 +29,7 @@ import top.bilibili.connector.OutgoingPart
 import top.bilibili.connector.PlatformCapability
 import top.bilibili.connector.PlatformChatType
 import top.bilibili.connector.PlatformContact
+import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformType
 import top.bilibili.connector.onebot11.core.OneBot11MessageSegment
 
@@ -342,6 +343,13 @@ class LlBotClientTest {
             lastUrl = url
             lastHeaders = headers
             return lastGatewaySession
+        }
+
+        /**
+         * llbot fake transport 不关心底层 OkHttp 资源，只返回空快照保持合同完整。
+         */
+        override fun runtimeObservability(): PlatformObservabilitySnapshot {
+            return PlatformObservabilitySnapshot.empty("fake transport")
         }
 
         override fun close() = Unit

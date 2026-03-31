@@ -122,6 +122,14 @@ class PlatformConnectorManager(
     }
 
     /**
+     * 汇总当前平台 transport 的运行时观测快照；未初始化时返回带说明的空快照，避免守护链路直接抛异常。
+     */
+    fun runtimeObservability(): PlatformObservabilitySnapshot {
+        return currentAdapter()?.runtimeObservability()
+            ?: PlatformObservabilitySnapshot.empty("platform adapter is not initialized")
+    }
+
+    /**
      * 兼容仍在迁移中的群号能力判断入口，但实现依然收口在 connector manager。
      */
     suspend fun isGroupReachable(groupId: Long): Boolean {

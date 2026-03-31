@@ -17,8 +17,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
 import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import org.slf4j.LoggerFactory
 import top.bilibili.connector.ConnectionBackoffPolicy
+import top.bilibili.connector.PlatformHttpClientSnapshot
+import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.service.MessageLogSimplifier
 import top.bilibili.config.NapCatConfig
 import java.io.File
@@ -43,6 +46,12 @@ class NapCatClient(
         isLenient = true
         encodeDefaults = true
     }
+    private val connectionPool = ConnectionPool(
+        maxIdleConnections = 3,
+        keepAliveDuration = 3,
+        timeUnit = TimeUnit.MINUTES,
+    )
+    private val okHttpDispatcher = Dispatcher()
 
     private val client = HttpClient(OkHttp) {
         install(HttpTimeout) {
@@ -55,11 +64,8 @@ class NapCatClient(
         // ✅ P3修复: 配置连接池参数，避免空闲连接占用资源
         engine {
             config {
-                connectionPool(ConnectionPool(
-                    maxIdleConnections = 3,      // 最大空闲连接数
-                    keepAliveDuration = 3,       // 空闲连接保持时间（分钟）
-                    timeUnit = TimeUnit.MINUTES
-                ))
+                dispatcher(okHttpDispatcher)
+                connectionPool(connectionPool)
             }
         }
     }
@@ -168,6 +174,8 @@ class NapCatClient(
 
         // 关闭 HTTP 客户端
         client.close()
+        connectionPool.evictAll()
+        okHttpDispatcher.executorService.shutdown()
 
         logger.info("NapCat WebSocket 客户端已停止")
     }
@@ -697,6 +705,25 @@ class NapCatClient(
      * 返回当前已累积的重连次数，供监控与退避观察使用。
      */
     fun getReconnectAttempts(): Int = reconnectAttempts.get()
+
+    /**
+     * 导出 NapCat 当前底层 OkHttp 连接池、调度器与 WebSocket 会话活跃态，供平台守护统一汇总。
+     */
+    fun runtimeObservability(): PlatformObservabilitySnapshot {
+        return PlatformObservabilitySnapshot(
+            clients = listOf(
+                PlatformHttpClientSnapshot(
+                    adapterName = "onebot11",
+                    transportName = "napcat",
+                    connectionCount = connectionPool.connectionCount(),
+                    idleConnectionCount = connectionPool.idleConnectionCount(),
+                    queuedCallsCount = okHttpDispatcher.queuedCallsCount(),
+                    runningCallsCount = okHttpDispatcher.runningCallsCount(),
+                    webSocketSessionActive = session != null && isConnected.get(),
+                ),
+            ),
+        )
+    }
 
     /**
      * 通过群列表查询确认 Bot 当前是否仍在目标群中，避免把发送失败误当成群不可达。

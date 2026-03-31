@@ -31,9 +31,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import org.slf4j.LoggerFactory
 import top.bilibili.config.NapCatConfig
 import top.bilibili.connector.PlatformChatType
+import top.bilibili.connector.PlatformHttpClientSnapshot
+import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.connector.PlatformRuntimeStatus
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -48,6 +51,12 @@ class KtorOneBot11Transport(
         isLenient = true
         encodeDefaults = true
     }
+    private val connectionPool = ConnectionPool(
+        maxIdleConnections = 3,
+        keepAliveDuration = 3,
+        timeUnit = TimeUnit.MINUTES,
+    )
+    private val okHttpDispatcher = Dispatcher()
 
     private val client = HttpClient(OkHttp) {
         install(HttpTimeout) {
@@ -59,13 +68,8 @@ class KtorOneBot11Transport(
         }
         engine {
             config {
-                connectionPool(
-                    ConnectionPool(
-                        maxIdleConnections = 3,
-                        keepAliveDuration = 3,
-                        timeUnit = TimeUnit.MINUTES,
-                    ),
-                )
+                dispatcher(okHttpDispatcher)
+                connectionPool(connectionPool)
             }
         }
     }
@@ -111,6 +115,8 @@ class KtorOneBot11Transport(
         connectionJob = null
         session = null
         client.close()
+        connectionPool.evictAll()
+        okHttpDispatcher.executorService.shutdown()
     }
 
     /**
@@ -169,6 +175,25 @@ class KtorOneBot11Transport(
         return PlatformRuntimeStatus(
             connected = connected.get(),
             reconnectAttempts = reconnectAttempts.get(),
+        )
+    }
+
+    /**
+     * 在 generic transport 尚未接入底层 OkHttp 快照前先返回空观测模型，避免平台层再次判空。
+     */
+    override fun runtimeObservability(): PlatformObservabilitySnapshot {
+        return PlatformObservabilitySnapshot(
+            clients = listOf(
+                PlatformHttpClientSnapshot(
+                    adapterName = "onebot11",
+                    transportName = "generic",
+                    connectionCount = connectionPool.connectionCount(),
+                    idleConnectionCount = connectionPool.idleConnectionCount(),
+                    queuedCallsCount = okHttpDispatcher.queuedCallsCount(),
+                    runningCallsCount = okHttpDispatcher.runningCallsCount(),
+                    webSocketSessionActive = session != null && connected.get(),
+                ),
+            ),
         )
     }
 

@@ -93,6 +93,13 @@ interface PlatformAdapter {
     fun runtimeStatus(): PlatformRuntimeStatus
 
     /**
+     * 统一暴露平台 transport 的运行时资源快照，默认返回空快照避免老实现被迫立刻补齐所有观测字段。
+     */
+    fun runtimeObservability(): PlatformObservabilitySnapshot {
+        return PlatformObservabilitySnapshot.empty("platform adapter does not expose transport observability yet")
+    }
+
+    /**
      * 统一判断联系人是否可达，供命令与推送逻辑做显式降级。
      */
     suspend fun isContactReachable(contact: PlatformContact): Boolean
