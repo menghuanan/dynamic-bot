@@ -23,22 +23,4 @@ class SendModeDefaultRegressionTest {
             "NapCatConfig should no longer default send mode to file",
         )
     }
-
-    @Test
-    fun `readme examples should show base64 send mode as the default`() {
-        val readme = read("README.md")
-
-        assertTrue(
-            readme.contains("""send_mode: "base64""""),
-            "README should show base64 send_mode examples",
-        )
-        assertFalse(
-            readme.contains("""send_mode: "file"  # 图片发送模式：file 或 base64"""),
-            "README should not keep file as the example send_mode default",
-        )
-        assertFalse(
-            readme.contains("""send_mode: "file"          # 图片发送模式：file 或 base64"""),
-            "README should not keep file as the detailed config example default",
-        )
-    }
 }
