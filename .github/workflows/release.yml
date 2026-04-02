@@ -75,22 +75,51 @@ jobs:
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-      # 步骤 8：执行发布构建。
-      - name: Build with Gradle
-        run: ./gradlew build -PreleaseVersion=${{ env.RELEASE_VERSION }}
+      # 步骤 8：先执行编译并输出详细日志，避免发布构建阶段静默卡住。
+      - name: Compile with Gradle
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics/release
+          ./gradlew compileKotlin compileTestKotlin -PreleaseVersion=${{ env.RELEASE_VERSION }} --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/release/compile.log
 
-      # 步骤 9：初始化 Docker Buildx。
+      # 步骤 9：执行测试并持续输出日志，便于定位 test 阶段问题。
+      - name: Test with Gradle
+        run: |
+          set -o pipefail
+          ./gradlew test -PreleaseVersion=${{ env.RELEASE_VERSION }} --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/release/test.log
+
+      # 步骤 10：执行打包，确保发布产物沿用 releaseVersion。
+      - name: Package with Gradle
+        run: |
+          set -o pipefail
+          ./gradlew assemble -PreleaseVersion=${{ env.RELEASE_VERSION }} --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/release/package.log
+
+      # 步骤 11：上传构建诊断文件，失败时也保留证据。
+      - name: Upload Release Diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-diagnostics
+          path: |
+            diagnostics/release/**
+            build/reports/**
+            build/test-results/**
+            build/tmp/**
+          retention-days: 7
+          if-no-files-found: warn
+
+      # 步骤 12：初始化 Docker Buildx。
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 步骤 10：登录 Docker Hub。
+      # 步骤 13：登录 Docker Hub。
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 步骤 11：生成镜像元数据。
+      # 步骤 14：生成镜像元数据。
       - name: Generate Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -98,7 +127,7 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: ${{ steps.release_channel.outputs.docker_tags }}
 
-      # 步骤 12：构建并推送镜像。
+      # 步骤 15：构建并推送镜像。
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -111,7 +140,7 @@ jobs:
           build-args: |
             APP_VERSION=${{ env.RELEASE_VERSION }}
 
-      # 步骤 13：先解析发布说明文件。
+      # 步骤 16：先解析发布说明文件。
       - name: Resolve Release Body
         id: release_body
         shell: bash
@@ -124,7 +153,7 @@ jobs:
             echo "has_custom_body=false" >> "${GITHUB_OUTPUT}"
           fi
 
-      # 步骤 14：存在自定义说明时优先创建带定制文案的 Release。
+      # 步骤 17：存在自定义说明时优先创建带定制文案的 Release。
       - name: Create Release with Custom Notes
         if: steps.release_body.outputs.has_custom_body == 'true'
         uses: softprops/action-gh-release@v2
@@ -135,7 +164,7 @@ jobs:
           body_path: ${{ steps.release_body.outputs.body_path }}
           files: build/libs/*.jar
 
-      # 步骤 15：缺少自定义说明时回退自动生成说明。
+      # 步骤 18：缺少自定义说明时回退自动生成说明。
       - name: Create Release with Generated Notes
         if: steps.release_body.outputs.has_custom_body != 'true'
         uses: softprops/action-gh-release@v2
