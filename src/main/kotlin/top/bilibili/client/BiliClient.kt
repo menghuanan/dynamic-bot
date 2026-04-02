@@ -228,7 +228,11 @@ open class BiliClient(
     private val ownerTag: String = "anonymous",
 ) : Closeable {
     companion object {
-        private const val RETRY_SLOT_CAPACITY = 3
+        private const val RETRY_SLOT_CAPACITY = 2
+        private const val RETRY_POOL_MAX_IDLE_CONNECTIONS = 2
+        private const val RETRY_POOL_KEEP_ALIVE_MINUTES = 1L
+        private const val RETRY_DISPATCHER_MAX_REQUESTS = 16
+        private const val RETRY_DISPATCHER_MAX_REQUESTS_PER_HOST = 4
         private val instanceSequence = AtomicInteger(0)
         private val totalCreatedCount = AtomicInteger(0)
         private val activeClientRefs = ConcurrentHashMap<Int, WeakReference<BiliClient>>()
@@ -295,7 +299,7 @@ open class BiliClient(
         null
     }
 
-    // 重试槽位保留 3 个，但仅在真正轮到某个槽位发请求时才创建，避免轮询刚启动就一次性常驻 3 套 OkHttp 资源。
+    // 重试槽位默认保留 2 个，但仅在真正轮到某个槽位发请求时才创建，避免轮询刚启动就一次性常驻多套 OkHttp 资源。
     private val retrySlots = MutableList<RetrySlotEntry?>(RETRY_SLOT_CAPACITY) { null }
 
     /**
@@ -347,11 +351,15 @@ open class BiliClient(
      */
     private fun createRetrySlot(slotIndex: Int): RetrySlotEntry {
         val connectionPool = ConnectionPool(
-            5,
-            5,
-            TimeUnit.MINUTES,
+            maxIdleConnections = RETRY_POOL_MAX_IDLE_CONNECTIONS,
+            keepAliveDuration = RETRY_POOL_KEEP_ALIVE_MINUTES,
+            timeUnit = TimeUnit.MINUTES,
         )
-        val dispatcher = Dispatcher()
+        val dispatcher = Dispatcher().apply {
+            // 轮询链路并发度有限，收紧 dispatcher 可以减少高峰时短期对象滞留。
+            maxRequests = RETRY_DISPATCHER_MAX_REQUESTS
+            maxRequestsPerHost = RETRY_DISPATCHER_MAX_REQUESTS_PER_HOST
+        }
         return RetrySlotEntry(
             slotIndex = slotIndex,
             client = client(connectionPool = connectionPool, dispatcher = dispatcher),
@@ -435,6 +443,20 @@ open class BiliClient(
     private val logger = org.slf4j.LoggerFactory.getLogger(BiliClient::class.java)
 
     /**
+     * 统一判定当前异常是否属于可重试网络错误。
+     */
+    private fun shouldRetry(throwable: Throwable): Boolean {
+        return throwable is IOException || throwable is HttpRequestTimeoutException
+    }
+
+    /**
+     * 超时类错误通常是瞬时拥塞，不轮换底层槽位可避免抖动时额外拉起常驻 OkHttp 资源。
+     */
+    private fun shouldRotateRetrySlot(throwable: Throwable): Boolean {
+        return throwable !is HttpRequestTimeoutException && throwable !is SocketTimeoutException
+    }
+
+    /**
      * 使用底层 HTTP 客户端执行请求，并在可重试错误上做有限次重试。
      */
     suspend fun <T> useHttpClient(
@@ -456,7 +478,7 @@ open class BiliClient(
                 }
                 return@supervisorScope block(client)
             } catch (throwable: Throwable) {
-                if (isActive && (throwable is IOException || throwable is HttpRequestTimeoutException)) {
+                if (isActive && shouldRetry(throwable)) {
                     val selectedClientIndex = clientIndex
                     val proxies = proxys
                     val proxyEnabled = !proxies.isNullOrEmpty() && BiliConfigManager.config.enableConfig.proxyEnable
@@ -485,8 +507,10 @@ open class BiliClient(
                     )
                     retryCount++
                     delay(3000)
-                    // 失败后切换到底层客户端实例，可尽量避开连接池里已污染的连接状态。
-                    clientIndex = (clientIndex + 1) % retrySlots.size
+                    if (shouldRotateRetrySlot(throwable)) {
+                        // 连接失败类错误才轮换到底层客户端，避免超时抖动时额外拉起新槽位。
+                        clientIndex = (clientIndex + 1) % retrySlots.size
+                    }
                 } else {
                     logger.error("API请求发生不可重试异常: 异常=${throwable.logTypeLabel()}, 原因=${throwable.logReason()}", throwable)
                     throw throwable

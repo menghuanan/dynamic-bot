@@ -77,4 +77,44 @@ class BiliClientSourceRegressionTest {
             "BiliClient runtime snapshot should include dispatcher queue state",
         )
     }
+
+    // 长时 RSS 漂移治理需要收紧轮询客户端的连接池与调度并发，避免过多空闲连接常驻。
+    @Test
+    fun `bili client should tighten okhttp connection pool and dispatcher bounds`() {
+        val text = read("src/main/kotlin/top/bilibili/client/BiliClient.kt")
+
+        assertTrue(
+            text.contains("RETRY_POOL_MAX_IDLE_CONNECTIONS = 2"),
+            "BiliClient should cap idle connections to 2 per retry slot",
+        )
+        assertTrue(
+            text.contains("RETRY_POOL_KEEP_ALIVE_MINUTES = 1"),
+            "BiliClient should reduce keep-alive duration to 1 minute",
+        )
+        assertTrue(
+            text.contains("RETRY_DISPATCHER_MAX_REQUESTS = 16") &&
+                text.contains("maxRequests = RETRY_DISPATCHER_MAX_REQUESTS"),
+            "BiliClient should cap global dispatcher parallelism",
+        )
+        assertTrue(
+            text.contains("RETRY_DISPATCHER_MAX_REQUESTS_PER_HOST = 4") &&
+                text.contains("maxRequestsPerHost = RETRY_DISPATCHER_MAX_REQUESTS_PER_HOST"),
+            "BiliClient should cap per-host dispatcher parallelism",
+        )
+    }
+
+    // 超时场景不应无条件轮换到底层 retry 槽位，否则会把偶发网络抖动放大成额外常驻客户端资源。
+    @Test
+    fun `bili client retry path should avoid slot rotation on timeout errors`() {
+        val text = read("src/main/kotlin/top/bilibili/client/BiliClient.kt")
+
+        assertTrue(
+            text.contains("shouldRotateRetrySlot"),
+            "BiliClient should centralize retry slot rotation policy",
+        )
+        assertTrue(
+            text.contains("HttpRequestTimeoutException") && text.contains("SocketTimeoutException"),
+            "BiliClient retry policy should explicitly classify timeout errors",
+        )
+    }
 }

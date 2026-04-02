@@ -101,4 +101,57 @@ class ProcessGuardianResourceObservabilityTest {
             "ProcessGuardian should emit the empty snapshot note instead of failing when platform observability is unavailable",
         )
     }
+
+    // RSS 与 NMT 的差值是定位 JVM 外驻留增长最直接的指标，守护日志必须显式输出便于长期对比。
+    @Test
+    fun `process guardian should emit rss minus nmt metric in daemon logs`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("RssMinusNmt"),
+            "ProcessGuardian should emit VmRSS minus NMT committed memory in daemon logs",
+        )
+    }
+
+    // Linux 上 RSS 增长需要区分匿名页与文件映射页，守护进程应采集 smaps_rollup 的关键分项。
+    @Test
+    fun `process guardian should collect smaps rollup anonymous file and shmem metrics`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("/proc/self/smaps_rollup"),
+            "ProcessGuardian should read /proc/self/smaps_rollup when available",
+        )
+        assertTrue(
+            source.contains("Anonymous"),
+            "ProcessGuardian should parse Anonymous from smaps_rollup",
+        )
+        assertTrue(
+            source.contains("File"),
+            "ProcessGuardian should parse File from smaps_rollup",
+        )
+        assertTrue(
+            source.contains("Shmem"),
+            "ProcessGuardian should parse Shmem from smaps_rollup",
+        )
+    }
+
+    // 软限制策略要求在 RSS 连续高位时触发条件重启，避免长期漂移击穿容器上限。
+    @Test
+    fun `process guardian should provide rss soft limit guard with conditional restart`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("RSS_SOFT_LIMIT_MB"),
+            "ProcessGuardian should define an RSS soft limit threshold",
+        )
+        assertTrue(
+            source.contains("RSS_SOFT_LIMIT_HOLD_MS"),
+            "ProcessGuardian should enforce a sustained high-memory window before restart",
+        )
+        assertTrue(
+            source.contains("exitProcess"),
+            "ProcessGuardian should trigger process restart when RSS soft limit guard is exceeded",
+        )
+    }
 }

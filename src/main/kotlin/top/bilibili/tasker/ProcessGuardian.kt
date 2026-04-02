@@ -19,6 +19,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
+import kotlin.system.exitProcess
 
 /**
  * 综合守护进程
@@ -61,12 +62,17 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private const val NATIVE_MEMORY_COMMAND_TIMEOUT_MS = 5_000L
     private const val NATIVE_MEMORY_DESTROY_WAIT_MS = 500L
     private const val PROCESS_OUTPUT_DRAIN_TIMEOUT_MS = 1_000L
+    private const val RSS_SOFT_LIMIT_MB = 300L
+    private const val RSS_SOFT_LIMIT_HOLD_MS = 30 * 60 * 1000L
+    private const val RSS_SOFT_LIMIT_WARN_AFTER_MS = 10 * 60 * 1000L
+    private const val RSS_SOFT_LIMIT_RESTART_EXIT_CODE = 78
 
     // 连接状态追踪
     private var lastConnectionStatus = true
     private var disconnectedDuration = 0
     private var lastNativeMemorySampleAtMillis = 0L
     private var lastNativeMemorySummary: NativeMemorySummary? = null
+    private var rssAboveSoftLimitSinceMillis = 0L
 
     override fun init() {
         logger.info("ProcessGuardian 守护进程已启动")
@@ -110,8 +116,14 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         // 5.5 按异常或固定周期采集一次可降级的 NMT 摘要。
         captureNativeMemorySummary(report)
 
+        // 5.8 基于 RSS 连续高位触发软限制告警，并在满足窗口后执行条件重启。
+        evaluateRssSoftLimit(report)
+
         // 6. 写入监控日志（只在有异常时写入，或每10分钟写入一次状态）
         writeMonitorLog(report)
+
+        // 6.5 先写入守护日志再执行重启，确保排障信息在触发退出前落盘。
+        executeRssSoftLimitRestart(report)
 
         logger.debug("系统健康检查完成")
     }
@@ -276,6 +288,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private fun collectProcessMetrics(): ProcessMetrics {
         val currentProcess = ProcessHandle.current()
         val procStatus = readProcStatusSnapshot()
+        val smapsRollup = readSmapsRollupSnapshot()
         val osBean = runCatching {
             ManagementFactory.getPlatformMXBean(com.sun.management.OperatingSystemMXBean::class.java)
         }.getOrNull()
@@ -301,6 +314,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             committedVirtualMB = committedVirtualMB,
             source = source,
             note = note,
+            smapsRollup = smapsRollup,
         )
     }
 
@@ -396,6 +410,35 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             ?.substringBefore(' ')
             ?.trim()
             ?.toLongOrNull()
+    }
+
+    /**
+     * 读取 /proc/self/smaps_rollup 的匿名页、文件映射页与共享内存占用。
+     */
+    private fun readSmapsRollupSnapshot(): SmapsRollupSnapshot? {
+        val smapsRollupFile = File("/proc/self/smaps_rollup")
+        if (!smapsRollupFile.exists()) {
+            return null
+        }
+
+        return runCatching {
+            val values = smapsRollupFile.readLines(StandardCharsets.UTF_8)
+                .mapNotNull { line ->
+                    val index = line.indexOf(':')
+                    if (index <= 0) {
+                        null
+                    } else {
+                        line.substring(0, index).trim() to line.substring(index + 1).trim()
+                    }
+                }
+                .toMap()
+
+            SmapsRollupSnapshot(
+                anonymousKb = parseProcStatusKilobytes(values, "Anonymous"),
+                fileKb = parseProcStatusKilobytes(values, "File"),
+                shmemKb = parseProcStatusKilobytes(values, "Shmem"),
+            )
+        }.getOrNull()
     }
 
     /**
@@ -702,6 +745,77 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     }
 
     /**
+     * 基于 VmRSS 连续超阈窗口执行软限制告警，并在窗口满足后登记条件重启请求。
+     */
+    private fun evaluateRssSoftLimit(report: MonitorReport) {
+        val processMetrics = report.processMetrics ?: run {
+            rssAboveSoftLimitSinceMillis = 0L
+            return
+        }
+        val rssMB = processMetrics.rssMB ?: run {
+            rssAboveSoftLimitSinceMillis = 0L
+            return
+        }
+
+        // 同步输出 VmRSS 与 NMT committed 的差值，定位 JVM 外驻留增长。
+        report.rssMinusNmtMB = report.nativeMemorySummary
+            ?.takeIf { native -> native.status == "OK" }
+            ?.totalCommittedMB
+            ?.let { committedMB -> rssMB - committedMB }
+
+        report.rssSoftLimitMB = RSS_SOFT_LIMIT_MB
+        report.rssSoftLimitHoldSeconds = RSS_SOFT_LIMIT_HOLD_MS / 1000L
+
+        if (rssMB < RSS_SOFT_LIMIT_MB) {
+            rssAboveSoftLimitSinceMillis = 0L
+            report.rssSoftLimitActive = false
+            report.rssSoftLimitDurationSeconds = 0L
+            report.rssSoftLimitIssueLevel = "NORMAL"
+            return
+        }
+
+        if (rssAboveSoftLimitSinceMillis == 0L) {
+            rssAboveSoftLimitSinceMillis = System.currentTimeMillis()
+        }
+        val continuousHighDurationMs = System.currentTimeMillis() - rssAboveSoftLimitSinceMillis
+        report.rssSoftLimitActive = true
+        report.rssSoftLimitDurationSeconds = continuousHighDurationMs / 1000L
+
+        if (continuousHighDurationMs >= RSS_SOFT_LIMIT_HOLD_MS) {
+            report.hasRssSoftLimitIssue = true
+            report.rssSoftLimitIssueLevel = "RESTART_PENDING"
+            report.rssSoftRestartPending = true
+            report.rssSoftRestartReason =
+                "VmRSS=$rssMB MB 连续 ${(continuousHighDurationMs / 1000L) / 60L} 分钟超过阈值 ${RSS_SOFT_LIMIT_MB} MB"
+            return
+        }
+
+        if (continuousHighDurationMs >= RSS_SOFT_LIMIT_WARN_AFTER_MS) {
+            report.hasRssSoftLimitIssue = true
+            report.rssSoftLimitIssueLevel = "WARNING"
+        } else {
+            report.rssSoftLimitIssueLevel = "OBSERVING"
+        }
+    }
+
+    /**
+     * 在守护日志写盘后执行条件重启，确保触发现场先进入 Daemon 日志。
+     */
+    private fun executeRssSoftLimitRestart(report: MonitorReport) {
+        if (!report.rssSoftRestartPending) {
+            return
+        }
+
+        val reason = report.rssSoftRestartReason ?: "VmRSS 连续超阈，触发条件重启"
+        logger.error("RSS 软限制触发条件重启: {}", reason)
+
+        // 先执行常规停机流程释放资源，再通过退出码交给容器重启策略拉起新实例。
+        runCatching { BiliBiliBot.stop("rss-soft-limit") }
+            .onFailure { error -> logger.error("RSS 软限制停机流程失败: ${error.message}", error) }
+        exitProcess(RSS_SOFT_LIMIT_RESTART_EXIT_CODE)
+    }
+
+    /**
      * 正常清理
      */
     private fun normalCleanup() {
@@ -796,6 +910,13 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                             "CommittedVirtual: ${process.committedVirtualMB?.let { "${it}MB" } ?: "不可用"}"
                     )
                     process.note?.let { writer.println("  说明: $it") }
+                    process.smapsRollup?.let { smaps ->
+                        writer.println(
+                            "  smaps_rollup: Anonymous=${smaps.anonymousKb?.div(1024L)?.let { "${it}MB" } ?: "不可用"}, " +
+                                "File=${smaps.fileKb?.div(1024L)?.let { "${it}MB" } ?: "不可用"}, " +
+                                "Shmem=${smaps.shmemKb?.div(1024L)?.let { "${it}MB" } ?: "不可用"}"
+                        )
+                    }
                 }
 
                 // 2.9 Direct / mapped buffer 快照
@@ -906,6 +1027,20 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     }
                 }
 
+                writer.println("[RSS 软限制]")
+                writer.println(
+                    "  threshold=${report.rssSoftLimitMB}MB, hold=${report.rssSoftLimitHoldSeconds}s, " +
+                        "active=${report.rssSoftLimitActive}, duration=${report.rssSoftLimitDurationSeconds}s, " +
+                        "level=${report.rssSoftLimitIssueLevel}"
+                )
+                writer.println(
+                    "  RssMinusNmt=${report.rssMinusNmtMB?.let { "${it}MB" } ?: "不可用"} " +
+                        "(VmRSS - NMT_committed)"
+                )
+                report.rssSoftRestartReason?.let { reason ->
+                    writer.println("  action=restart, reason=$reason")
+                }
+
                 // 3. 连接状态（只在异常时写入）
                 if (report.hasConnectionIssue) {
                     writer.println("[连接状态] 异常")
@@ -1001,6 +1136,15 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         var platformObservability: PlatformObservabilitySnapshot = PlatformObservabilitySnapshot.empty("platform adapter is not initialized"),
         var skiaStatus: top.bilibili.skia.SkiaManagerStatus? = null,
         var nativeMemorySummary: NativeMemorySummary? = null,
+        var rssMinusNmtMB: Long? = null,
+        var hasRssSoftLimitIssue: Boolean = false,
+        var rssSoftLimitMB: Long = RSS_SOFT_LIMIT_MB,
+        var rssSoftLimitHoldSeconds: Long = RSS_SOFT_LIMIT_HOLD_MS / 1000L,
+        var rssSoftLimitActive: Boolean = false,
+        var rssSoftLimitDurationSeconds: Long = 0L,
+        var rssSoftLimitIssueLevel: String = "NORMAL",
+        var rssSoftRestartPending: Boolean = false,
+        var rssSoftRestartReason: String? = null,
 
         // 连接状态
         var hasConnectionIssue: Boolean = false,
@@ -1025,6 +1169,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             return hasTaskerIssue ||
                 hasMemoryIssue ||
                 hasNonHeapIssue ||
+                hasRssSoftLimitIssue ||
                 hasConnectionIssue ||
                 hasZombieTaskers ||
                 hasBackpressure
@@ -1053,6 +1198,16 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val committedVirtualMB: Long?,
         val source: String,
         val note: String?,
+        val smapsRollup: SmapsRollupSnapshot?,
+    )
+
+    /**
+     * /proc/self/smaps_rollup 的关键内存分项快照。
+     */
+    private data class SmapsRollupSnapshot(
+        val anonymousKb: Long?,
+        val fileKb: Long?,
+        val shmemKb: Long?,
     )
 
     /**

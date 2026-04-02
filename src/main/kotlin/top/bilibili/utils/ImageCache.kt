@@ -36,8 +36,8 @@ object ImageCache : Closeable {
 
                 // 配置连接池参数
                 connectionPool(ConnectionPool(
-                    maxIdleConnections = 5,
-                    keepAliveDuration = 5,
+                    maxIdleConnections = 2,
+                    keepAliveDuration = 1,
                     timeUnit = TimeUnit.MINUTES
                 ))
             }

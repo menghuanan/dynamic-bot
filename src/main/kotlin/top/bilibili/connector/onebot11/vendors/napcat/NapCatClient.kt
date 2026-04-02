@@ -47,8 +47,8 @@ class NapCatClient(
         encodeDefaults = true
     }
     private val connectionPool = ConnectionPool(
-        maxIdleConnections = 3,
-        keepAliveDuration = 3,
+        maxIdleConnections = 1,
+        keepAliveDuration = 1,
         timeUnit = TimeUnit.MINUTES,
     )
     private val okHttpDispatcher = Dispatcher()

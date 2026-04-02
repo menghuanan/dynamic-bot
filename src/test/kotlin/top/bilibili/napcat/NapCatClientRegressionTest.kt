@@ -259,6 +259,21 @@ class NapCatClientRegressionTest {
         assertTrue(source.contains("lastInboundAtMillis"))
     }
 
+    // NapCat 传输层常驻 WebSocket 只需要极小连接池，避免额外空闲连接长期占用 native 资源。
+    @Test
+    fun `napcat client should keep a minimal okhttp idle pool`() {
+        val source = read("src/main/kotlin/top/bilibili/connector/onebot11/vendors/napcat/NapCatClient.kt")
+
+        assertTrue(
+            source.contains("maxIdleConnections = 1"),
+            "NapCatClient should keep only one idle connection in pool",
+        )
+        assertTrue(
+            source.contains("keepAliveDuration = 1"),
+            "NapCatClient should use 1 minute keep-alive to reduce idle residency",
+        )
+    }
+
     // 约束 NapCat 特有的群能力映射必须留在 vendor 适配层，避免再次泄漏回通用 OneBot11 核心。
     @Test
     fun `napcat vendor adapter should keep napcat specific capability mapping`() {
