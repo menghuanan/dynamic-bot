@@ -1,6 +1,7 @@
 package top.bilibili.connector.onebot11.vendors.llbot
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -261,36 +262,40 @@ class LlBotClientTest {
 
         try {
             val eventDeferred = CompletableDeferred<top.bilibili.connector.onebot11.core.OneBot11MessageEvent>()
-            val collectJob = launch {
+            // 订阅协程使用 UNDISPATCHED 立即进入 first()，避免 emit 与订阅调度竞争导致事件丢失。
+            val collectJob = launch(start = CoroutineStart.UNDISPATCHED) {
                 eventDeferred.complete(client.eventFlow.first())
             }
 
-            transport.lastGatewaySession.emit(
-                buildJsonObject {
-                    put("post_type", JsonPrimitive("message"))
-                    put("message_type", JsonPrimitive("group"))
-                    put("message_id", JsonPrimitive(1))
-                    put("user_id", JsonPrimitive(200))
-                    put("message", JsonArray(listOf(buildJsonObject {
-                        put("type", JsonPrimitive("text"))
-                        put("data", buildJsonObject {
-                            put("text", JsonPrimitive("/bili check"))
-                        })
-                    })))
-                    put("raw_message", JsonPrimitive("/bili check"))
-                    put("group_id", JsonPrimitive(100))
-                    put("self_id", JsonPrimitive(300))
-                }.toString(),
-            )
+            try {
+                transport.lastGatewaySession.emit(
+                    buildJsonObject {
+                        put("post_type", JsonPrimitive("message"))
+                        put("message_type", JsonPrimitive("group"))
+                        put("message_id", JsonPrimitive(1))
+                        put("user_id", JsonPrimitive(200))
+                        put("message", JsonArray(listOf(buildJsonObject {
+                            put("type", JsonPrimitive("text"))
+                            put("data", buildJsonObject {
+                                put("text", JsonPrimitive("/bili check"))
+                            })
+                        })))
+                        put("raw_message", JsonPrimitive("/bili check"))
+                        put("group_id", JsonPrimitive(100))
+                        put("self_id", JsonPrimitive(300))
+                    }.toString(),
+                )
 
-            val event = withTimeout(1_000) {
-                eventDeferred.await()
+                val event = withTimeout(1_000) {
+                    eventDeferred.await()
+                }
+
+                assertEquals("group", event.messageType)
+                assertEquals(100L, event.groupId)
+                assertEquals("/bili check", event.rawMessage)
+            } finally {
+                collectJob.cancel()
             }
-
-            assertEquals("group", event.messageType)
-            assertEquals(100L, event.groupId)
-            assertEquals("/bili check", event.rawMessage)
-            collectJob.cancel()
         } finally {
             client.stop()
         }

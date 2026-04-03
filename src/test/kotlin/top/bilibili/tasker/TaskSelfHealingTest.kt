@@ -85,7 +85,9 @@ class TaskSelfHealingTest {
     }
 
     @AfterTest
-    fun cleanup() {
+    fun cleanup() = runBlocking {
+        // 统一执行停机收敛，避免测试失败路径残留长期 worker 影响后续用例或阻塞进程退出。
+        BiliTasker.cancelAll(timeoutMs = 1_000)
         BiliTasker.taskers.clear()
     }
 

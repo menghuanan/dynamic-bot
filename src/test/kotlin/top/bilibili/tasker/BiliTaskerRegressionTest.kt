@@ -64,7 +64,9 @@ class BiliTaskerRegressionTest {
     }
 
     @AfterTest
-    fun cleanup() {
+    fun cleanup() = runBlocking {
+        // 即使断言提前失败，也要先收敛已启动的 tasker，避免后台协程残留导致测试进程无法退出。
+        BiliTasker.cancelAll(timeoutMs = 1_000)
         BiliTasker.taskers.clear()
     }
 
@@ -123,8 +125,10 @@ class BiliTaskerRegressionTest {
 
         val report = BiliTasker.cancelAll(timeoutMs = 1_000)
 
-        t1.cleanupCompleted.await()
-        t2.cleanupCompleted.await()
+        withTimeout(1_000) {
+            t1.cleanupCompleted.await()
+            t2.cleanupCompleted.await()
+        }
 
         assertTrue(report.success)
         assertEquals(2, report.totalTaskers)
@@ -137,17 +141,23 @@ class BiliTaskerRegressionTest {
     fun `managed workers should be tracked in task health snapshot`() = runBlocking {
         val tasker = ManagedWorkerTasker("ListenerTasker")
 
-        tasker.start()
-        tasker.workerReady.await()
+        try {
+            tasker.start()
+            // workerReady 需要带超时，避免异步调度竞争时测试无限等待。
+            withTimeout(1_000) {
+                tasker.workerReady.await()
+            }
 
-        val snapshot = tasker.healthSnapshot()
+            val snapshot = tasker.healthSnapshot()
 
-        assertTrue(snapshot.healthy)
-        assertEquals(1, snapshot.workerSnapshots.size)
-        assertEquals("listener-loop", snapshot.workerSnapshots.single().workerName)
-        assertTrue(snapshot.workerSnapshots.single().active)
+            assertTrue(snapshot.healthy)
+            assertEquals(1, snapshot.workerSnapshots.size)
+            assertEquals("listener-loop", snapshot.workerSnapshots.single().workerName)
+            assertTrue(snapshot.workerSnapshots.single().active)
+        } finally {
+            tasker.cancel()
+        }
 
-        tasker.cancel()
     }
 
     @Test
@@ -165,6 +175,17 @@ class BiliTaskerRegressionTest {
         assertTrue(
             source.contains("taskJob.start()"),
             "BiliTasker.start should explicitly start the task job after publishing it",
+        )
+    }
+
+    @Test
+    fun `run-once cancellation should be treated as expected shutdown signal`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/BiliTasker.kt")
+
+        // 一次性任务被显式 cancel 时应走预期停机分支，避免 CI 日志被无意义堆栈刷屏。
+        assertTrue(
+            source.contains("isExpectedShutdownThrowable(e) && (BiliBiliBot.isStopping() || !isActive)"),
+            "run-once cancellation should be treated as expected shutdown noise when task job is no longer active",
         )
     }
 }

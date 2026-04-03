@@ -311,7 +311,8 @@ abstract class BiliTasker(
                 runCatching {
                     executeIteration("run-once")
                 }.onFailure { e ->
-                    if (isExpectedShutdownThrowable(e) && BiliBiliBot.isStopping()) {
+                    // 一次性任务在显式 cancel 后同样属于预期停机，不应再按执行失败输出 ERROR 堆栈。
+                    if (isExpectedShutdownThrowable(e) && (BiliBiliBot.isStopping() || !isActive)) {
                         BiliBiliBot.logger.info("${this::class.simpleName} 在停机期间已停止")
                     } else {
                         BiliBiliBot.logger.error("一次性任务 ${this::class.simpleName} 执行失败", e)

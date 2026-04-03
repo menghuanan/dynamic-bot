@@ -39,8 +39,10 @@ class ProcessGuardianRecoveryTest {
     }
 
     @AfterTest
-    fun cleanup() {
+    fun cleanup() = runBlocking {
         ProcessGuardian.cancel()
+        // 先触发 tasker 停机再清空注册表，避免失败路径出现后台协程残留。
+        BiliTasker.cancelAll(timeoutMs = 1_000)
         BiliTasker.taskers.clear()
     }
 
