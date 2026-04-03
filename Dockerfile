@@ -80,7 +80,6 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:HeapDumpPath=/app/logs/heapdump.hprof \
     -XX:+ExitOnOutOfMemoryError \
     -XX:+UseStringDeduplication \
-    -XX:+ParallelRefProcEnabled \
     -Xss512k \
     -Djdk.nio.maxCachedBufferSize=65536 \
     -Dio.netty.allocator.type=unpooled \

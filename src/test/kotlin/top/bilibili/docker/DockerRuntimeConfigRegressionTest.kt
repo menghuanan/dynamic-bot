@@ -119,6 +119,16 @@ class DockerRuntimeConfigRegressionTest {
             dockerfile.contains("-Dskiko.resourceCache.maxBytes=67108864"),
             "Dockerfile should define skiko.resourceCache.maxBytes=67108864 in JAVA_TOOL_OPTIONS",
         )
+        val skikoInitializer = read("src/main/kotlin/top/bilibili/SkikoInitializer.kt")
+        // 仅设置 JVM 属性不足以保证 Skia 缓存上限生效，必须由初始化代码显式调用 Graphics API 落盘到 native 层。
+        assertTrue(
+            skikoInitializer.contains("Graphics.resourceCacheTotalLimit"),
+            "SkikoInitializer should apply resource cache total limit through Graphics.resourceCacheTotalLimit",
+        )
+        assertTrue(
+            skikoInitializer.contains("Graphics.resourceCacheSingleAllocationByteLimit"),
+            "SkikoInitializer should apply single allocation cache limit through Graphics.resourceCacheSingleAllocationByteLimit",
+        )
     }
 
     @Test
@@ -142,6 +152,11 @@ class DockerRuntimeConfigRegressionTest {
         assertFalse(
             dockerfile.contains("-XX:InitiatingHeapOccupancyPercent=30"),
             "Dockerfile should not force InitiatingHeapOccupancyPercent=30 for small-heap runtime",
+        )
+        // Java 17 + G1 下 ParallelRefProcEnabled 默认为 true，显式配置属于噪声。
+        assertFalse(
+            dockerfile.contains("-XX:+ParallelRefProcEnabled"),
+            "Dockerfile should not redundantly set ParallelRefProcEnabled for Java 17 G1 profile",
         )
     }
 
