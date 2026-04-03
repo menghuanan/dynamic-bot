@@ -38,6 +38,10 @@ object SkiaConfig {
     @Volatile
     var memoryCriticalThreshold: Double = 0.85
 
+    /** 紧急清理最小触发间隔（毫秒），避免短时间重复触发导致渲染抖动 (must be > 0) */
+    @Volatile
+    var emergencyCleanupCooldownMs: Long = 180_000L
+
     // 子进程配置
 
     /** Worker 进程重启间隔（毫秒），定期重启以防止内存泄漏累积 (must be > 0) */
@@ -77,6 +81,7 @@ object SkiaConfig {
         require(memoryWarningThreshold < memoryCriticalThreshold) {
             "memoryWarningThreshold ($memoryWarningThreshold) must be < memoryCriticalThreshold ($memoryCriticalThreshold)"
         }
+        require(emergencyCleanupCooldownMs > 0) { "emergencyCleanupCooldownMs must be > 0, got $emergencyCleanupCooldownMs" }
         require(workerRestartIntervalMs > 0) { "workerRestartIntervalMs must be > 0, got $workerRestartIntervalMs" }
         require(workerMaxMemoryMb > 0) { "workerMaxMemoryMb must be > 0, got $workerMaxMemoryMb" }
         require(workerIdleTimeoutMs > 0) { "workerIdleTimeoutMs must be > 0, got $workerIdleTimeoutMs" }

@@ -33,7 +33,15 @@ object SkiaCleanupTasker : BiliTasker() {
                 now - lastPeriodicCleanupAt >= SkiaConfig.cleanupIntervalMs
 
         try {
-            if (DrawingQueueManager.isIdleTimeout()) {
+            if (status.memoryUsage >= SkiaConfig.memoryCriticalThreshold) {
+                // 达到临界阈值时优先触发紧急清理，尽量尽快压低 native 缓存峰值。
+                logger.warn(
+                    "Skia 内存达到临界阈值: ${(status.memoryUsage * 100).toInt()}% " +
+                        "(阈值: ${(SkiaConfig.memoryCriticalThreshold * 100).toInt()}%)，执行紧急清理",
+                )
+                SkiaManager.performEmergencyCleanup()
+                status = SkiaManager.getStatus()
+            } else if (DrawingQueueManager.isIdleTimeout()) {
                 logger.debug("Skia 空闲超时，执行清理")
                 SkiaManager.performCleanup()
                 lastPeriodicCleanupAt = now

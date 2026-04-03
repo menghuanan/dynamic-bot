@@ -327,6 +327,14 @@ class ResourceManagementRegressionGuardTest {
             skiaManager.contains("FontUtils.resetParagraphCache()"),
             "SkiaManager cleanup should reset the global paragraph cache",
         )
+        assertTrue(
+            skiaManager.contains("Graphics.purgeResourceCache()"),
+            "SkiaManager cleanup should purge Skia resource cache via Graphics API",
+        )
+        assertTrue(
+            skiaManager.contains("Graphics.resourceCacheTotalUsed"),
+            "SkiaManager cleanup should record resource cache usage before and after purge",
+        )
     }
 
     // 周期清理任务需要使用 cleanupInterval 配置，避免仅靠 idle timeout 导致缓存长期不清。
@@ -337,6 +345,14 @@ class ResourceManagementRegressionGuardTest {
         assertTrue(
             tasker.contains("cleanupIntervalMs"),
             "SkiaCleanupTasker should consult cleanupIntervalMs for periodic cleanup",
+        )
+        assertTrue(
+            tasker.contains("memoryCriticalThreshold"),
+            "SkiaCleanupTasker should check memoryCriticalThreshold for emergency cleanup path",
+        )
+        assertTrue(
+            tasker.contains("performEmergencyCleanup()"),
+            "SkiaCleanupTasker should trigger emergency cleanup when memory reaches critical threshold",
         )
     }
 

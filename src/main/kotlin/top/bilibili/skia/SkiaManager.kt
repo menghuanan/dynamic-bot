@@ -1,6 +1,7 @@
 package top.bilibili.skia
 
 import kotlinx.coroutines.*
+import org.jetbrains.skia.Graphics
 import org.slf4j.LoggerFactory
 import top.bilibili.draw.FontManager
 import top.bilibili.utils.ImageCache
@@ -33,6 +34,7 @@ object SkiaManager {
     // 统计信息
     private val totalDrawingCount = AtomicLong(0)
     private val totalCleanupCount = AtomicLong(0)
+    private val lastEmergencyCleanupAt = AtomicLong(0)
     private val startTime = System.currentTimeMillis()
 
     /**
@@ -76,7 +78,7 @@ object SkiaManager {
         }
 
         // 2. 清理全局缓存
-        clearGlobalCaches()
+        clearGlobalCaches(forcePurgeAllSkiaCaches = false)
 
         // 3. 强制 GC
         repeat(3) {
@@ -90,15 +92,78 @@ object SkiaManager {
     }
 
     /**
+     * 在内存临界时执行紧急清理，优先回收可清理的 Skia 全局缓存并提高 GC 强度。
+     */
+    suspend fun performEmergencyCleanup() {
+        val now = System.currentTimeMillis()
+        val last = lastEmergencyCleanupAt.get()
+        if (now - last < SkiaConfig.emergencyCleanupCooldownMs) {
+            logger.debug(
+                "距离上次紧急清理仅 {}ms，未达到冷却时间 {}ms，跳过本次紧急清理",
+                now - last,
+                SkiaConfig.emergencyCleanupCooldownMs,
+            )
+            return
+        }
+        if (!lastEmergencyCleanupAt.compareAndSet(last, now)) {
+            // 使用 CAS 保证并发场景只有一个调用方真正执行紧急清理。
+            return
+        }
+
+        totalCleanupCount.incrementAndGet()
+        logger.warn("触发 Skia 紧急清理：开始尝试回收全局缓存并加速归还 native 内存")
+
+        // 紧急路径同样先等待活动任务收敛，避免边绘制边 purge 导致抖动放大。
+        runCatching {
+            withTimeoutOrNull(15_000L) {
+                DrawingQueueManager.awaitAllCompleted()
+            } ?: logger.warn("紧急清理等待活动任务完成超时，继续执行强制清理")
+        }.onFailure { e ->
+            logger.warn("紧急清理等待活动任务时发生异常，继续执行强制清理", e)
+        }
+
+        // 紧急清理会选择更激进的全量缓存 purge，优先降低 native 缓存占用峰值。
+        clearGlobalCaches(forcePurgeAllSkiaCaches = true)
+
+        repeat(5) {
+            // 连续执行更多轮 GC/finalization，尽量促使已标记对象及时释放 native 包装。
+            System.gc()
+            System.runFinalization()
+            delay(120)
+        }
+
+        logger.warn("Skia 紧急清理完成")
+    }
+
+    /**
      * 清理全局缓存
      */
-    private fun clearGlobalCaches() {
+    private fun clearGlobalCaches(forcePurgeAllSkiaCaches: Boolean) {
         // 段落缓存会随不同文本内容持续增长，空闲清理时需要显式重置。
         runCatching {
             FontUtils.resetParagraphCache()
             logger.debug("FontUtils paragraph cache cleared successfully")
         }.onFailure { e ->
             logger.warn("Failed to clear FontUtils paragraph cache", e)
+        }
+
+        // 通过 Graphics API 主动清理 Skia 资源缓存，避免仅依赖被动淘汰导致长期高水位。
+        runCatching {
+            val beforeResourceCacheUsed = Graphics.resourceCacheTotalUsed
+            if (forcePurgeAllSkiaCaches) {
+                Graphics.purgeAllCaches()
+            } else {
+                Graphics.purgeResourceCache()
+            }
+            val afterResourceCacheUsed = Graphics.resourceCacheTotalUsed
+            logger.debug(
+                "Skia resource cache purge completed: mode={}, before={}B, after={}B",
+                if (forcePurgeAllSkiaCaches) "all" else "resource-only",
+                beforeResourceCacheUsed,
+                afterResourceCacheUsed,
+            )
+        }.onFailure { e ->
+            logger.warn("Failed to purge Skia resource cache via Graphics API", e)
         }
 
         // 清理图片缓存
