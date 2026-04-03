@@ -37,6 +37,11 @@ class DockerRuntimeConfigRegressionTest {
             compose.contains("memswap_limit: 512m"),
             "docker-compose should cap swap to the same value as memory hard limit",
         )
+        // /dev/shm 需要显式配置，避免渲染路径落回 Docker 默认 64MB 造成共享内存瓶颈。
+        assertTrue(
+            compose.contains("shm_size: 256m"),
+            "docker-compose should keep explicit shm_size to avoid default 64MB shared memory limit",
+        )
     }
 
     @Test
@@ -117,6 +122,30 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
+    fun `docker runtime should avoid aggressive jit and overly constrained g1 tuning for small heap`() {
+        val dockerfile = read("Dockerfile")
+
+        // 小堆低并发场景不应强行把 JIT 阈值压到 500，避免启动期无效编译和 CodeCache 浪费。
+        assertFalse(
+            dockerfile.contains("-XX:CompileThreshold=500"),
+            "Dockerfile should not force CompileThreshold=500 in low-concurrency runtime profile",
+        )
+        assertFalse(
+            dockerfile.contains("-XX:Tier4CompileThreshold=500"),
+            "Dockerfile should not force Tier4CompileThreshold=500 in low-concurrency runtime profile",
+        )
+        // G1 region 与 IHOP 建议让 JVM 根据堆规模自适应，避免固定参数在小堆下引入反效果。
+        assertFalse(
+            dockerfile.contains("-XX:G1HeapRegionSize=4m"),
+            "Dockerfile should not pin G1HeapRegionSize=4m for the 160m heap profile",
+        )
+        assertFalse(
+            dockerfile.contains("-XX:InitiatingHeapOccupancyPercent=30"),
+            "Dockerfile should not force InitiatingHeapOccupancyPercent=30 for small-heap runtime",
+        )
+    }
+
+    @Test
     fun `docker entrypoint should include rss watchdog for self protection under native memory growth`() {
         val entrypoint = read("docker-entrypoint.sh")
 
@@ -132,6 +161,21 @@ class DockerRuntimeConfigRegressionTest {
         assertTrue(
             entrypoint.contains("kill -TERM \"\$JAVA_PID\""),
             "docker-entrypoint should terminate Java process when watchdog threshold is exceeded",
+        )
+    }
+
+    @Test
+    fun `docker entrypoint cleanup should enforce bounded wait and kill hung java process`() {
+        val entrypoint = read("docker-entrypoint.sh")
+
+        // 清理流程必须有边界等待，避免 JVM 停机钩子卡住时无限阻塞。
+        assertTrue(
+            entrypoint.contains("for i in $(seq 1 8); do"),
+            "docker-entrypoint cleanup should wait with bounded retries before force-kill",
+        )
+        assertTrue(
+            entrypoint.contains("kill -KILL \"\$JAVA_PID\""),
+            "docker-entrypoint cleanup should force-kill Java after timeout to avoid indefinite wait",
         )
     }
 }

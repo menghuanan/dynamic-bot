@@ -69,8 +69,6 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:+UseG1GC \
     -XX:NativeMemoryTracking=summary \
     -XX:MaxGCPauseMillis=100 \
-    -XX:G1HeapRegionSize=4m \
-    -XX:InitiatingHeapOccupancyPercent=30 \
     -XX:G1ReservePercent=15 \
     -XX:MaxDirectMemorySize=48m \
     -XX:MetaspaceSize=16m \
@@ -83,8 +81,6 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:+ExitOnOutOfMemoryError \
     -XX:+UseStringDeduplication \
     -XX:+ParallelRefProcEnabled \
-    -XX:CompileThreshold=500 \
-    -XX:Tier4CompileThreshold=500 \
     -Xss512k \
     -Djdk.nio.maxCachedBufferSize=65536 \
     -Dio.netty.allocator.type=unpooled \
