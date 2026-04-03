@@ -18,6 +18,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # 超过 10 分钟自动终止任务；GitHub Actions 会保留当时已输出的日志。
+    timeout-minutes: 10
 
     steps:
     # 步骤 1：拉取仓库代码。
