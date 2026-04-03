@@ -43,10 +43,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================
-# jemalloc 配置 - 5秒后强制归还内存
+# jemalloc 配置 - 2秒后加速归还内存
 # ============================================
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
-ENV MALLOC_CONF=background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000,narenas:1,tcache:false
+ENV MALLOC_CONF=background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000,narenas:1,tcache:false
 
 # ============================================
 # JVM 参数配置 - 低占用优先策略
@@ -88,10 +88,14 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:Tier4CompileThreshold=500 \
     -Xss512k \
     -Djdk.nio.maxCachedBufferSize=65536 \
+    -Dio.netty.allocator.numDirectArenas=1 \
+    -Dio.netty.allocator.numHeapArenas=1 \
+    -Dio.netty.allocator.smallCacheSize=0 \
+    -Dio.netty.allocator.normalCacheSize=0 \
     -Dio.netty.allocator.maxCachedBufferCapacity=65536 \
     -Dio.netty.allocator.cacheTrimIntervalMillis=5000 \
     -Dio.netty.allocator.useCacheForAllThreads=false \
-    -Dio.netty.allocator.type=unpooled \
+    -Dio.netty.allocator.type=pooled \
     -Djava.awt.headless=false \
     -Dskiko.renderApi=SOFTWARE \
     -Dskiko.hardwareAcceleration=false \
