@@ -36,7 +36,7 @@ object SkikoInitializer {
         System.setProperty("sun.java2d.d3d", "false")
         System.setProperty("sun.java2d.noddraw", "true")
 
-        // 设置 AWT 为非 headless 模式 (Skiko 需要图形环境)
-        System.setProperty("java.awt.headless", "false")
+        // 统一保持 AWT headless=true，避免容器内尝试连接 X11 display 产生额外初始化成本。
+        System.setProperty("java.awt.headless", "true")
     }
 }

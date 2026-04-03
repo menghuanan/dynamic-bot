@@ -88,15 +88,8 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:Tier4CompileThreshold=500 \
     -Xss512k \
     -Djdk.nio.maxCachedBufferSize=65536 \
-    -Dio.netty.allocator.numDirectArenas=1 \
-    -Dio.netty.allocator.numHeapArenas=1 \
-    -Dio.netty.allocator.smallCacheSize=0 \
-    -Dio.netty.allocator.normalCacheSize=0 \
-    -Dio.netty.allocator.maxCachedBufferCapacity=65536 \
-    -Dio.netty.allocator.cacheTrimIntervalMillis=5000 \
-    -Dio.netty.allocator.useCacheForAllThreads=false \
-    -Dio.netty.allocator.type=pooled \
-    -Djava.awt.headless=false \
+    -Dio.netty.allocator.type=unpooled \
+    -Djava.awt.headless=true \
     -Dskiko.renderApi=SOFTWARE \
     -Dskiko.hardwareAcceleration=false \
     -Dskiko.vsync.enabled=false \

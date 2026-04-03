@@ -553,6 +553,8 @@ docker-compose up -d
 
 - Docker 镜像默认使用 `eclipse-temurin:17-jdk` 运行时，以保证容器内 `jcmd` 与 Native Memory Tracking 可用。
 - `JAVA_TOOL_OPTIONS` 默认包含 `-XX:NativeMemoryTracking=summary`，用于长期保留低开销的 NMT 摘要，便于守护日志稳定输出 `Native Memory Summary`。
+- `JAVA_TOOL_OPTIONS` 默认将 `io.netty.allocator.type` 设为 `unpooled`，适配低并发机器人场景并减少池化管理开销。
+- `JAVA_TOOL_OPTIONS` 默认将 `java.awt.headless` 设为 `true`，在纯软件渲染模式下避免容器尝试连接 X11 display。
 - `NativeMemoryTracking=detail` 仅建议在专项排障时临时启用；它会带来更高的运行时开销，问题定位完成后应恢复到默认的 `summary`。
 - `docker-entrypoint.sh` 仍会补充 `-Dfile.encoding=UTF-8` 和 `-Duser.timezone=Asia/Shanghai`，不要在 `docker-compose.yml` 中用 `JAVA_OPTS` 覆盖整组默认参数。
 
@@ -619,10 +621,12 @@ docker logs -f dynamic-bot
 
 ### 容器配置
 
-- **运行时基础镜像**: eclipse-temurin:17-jre
+- **运行时基础镜像**: eclipse-temurin:17-jdk
 - **源码构建环境**: JDK 17 及以上版本
 - **内存分配器**: jemalloc（5秒自动归还内存）
 - **JVM 启动参数**: 默认 `-Xms64m -Xmx160m`，其余 GC/Netty/Skiko 优化参数由 `JAVA_TOOL_OPTIONS` 注入
+- **Netty 分配器**: unpooled（低并发场景优先降低池化管理开销）
+- **AWT 模式**: headless=true（纯软件渲染，不依赖容器内 display 服务）
 - **网络模式**: bridge（默认）
 - **健康检查**: 每60秒检查一次进程状态
 - **日志限制**: 100MB × 5 文件（自动轮转）

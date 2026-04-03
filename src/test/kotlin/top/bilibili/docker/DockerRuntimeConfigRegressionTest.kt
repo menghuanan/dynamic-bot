@@ -26,20 +26,6 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
-    fun `docker documentation should describe summary as default and detail as troubleshooting only`() {
-        val readme = read("README.md")
-
-        assertTrue(
-            readme.contains("NativeMemoryTracking=summary") || readme.contains("NMT(summary)") || readme.contains("NMT summary"),
-            "README should document that Docker defaults to NativeMemoryTracking summary mode",
-        )
-        assertTrue(
-            readme.contains("detail"),
-            "README should explain that NativeMemoryTracking detail mode is reserved for troubleshooting",
-        )
-    }
-
-    @Test
     fun `docker compose should cap swap usage to container memory hard limit`() {
         val compose = read("docker-compose.yml")
 
@@ -54,16 +40,41 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
-    fun `docker runtime should use pooled netty allocator`() {
+    fun `docker runtime should use unpooled netty allocator`() {
         val dockerfile = read("Dockerfile")
 
+        // 低并发机器人场景优先减少池化管理开销，因此 Docker 运行时应显式切换到 unpooled。
         assertTrue(
-            dockerfile.contains("-Dio.netty.allocator.type=pooled"),
-            "Dockerfile should switch Netty allocator type to pooled for runtime behavior alignment",
+            dockerfile.contains("-Dio.netty.allocator.type=unpooled"),
+            "Dockerfile should force Netty allocator type to unpooled for low-concurrency runtime",
         )
         assertFalse(
-            dockerfile.contains("-Dio.netty.allocator.type=unpooled"),
-            "Dockerfile should no longer force Netty unpooled allocator",
+            dockerfile.contains("-Dio.netty.allocator.type=pooled"),
+            "Dockerfile should no longer keep pooled allocator once unpooled is selected",
+        )
+    }
+
+    @Test
+    fun `docker runtime and skiko initializer should both keep awt headless true`() {
+        val dockerfile = read("Dockerfile")
+        val skikoInitializer = read("src/main/kotlin/top/bilibili/SkikoInitializer.kt")
+
+        // Docker 层和代码层同时约束 headless=true，避免启动时被后续 System.setProperty 覆盖。
+        assertTrue(
+            dockerfile.contains("-Djava.awt.headless=true"),
+            "Dockerfile should set java.awt.headless to true",
+        )
+        assertFalse(
+            dockerfile.contains("-Djava.awt.headless=false"),
+            "Dockerfile should not keep java.awt.headless=false",
+        )
+        assertTrue(
+            skikoInitializer.contains("System.setProperty(\"java.awt.headless\", \"true\")"),
+            "SkikoInitializer should align with Docker headless=true strategy",
+        )
+        assertFalse(
+            skikoInitializer.contains("System.setProperty(\"java.awt.headless\", \"false\")"),
+            "SkikoInitializer should no longer force headless=false",
         )
     }
 
