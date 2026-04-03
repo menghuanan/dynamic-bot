@@ -93,4 +93,45 @@ class DockerRuntimeConfigRegressionTest {
             "Dockerfile should not introduce legacy lg_chunk tuning in MALLOC_CONF",
         )
     }
+
+    @Test
+    fun `docker runtime should prebuild fontconfig cache to avoid first draw cold scan`() {
+        val dockerfile = read("Dockerfile")
+
+        // 通过镜像构建阶段预热 fontconfig 缓存，避免应用首帧触发全量字体扫描。
+        assertTrue(
+            dockerfile.contains("RUN fc-cache -fv"),
+            "Dockerfile should run fc-cache during build so runtime does not pay first-render font scan cost",
+        )
+    }
+
+    @Test
+    fun `docker runtime should cap skiko resource cache size explicitly`() {
+        val dockerfile = read("Dockerfile")
+
+        // 显式限制 Skiko 资源缓存，避免容器内 native 缓存在低内存场景下无限增长。
+        assertTrue(
+            dockerfile.contains("-Dskiko.resourceCache.maxBytes=67108864"),
+            "Dockerfile should define skiko.resourceCache.maxBytes=67108864 in JAVA_TOOL_OPTIONS",
+        )
+    }
+
+    @Test
+    fun `docker entrypoint should include rss watchdog for self protection under native memory growth`() {
+        val entrypoint = read("docker-entrypoint.sh")
+
+        // 启动脚本必须提供 RSS watchdog，用于 native 内存异常增长时主动退出并交由容器重启策略恢复。
+        assertTrue(
+            entrypoint.contains("memory_watchdog()"),
+            "docker-entrypoint should define memory_watchdog function",
+        )
+        assertTrue(
+            entrypoint.contains("MEMORY_THRESHOLD_MB"),
+            "docker-entrypoint should allow RSS threshold override through MEMORY_THRESHOLD_MB",
+        )
+        assertTrue(
+            entrypoint.contains("kill -TERM \"\$JAVA_PID\""),
+            "docker-entrypoint should terminate Java process when watchdog threshold is exceeded",
+        )
+    }
 }

@@ -42,10 +42,41 @@ JAVA_OPTS="$JAVA_OPTS -Dfile.encoding=UTF-8"
 JAVA_OPTS="$JAVA_OPTS -Duser.timezone=Asia/Shanghai"
 
 # ============================================
-# 2. 信号处理
+# 2. RSS 兜底守护
+# ============================================
+# 后台监控 Java 进程 RSS，超过阈值后主动发 TERM，交给容器重启策略快速恢复。
+memory_watchdog() {
+    local threshold_mb=${MEMORY_THRESHOLD_MB:-400}
+
+    while kill -0 "$JAVA_PID" 2>/dev/null; do
+        sleep 60
+
+        # 只采集 VmRSS，避免把 swap 或虚拟地址空间误判为常驻内存增长。
+        local rss_kb
+        rss_kb=$(grep -E "^VmRSS:" "/proc/$JAVA_PID/status" 2>/dev/null | awk '{print $2}')
+        if [ -z "${rss_kb:-}" ]; then
+            continue
+        fi
+
+        local rss_mb=$((rss_kb / 1024))
+        if [ "$rss_mb" -gt "$threshold_mb" ]; then
+            log_warn "RSS ${rss_mb}MB 超过阈值 ${threshold_mb}MB，主动退出触发容器重启"
+            kill -TERM "$JAVA_PID" 2>/dev/null || true
+            break
+        fi
+    done
+}
+
+# ============================================
+# 3. 信号处理
 # ============================================
 cleanup() {
     log_warn "Received stop signal, shutting down..."
+
+    if [ -n "${WATCHDOG_PID:-}" ]; then
+        kill "$WATCHDOG_PID" 2>/dev/null || true
+        wait "$WATCHDOG_PID" 2>/dev/null || true
+    fi
 
     if [ -n "${JAVA_PID:-}" ]; then
         log "Stopping Java (PID: $JAVA_PID)..."
@@ -60,7 +91,7 @@ cleanup() {
 trap cleanup SIGTERM SIGINT
 
 # ============================================
-# 3. 启动 Java 应用
+# 4. 启动 Java 应用
 # ============================================
 log "Starting dynamic-bot..."
 
@@ -68,8 +99,20 @@ log "Starting dynamic-bot..."
 java $JAVA_OPTS -jar /app/dynamic-bot.jar &
 JAVA_PID=$!
 
-wait "$JAVA_PID"
-EXIT_CODE=$?
+# 启动 RSS watchdog，作为 native 内存异常增长场景的最后兜底。
+memory_watchdog &
+WATCHDOG_PID=$!
+
+if wait "$JAVA_PID"; then
+    EXIT_CODE=0
+else
+    EXIT_CODE=$?
+fi
+
+if [ -n "${WATCHDOG_PID:-}" ]; then
+    kill "$WATCHDOG_PID" 2>/dev/null || true
+    wait "$WATCHDOG_PID" 2>/dev/null || true
+fi
 
 if [ "$EXIT_CODE" -eq 0 ]; then
     log "Java exited cleanly"
