@@ -84,6 +84,32 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
+    fun `docker runtime should pin a 512mb memory budget and align non heap caps to first five hour beta evidence`() {
+        val dockerfile = read("Dockerfile")
+
+        // 镜像侧需要固定 512MB 预算基线，确保 JVM 自适应参数不会越过容器硬限制预期。
+        assertTrue(
+            dockerfile.contains("-XX:MaxRAM=512m"),
+            "Dockerfile should pin JVM MaxRAM to 512m for container budget alignment",
+        )
+        // beta 日志前5小时峰值 Metaspace=32MB，容器侧建议保留约 1.5x 余量到 48MB。
+        assertTrue(
+            dockerfile.contains("-XX:MaxMetaspaceSize=48m"),
+            "Dockerfile should cap MaxMetaspaceSize to 48m based on first-5-hour beta peak and safety margin",
+        )
+        // beta 日志前5小时峰值 CodeCache=21MB，容器侧建议限制在 32MB。
+        assertTrue(
+            dockerfile.contains("-XX:ReservedCodeCacheSize=32m"),
+            "Dockerfile should cap ReservedCodeCacheSize to 32m for the 512MB runtime budget",
+        )
+        // Skia native 缓存应收紧到 48MB，减少未被 NMT 归类 native 区增长空间。
+        assertTrue(
+            dockerfile.contains("-Dskiko.resourceCache.maxBytes=50331648"),
+            "Dockerfile should set skiko.resourceCache.maxBytes to 48MB under the 512MB memory budget",
+        )
+    }
+
+    @Test
     fun `docker runtime should keep jemalloc decay aggressive without introducing legacy chunk tuning`() {
         val dockerfile = read("Dockerfile")
 
@@ -116,8 +142,8 @@ class DockerRuntimeConfigRegressionTest {
 
         // 显式限制 Skiko 资源缓存，避免容器内 native 缓存在低内存场景下无限增长。
         assertTrue(
-            dockerfile.contains("-Dskiko.resourceCache.maxBytes=67108864"),
-            "Dockerfile should define skiko.resourceCache.maxBytes=67108864 in JAVA_TOOL_OPTIONS",
+            dockerfile.contains("-Dskiko.resourceCache.maxBytes=50331648"),
+            "Dockerfile should define skiko.resourceCache.maxBytes=50331648 in JAVA_TOOL_OPTIONS",
         )
         val skikoInitializer = read("src/main/kotlin/top/bilibili/SkikoInitializer.kt")
         // 仅设置 JVM 属性不足以保证 Skia 缓存上限生效，必须由初始化代码显式调用 Graphics API 落盘到 native 层。
@@ -191,6 +217,30 @@ class DockerRuntimeConfigRegressionTest {
         assertTrue(
             entrypoint.contains("kill -KILL \"\$JAVA_PID\""),
             "docker-entrypoint cleanup should force-kill Java after timeout to avoid indefinite wait",
+        )
+    }
+
+    @Test
+    fun `docker entrypoint should enforce cgroup memory budget and keep watchdog below 512mb hard cap`() {
+        val entrypoint = read("docker-entrypoint.sh")
+
+        // 入口脚本需要主动校验 cgroup 内存限制，避免容器被以无限制方式启动。
+        assertTrue(
+            entrypoint.contains("read_cgroup_memory_limit_mb()"),
+            "docker-entrypoint should define read_cgroup_memory_limit_mb to detect cgroup memory limit",
+        )
+        assertTrue(
+            entrypoint.contains("enforce_container_memory_budget()"),
+            "docker-entrypoint should enforce the configured container memory budget before launching Java",
+        )
+        assertTrue(
+            entrypoint.contains("CONTAINER_MEMORY_LIMIT_MB"),
+            "docker-entrypoint should support CONTAINER_MEMORY_LIMIT_MB budget configuration",
+        )
+        // watchdog 阈值需明确低于 512MB，保留 OOM 前缓冲空间。
+        assertTrue(
+            entrypoint.contains("MEMORY_THRESHOLD_MB:-460"),
+            "docker-entrypoint should default watchdog threshold to 460MB under the 512MB budget",
         )
     }
 }

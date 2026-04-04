@@ -20,6 +20,60 @@ log_warn() {
 }
 
 # ============================================
+# 0.5 cgroup 内存限制读取
+# ============================================
+# 读取当前容器 cgroup 内存上限（MB）；返回 0 代表未检测到有效限制。
+read_cgroup_memory_limit_mb() {
+    local limit_bytes=""
+
+    # cgroup v2: memory.max，值为 max 代表无限制。
+    if [ -r "/sys/fs/cgroup/memory.max" ]; then
+        limit_bytes=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || true)
+        if [ -n "$limit_bytes" ] && [ "$limit_bytes" != "max" ] && [[ "$limit_bytes" =~ ^[0-9]+$ ]]; then
+            echo $((limit_bytes / 1024 / 1024))
+            return
+        fi
+    fi
+
+    # cgroup v1: memory.limit_in_bytes，超大值通常表示无限制。
+    if [ -r "/sys/fs/cgroup/memory/memory.limit_in_bytes" ]; then
+        limit_bytes=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || true)
+        if [ -n "$limit_bytes" ] && [[ "$limit_bytes" =~ ^[0-9]+$ ]] && [ "$limit_bytes" -lt 9223372036854771712 ]; then
+            echo $((limit_bytes / 1024 / 1024))
+            return
+        fi
+    fi
+
+    echo 0
+}
+
+# ============================================
+# 0.6 容器预算校验
+# ============================================
+# 启动前校验 cgroup 内存上限，确保镜像按 512MB 预算运行而不是无限制运行。
+enforce_container_memory_budget() {
+    local expected_limit_mb=${CONTAINER_MEMORY_LIMIT_MB:-512}
+    local detected_limit_mb
+    detected_limit_mb=$(read_cgroup_memory_limit_mb)
+
+    if [ "$detected_limit_mb" -le 0 ]; then
+        log_warn "未检测到有效 cgroup 内存限制（期望 <= ${expected_limit_mb}MB），拒绝启动"
+        exit 64
+    fi
+
+    if [ "$detected_limit_mb" -gt "$expected_limit_mb" ]; then
+        log_warn "检测到 cgroup 内存上限 ${detected_limit_mb}MB，超过预算 ${expected_limit_mb}MB，拒绝启动"
+        exit 64
+    fi
+
+    if [ "$detected_limit_mb" -lt "$expected_limit_mb" ]; then
+        log_warn "检测到更小的 cgroup 内存上限 ${detected_limit_mb}MB（预算 ${expected_limit_mb}MB），将按更小限制运行"
+    else
+        log "检测到 cgroup 内存上限 ${detected_limit_mb}MB，符合预算"
+    fi
+}
+
+# ============================================
 # 0. 内存分配器说明
 # ============================================
 # jemalloc 已通过 LD_PRELOAD 和 MALLOC_CONF 在 Dockerfile 中配置
@@ -46,7 +100,9 @@ JAVA_OPTS="$JAVA_OPTS -Duser.timezone=Asia/Shanghai"
 # ============================================
 # 后台监控 Java 进程 RSS，超过阈值后主动发 TERM，交给容器重启策略快速恢复。
 memory_watchdog() {
-    local threshold_mb=${MEMORY_THRESHOLD_MB:-400}
+    local threshold_mb=${MEMORY_THRESHOLD_MB:-460}
+    local hold_seconds=${MEMORY_THRESHOLD_HOLD_SECONDS:-300}
+    local above_since=0
 
     while kill -0 "$JAVA_PID" 2>/dev/null; do
         sleep 60
@@ -60,9 +116,22 @@ memory_watchdog() {
 
         local rss_mb=$((rss_kb / 1024))
         if [ "$rss_mb" -gt "$threshold_mb" ]; then
-            log_warn "RSS ${rss_mb}MB 超过阈值 ${threshold_mb}MB，主动退出触发容器重启"
-            kill -TERM "$JAVA_PID" 2>/dev/null || true
-            break
+            if [ "$above_since" -eq 0 ]; then
+                above_since=$(date +%s)
+                log_warn "RSS ${rss_mb}MB 首次超过阈值 ${threshold_mb}MB，进入观察窗口（${hold_seconds}s）"
+                continue
+            fi
+
+            local now_epoch
+            now_epoch=$(date +%s)
+            local duration=$((now_epoch - above_since))
+            if [ "$duration" -ge "$hold_seconds" ]; then
+                log_warn "RSS ${rss_mb}MB 连续 ${duration}s 超过阈值 ${threshold_mb}MB，主动退出触发容器重启"
+                kill -TERM "$JAVA_PID" 2>/dev/null || true
+                break
+            fi
+        else
+            above_since=0
         fi
     done
 }
@@ -103,6 +172,7 @@ trap cleanup SIGTERM SIGINT
 # 4. 启动 Java 应用
 # ============================================
 log "Starting dynamic-bot..."
+enforce_container_memory_budget
 
 # shellcheck disable=SC2086
 java $JAVA_OPTS -jar /app/dynamic-bot.jar &

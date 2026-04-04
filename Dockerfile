@@ -60,19 +60,22 @@ ENV MALLOC_CONF=background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000,n
 #   - Other (Skia): ~1MB
 #
 # 当前策略:
+#   - 以 512MB 容器硬限制为预算基线，固定 JVM MaxRAM 避免自适应偏离容器约束
 #   - 堆内存默认 64m~160m
-#   - 适度放宽 DirectMemory/线程栈，覆盖软件渲染场景的原生缓冲开销
+#   - Metaspace/CodeCache/Skiko 缓存按 beta 日志前5小时峰值+余量设限
+#   - 适度控制 DirectMemory/线程栈，覆盖软件渲染场景的原生缓冲开销
 #   - 保持纯软件渲染（SOFTWARE + 禁用硬件加速），不再依赖 Xvfb
 #   - 默认开启 NMT(summary)，长期保留轻量摘要；detail 仅建议在专项排障时临时启用
 # ============================================
 ENV JAVA_TOOL_OPTIONS="\
+    -XX:MaxRAM=512m \
     -XX:+UseG1GC \
     -XX:NativeMemoryTracking=summary \
     -XX:MaxGCPauseMillis=100 \
     -XX:G1ReservePercent=15 \
-    -XX:MaxDirectMemorySize=48m \
+    -XX:MaxDirectMemorySize=32m \
     -XX:MetaspaceSize=16m \
-    -XX:MaxMetaspaceSize=40m \
+    -XX:MaxMetaspaceSize=48m \
     -XX:CompressedClassSpaceSize=16m \
     -XX:InitialCodeCacheSize=8m \
     -XX:ReservedCodeCacheSize=32m \
@@ -86,11 +89,14 @@ ENV JAVA_TOOL_OPTIONS="\
     -Djava.awt.headless=true \
     -Dskiko.renderApi=SOFTWARE \
     -Dskiko.hardwareAcceleration=false \
-    -Dskiko.resourceCache.maxBytes=67108864 \
+    -Dskiko.resourceCache.maxBytes=50331648 \
     -Dskiko.vsync.enabled=false \
     -Dsun.java2d.opengl=false \
     -Dsun.java2d.xrender=false \
     -Dsun.java2d.pmoffscreen=false"
+
+# 容器内存预算基线，供 entrypoint 在启动前进行 cgroup 限制校验。
+ENV CONTAINER_MEMORY_LIMIT_MB=512
 
 # ============================================
 # 应用配置

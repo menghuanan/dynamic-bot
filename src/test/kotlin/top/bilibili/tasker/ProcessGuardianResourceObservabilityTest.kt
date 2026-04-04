@@ -121,6 +121,36 @@ class ProcessGuardianResourceObservabilityTest {
         )
     }
 
+    // 非堆内存问题排查需要直接看到 Metaspace 与 CodeCache 的细分项，避免只看总量无法定位分区。
+    @Test
+    fun `process guardian should emit non heap partition breakdown for metaspace and codecache`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("nonHeapBreakdown"),
+            "ProcessGuardian should persist non-heap partition breakdown details in monitor report",
+        )
+        assertTrue(
+            source.contains("[非堆细分]"),
+            "ProcessGuardian should emit a dedicated non-heap breakdown section in daemon logs",
+        )
+    }
+
+    // Native 疑似泄漏排查需要把 VmRSS 与 NMT committed 的差值输出为“未归类 native 区”并显式记录。
+    @Test
+    fun `process guardian should emit unattributed native region estimate from rss and nmt committed`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("unattributedNativeMB"),
+            "ProcessGuardian should keep unattributed native region estimate in monitor report",
+        )
+        assertTrue(
+            source.contains("[Native 未归类估算]"),
+            "ProcessGuardian should emit a dedicated unattributed native section in daemon logs",
+        )
+    }
+
     // Linux 上 RSS 增长需要区分匿名页与文件映射页，守护进程应采集 smaps_rollup 的关键分项。
     @Test
     fun `process guardian should collect smaps rollup anonymous file and shmem metrics`() {

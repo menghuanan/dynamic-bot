@@ -56,7 +56,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
 
     // Metaspace/CodeCache 阈值 (基于配置的限制)
     private const val METASPACE_LIMIT_MB = 48L
-    private const val CODECACHE_LIMIT_MB = 48L
+    private const val CODECACHE_LIMIT_MB = 32L
     private const val NON_HEAP_WARNING_THRESHOLD = 0.8  // 80%
     private const val NATIVE_MEMORY_SAMPLE_INTERVAL_MS = 10 * 60 * 1000L
     private const val NATIVE_MEMORY_COMMAND_TIMEOUT_MS = 5_000L
@@ -225,14 +225,29 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
      */
     private fun checkNonHeapMemory(report: MonitorReport) {
         val memoryPools = ManagementFactory.getMemoryPoolMXBeans()
+        val nonHeapBreakdown = mutableListOf<NonHeapPartitionUsage>()
 
         for (pool in memoryPools) {
             val usage = pool.usage ?: continue
             val usedMB = usage.used / 1024 / 1024
+            val maxMB = usage.max
+                .takeIf { it > 0L }
+                ?.div(1024L * 1024L)
+            val usagePercent = maxMB
+                ?.takeIf { it > 0L }
+                ?.let { limit -> ((usedMB * 100L) / limit).toInt() }
 
             when {
                 pool.name.contains("Metaspace", ignoreCase = true) -> {
                     report.metaspaceUsedMB = usedMB
+                    nonHeapBreakdown.add(
+                        NonHeapPartitionUsage(
+                            name = pool.name,
+                            usedMB = usedMB,
+                            maxMB = maxMB,
+                            usagePercent = usagePercent,
+                        ),
+                    )
                     val ratio = usedMB.toDouble() / METASPACE_LIMIT_MB
                     if (ratio > NON_HEAP_WARNING_THRESHOLD) {
                         report.hasNonHeapIssue = true
@@ -243,9 +258,19 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 pool.name.contains("CodeCache", ignoreCase = true) ||
                 pool.name.contains("CodeHeap", ignoreCase = true) -> {
                     report.codeCacheUsedMB += usedMB
+                    nonHeapBreakdown.add(
+                        NonHeapPartitionUsage(
+                            name = pool.name,
+                            usedMB = usedMB,
+                            maxMB = maxMB,
+                            usagePercent = usagePercent,
+                        ),
+                    )
                 }
             }
         }
+        // 输出 Metaspace / CodeCache 的分区细分，用于定位是单一 code heap 还是总量抬升。
+        report.nonHeapBreakdown = nonHeapBreakdown.sortedByDescending { it.usedMB }
 
         // 检查 CodeCache 总量
         val codeCacheRatio = report.codeCacheUsedMB.toDouble() / CODECACHE_LIMIT_MB
@@ -817,10 +842,13 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         }
 
         // 同步输出 VmRSS 与 NMT committed 的差值，定位 JVM 外驻留增长。
-        report.rssMinusNmtMB = report.nativeMemorySummary
+        report.nmtCommittedMB = report.nativeMemorySummary
             ?.takeIf { native -> native.status == "OK" }
             ?.totalCommittedMB
+        report.rssMinusNmtMB = report.nmtCommittedMB
             ?.let { committedMB -> rssMB - committedMB }
+        // 把 VmRSS-NMT committed 的正向差值记录为“未归类 native 区”估算，便于长期趋势对比。
+        report.unattributedNativeMB = report.rssMinusNmtMB?.coerceAtLeast(0L)
 
         report.rssSoftLimitMB = RSS_SOFT_LIMIT_MB
         report.rssSoftLimitHoldSeconds = RSS_SOFT_LIMIT_HOLD_MS / 1000L
@@ -962,6 +990,16 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                         writer.println("    - $detail")
                     }
                 }
+                if (report.nonHeapBreakdown.isNotEmpty()) {
+                    writer.println("[非堆细分]")
+                    report.nonHeapBreakdown.forEach { partition ->
+                        writer.println(
+                            "  ${partition.name}: used=${partition.usedMB}MB, " +
+                                "max=${partition.maxMB?.let { "${it}MB" } ?: "未设置"}, " +
+                                "usage=${partition.usagePercent?.let { "${it}%" } ?: "未知"}",
+                        )
+                    }
+                }
 
                 // 2.8 进程级资源快照
                 report.processMetrics?.let { process ->
@@ -1091,6 +1129,17 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     }
                 }
 
+                writer.println("[Native 未归类估算]")
+                writer.println(
+                    "  VmRSS=${report.processMetrics?.rssMB?.let { "${it}MB" } ?: "不可用"}, " +
+                        "NMT_committed=${report.nmtCommittedMB?.let { "${it}MB" } ?: "不可用"}, " +
+                        "RssMinusNmt=${report.rssMinusNmtMB?.let { "${it}MB" } ?: "不可用"}"
+                )
+                writer.println(
+                    "  unattributedNative=${report.unattributedNativeMB?.let { "${it}MB" } ?: "不可用"} " +
+                        "(max(VmRSS - NMT_committed, 0))"
+                )
+
                 writer.println("[RSS 软限制]")
                 writer.println(
                     "  threshold=${report.rssSoftLimitMB}MB, hold=${report.rssSoftLimitHoldSeconds}s, " +
@@ -1190,6 +1239,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         var metaspaceUsedMB: Long = 0,
         var codeCacheUsedMB: Long = 0,
         var nonHeapIssueDetails: MutableList<String> = mutableListOf(),
+        var nonHeapBreakdown: List<NonHeapPartitionUsage> = emptyList(),
 
         // 进程 / 线程 / 协程 / Skia 轻量快照
         var processMetrics: ProcessMetrics? = null,
@@ -1200,7 +1250,9 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         var platformObservability: PlatformObservabilitySnapshot = PlatformObservabilitySnapshot.empty("platform adapter is not initialized"),
         var skiaStatus: top.bilibili.skia.SkiaManagerStatus? = null,
         var nativeMemorySummary: NativeMemorySummary? = null,
+        var nmtCommittedMB: Long? = null,
         var rssMinusNmtMB: Long? = null,
+        var unattributedNativeMB: Long? = null,
         var hasRssSoftLimitIssue: Boolean = false,
         var rssSoftLimitMB: Long = RSS_SOFT_LIMIT_MB,
         var rssSoftLimitHoldSeconds: Long = RSS_SOFT_LIMIT_HOLD_MS / 1000L,
@@ -1282,6 +1334,16 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val count: Long,
         val totalCapacityMB: Long,
         val memoryUsedMB: Long,
+    )
+
+    /**
+     * 非堆内存分区快照，用于记录 Metaspace/CodeHeap 各子分区占用，辅助定位单分区抬升。
+     */
+    private data class NonHeapPartitionUsage(
+        val name: String,
+        val usedMB: Long,
+        val maxMB: Long?,
+        val usagePercent: Int?,
     )
 
     /**
