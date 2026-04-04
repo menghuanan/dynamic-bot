@@ -120,7 +120,7 @@ class IdeCompatibilitySourceRegressionTest {
         assertTrue(httpGet.contains("val line = br.readLine() ?: break"))
 
         assertFalse(md5.contains("var read = 0"))
-        assertTrue(md5.contains("val read = `in`.read(buffer)"))
+        assertTrue(md5.contains("val read = input.read(buffer)"))
 
         assertTrue(init.contains("// 预留未使用变量 fontFolder: val fontFolder = BiliBiliBot.dataFolder.resolve(\"font\")"))
     }
