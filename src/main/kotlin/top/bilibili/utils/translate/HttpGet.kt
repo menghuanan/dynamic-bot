@@ -32,6 +32,9 @@ internal object HttpGet {
         var retryCount = 0
         
         while (retryCount <= maxRetries) {
+            var conn: HttpURLConnection? = null
+            var `is`: InputStream? = null
+            var br: BufferedReader? = null
             try {
                 // 设置SSLContext
                 val sslcontext = SSLContext.getInstance("TLS")
@@ -41,7 +44,7 @@ internal object HttpGet {
 
                 // System.out.println("URL:" + sendUrl);
                 val uri = URL(sendUrl) // 创建URL对象
-                val conn = uri.openConnection() as HttpURLConnection
+                conn = uri.openConnection() as HttpURLConnection
                 if (conn is HttpsURLConnection) {
                     conn.sslSocketFactory = sslcontext.socketFactory
                 }
@@ -53,17 +56,14 @@ internal object HttpGet {
                 }
 
                 // 读取服务器的数据
-                val `is` = conn.inputStream
-                val br = BufferedReader(InputStreamReader(`is`, StandardCharsets.UTF_8))
+                `is` = conn.inputStream
+                br = BufferedReader(InputStreamReader(`is`, StandardCharsets.UTF_8))
                 val builder = StringBuilder()
                 while (true) {
                     val line = br.readLine() ?: break
                     builder.append(line)
                 }
                 val text = builder.toString()
-                close(br) // 关闭数据流
-                close(`is`) // 关闭数据流
-                conn.disconnect() // 断开连接
                 return text
             } catch (e: MalformedURLException) {
                 logger.warn("Http 请求地址无效: ${e.message}", e)
@@ -78,6 +78,11 @@ internal object HttpGet {
                 logger.warn("Http 加密算法不可用: ${e.message}", e)
                 // 算法不可用不需要重试
                 break
+            } finally {
+                // 异常路径也必须统一释放网络连接与数据流，避免 7x24 场景下句柄持续累积。
+                close(br)
+                close(`is`)
+                conn?.disconnect()
             }
             
             if (retryCount < maxRetries) {

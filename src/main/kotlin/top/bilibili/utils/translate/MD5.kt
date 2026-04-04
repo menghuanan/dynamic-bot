@@ -60,10 +60,9 @@ object MD5 {
                 logger.warn("文件${file.absolutePath}不存在或者不是文件")
                 return null
             }
-            val `in` = FileInputStream(file)
-            val result = md5(`in`)
-            `in`.close()
-            return result
+            return FileInputStream(file).use { input ->
+                md5(input)
+            }
         } catch (e: FileNotFoundException) {
             logger.warn("MD5 文件未找到: ${e.message}", e)
         } catch (e: IOException) {
@@ -76,24 +75,27 @@ object MD5 {
      * 计算输入流内容的 MD5 值。
      */
     fun md5(`in`: InputStream): String? {
-        try {
-            val messagedigest = MessageDigest.getInstance("MD5")
-            val buffer = ByteArray(1024)
-            while (true) {
-                val read = `in`.read(buffer)
-                if (read == -1) break
-                messagedigest.update(buffer, 0, read)
+        return `in`.use { input ->
+            try {
+                val messagedigest = MessageDigest.getInstance("MD5")
+                val buffer = ByteArray(1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read == -1) break
+                    messagedigest.update(buffer, 0, read)
+                }
+                byteArrayToHex(messagedigest.digest())
+            } catch (e: NoSuchAlgorithmException) {
+                logger.warn("MD5 算法不可用: ${e.message}", e)
+                null
+            } catch (e: FileNotFoundException) {
+                logger.warn("MD5 输入流文件未找到: ${e.message}", e)
+                null
+            } catch (e: IOException) {
+                logger.warn("MD5 输入流读取失败: ${e.message}", e)
+                null
             }
-            `in`.close()
-            return byteArrayToHex(messagedigest.digest())
-        } catch (e: NoSuchAlgorithmException) {
-            logger.warn("MD5 算法不可用: ${e.message}", e)
-        } catch (e: FileNotFoundException) {
-            logger.warn("MD5 输入流文件未找到: ${e.message}", e)
-        } catch (e: IOException) {
-            logger.warn("MD5 输入流读取失败: ${e.message}", e)
         }
-        return null
     }
 
     /**

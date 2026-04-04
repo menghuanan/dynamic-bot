@@ -90,6 +90,8 @@ object BiliBiliBot : CoroutineScope {
         private set
 
     private var eventCollectorJob: Job? = null
+    private var startupDataInitJob: Job? = null
+    private var startupTaskBootstrapJob: Job? = null
     private val resourceSupervisor = ResourceSupervisor()
 
     /**
@@ -268,7 +270,7 @@ object BiliBiliBot : CoroutineScope {
 
             registerResourcePartitions()
 
-            launch {
+            startupDataInitJob = launch {
                 try {
                     withTimeout(60_000) {
                         // 适当延迟能给平台连接和基础资源留出稳定时间，避免冷启动时初始化链路相互争抢。
@@ -278,10 +280,12 @@ object BiliBiliBot : CoroutineScope {
                 } catch (_: TimeoutCancellationException) {
                     logger.error("启动数据初始化超时")
                     stop("startup-data-timeout")
+                } finally {
+                    startupDataInitJob = null
                 }
             }
 
-            launch {
+            startupTaskBootstrapJob = launch {
                 try {
                     withTimeout(30_000) {
                         // 任务启动放到连接与基础数据之后，可以减少首屏启动时的并发峰值。
@@ -292,6 +296,8 @@ object BiliBiliBot : CoroutineScope {
                     }
                 } catch (_: TimeoutCancellationException) {
                     logger.error("任务启动超时")
+                } finally {
+                    startupTaskBootstrapJob = null
                 }
             }
 
@@ -419,6 +425,22 @@ object BiliBiliBot : CoroutineScope {
      */
     private fun registerResourcePartitions() {
         resourceSupervisor.reset()
+
+        resourceSupervisor.register(
+            LambdaResourcePartition(
+                id = "startup-delayed-jobs",
+                owns = listOf("startupDataInitJob", "startupTaskBootstrapJob"),
+                strictness = ResourceStrictness.RELAXED_LONG_RUNNING,
+                shutdownPhase = ShutdownPhase.INGRESS,
+                stopAction = {
+                    // 停机阶段先取消延迟启动协程，避免出现“边关边起”导致的资源回收竞态。
+                    startupDataInitJob?.cancelAndJoin()
+                    startupDataInitJob = null
+                    startupTaskBootstrapJob?.cancelAndJoin()
+                    startupTaskBootstrapJob = null
+                },
+            ),
+        )
 
         resourceSupervisor.register(
             LambdaResourcePartition(
@@ -571,6 +593,16 @@ object BiliBiliBot : CoroutineScope {
      * 在资源总管异常或覆盖不足时，按旧流程兜底回收关键资源。
      */
     private suspend fun fallbackStopResources() {
+        runCatching {
+            // 兜底路径同样要先取消启动延迟协程，避免停机后又触发初始化/拉起任务器。
+            startupDataInitJob?.cancelAndJoin()
+            startupDataInitJob = null
+            startupTaskBootstrapJob?.cancelAndJoin()
+            startupTaskBootstrapJob = null
+        }.onFailure {
+            logger.warn("兜底停止启动延迟协程失败: ${it.message}", it)
+        }
+
         runCatching {
             if (isPlatformAdapterInitialized()) {
                 requireConnectorManager().stop()

@@ -276,13 +276,16 @@ open class BiliClient(
     }
 
     override fun close() {
-        // 关闭时先摘出当前已创建的底层客户端，再逐个 close，避免并发请求路径继续拿到旧引用。
+        // 先将实例标记为关闭态，再摘出并回收底层客户端，阻断 close 后“复活”创建新槽位。
         val snapshot = synchronized(retrySlots) {
+            if (closed) {
+                return
+            }
+            closed = true
             retrySlots.toList().also {
                 retrySlots.indices.forEach { index -> retrySlots[index] = null }
             }
         }
-        closed = true
         activeClientRefs.remove(instanceId)
         snapshot.filterNotNull().forEach { it.client.close() }
     }
@@ -340,6 +343,7 @@ open class BiliClient(
      */
     private fun getOrCreateClient(slotIndex: Int): HttpClient {
         return synchronized(retrySlots) {
+            ensureClientOpen()
             retrySlots[slotIndex]?.client ?: createRetrySlot(slotIndex).client
         }
     }
@@ -350,6 +354,7 @@ open class BiliClient(
      * @param slotIndex 重试槽位索引
      */
     private fun createRetrySlot(slotIndex: Int): RetrySlotEntry {
+        ensureClientOpen()
         val connectionPool = ConnectionPool(
             maxIdleConnections = RETRY_POOL_MAX_IDLE_CONNECTIONS,
             keepAliveDuration = RETRY_POOL_KEEP_ALIVE_MINUTES,
@@ -463,11 +468,13 @@ open class BiliClient(
         trace: ApiRequestTrace = ApiRequestTrace(source = "未知任务", api = "未知接口", url = "unknown"),
         block: suspend (HttpClient) -> T,
     ): T = supervisorScope {
+        ensureClientOpen()
         var retryCount = 0
         val maxRetries = 1
 
         while (isActive) {
             try {
+                ensureClientOpen()
                 val selectedClientIndex = clientIndex
                 val proxies = proxys
                 val client = getOrCreateClient(selectedClientIndex)
@@ -529,4 +536,11 @@ open class BiliClient(
         val connectionPool: ConnectionPool,
         val dispatcher: Dispatcher,
     )
+
+    /**
+     * 统一阻断 close 后的请求与槽位创建，避免关闭后的客户端在异常重试路径被“复活”。
+     */
+    private fun ensureClientOpen() {
+        check(!closed) { "BiliClient has been closed and cannot be reused." }
+    }
 }

@@ -36,9 +36,13 @@ object SendTasker : BiliTasker("SendTasker") {
     override val unitTime: Long = 500
     override val wrapMainInBusinessLifecycle = false
     private const val AT_ALL_WARN_INTERVAL_MS = 60 * 60 * 1000L
+    private const val AT_ALL_WARN_RETAIN_MS = 24 * 60 * 60 * 1000L
+    private const val AT_ALL_WARN_SWEEP_INTERVAL_MS = 10 * 60 * 1000L
+    private const val AT_ALL_WARN_CACHE_MAX_SIZE = 1024
 
     private val messageQueue = Channel<Pair<PlatformContact, List<OutgoingPart>>>(100)
     private val atAllPermissionWarnTs = mutableMapOf<String, Long>()
+    private var lastAtAllWarnSweepTs = 0L
 
     override fun init() {
         BiliBiliBot.logger.info("SendTasker 已启动")
@@ -61,6 +65,11 @@ object SendTasker : BiliTasker("SendTasker") {
 
     override fun cancel(cause: CancellationException?) {
         messageQueue.close(cause)
+        synchronized(atAllPermissionWarnTs) {
+            // 任务关闭时立即释放节流表，避免对象在下一轮生命周期前持续占用内存。
+            atAllPermissionWarnTs.clear()
+            lastAtAllWarnSweepTs = 0L
+        }
         super.cancel(cause)
     }
 
@@ -267,9 +276,7 @@ object SendTasker : BiliTasker("SendTasker") {
     private suspend fun notifyAtAllPermissionMissing(groupId: String, uid: Long) {
         val now = System.currentTimeMillis()
         val groupKey = groupId
-        val last = atAllPermissionWarnTs[groupKey]
-        if (last != null && now - last < AT_ALL_WARN_INTERVAL_MS) return
-        atAllPermissionWarnTs[groupKey] = now
+        if (shouldThrottleAtAllWarn(groupKey, now)) return
 
         val notice = "群 $groupId 已配置 At全体(UID: $uid)，但 Bot 无 @全体 权限，已自动降级为普通推送。请将 Bot 设为管理员。"
         runCatching { actionNotify(notice) }
@@ -284,13 +291,53 @@ object SendTasker : BiliTasker("SendTasker") {
     private suspend fun notifyAtAllFallback(groupId: String) {
         val now = System.currentTimeMillis()
         val groupKey = groupId
-        val last = atAllPermissionWarnTs[groupKey]
-        if (last != null && now - last < AT_ALL_WARN_INTERVAL_MS) return
-        atAllPermissionWarnTs[groupKey] = now
+        if (shouldThrottleAtAllWarn(groupKey, now)) return
 
         val notice = "群 $groupId 的 @全体 推送发送失败，已自动降级为普通推送。请检查 Bot 是否具备 @全体 权限或当日次数是否耗尽。"
         runCatching { actionNotify(notice) }
             .onFailure { BiliBiliBot.logger.warn("发送 @全体 重试降级提醒失败: ${it.message}") }
+    }
+
+    /**
+     * 在单次检查中同时执行节流判定与缓存清理，保证提醒频控与内存占用都可控。
+     */
+    private fun shouldThrottleAtAllWarn(groupKey: String, now: Long): Boolean {
+        return synchronized(atAllPermissionWarnTs) {
+            cleanupAtAllWarnCache(now)
+            val last = atAllPermissionWarnTs[groupKey]
+            if (last != null && now - last < AT_ALL_WARN_INTERVAL_MS) {
+                true
+            } else {
+                atAllPermissionWarnTs[groupKey] = now
+                false
+            }
+        }
+    }
+
+    /**
+     * 定期淘汰过期分组并裁剪上限，避免节流表在 7x24 运行中持续增长。
+     */
+    private fun cleanupAtAllWarnCache(now: Long) {
+        if (now - lastAtAllWarnSweepTs < AT_ALL_WARN_SWEEP_INTERVAL_MS && atAllPermissionWarnTs.size <= AT_ALL_WARN_CACHE_MAX_SIZE) {
+            return
+        }
+        lastAtAllWarnSweepTs = now
+
+        val expireBefore = now - AT_ALL_WARN_RETAIN_MS
+        atAllPermissionWarnTs.entries.removeIf { (_, timestamp) -> timestamp < expireBefore }
+
+        if (atAllPermissionWarnTs.size <= AT_ALL_WARN_CACHE_MAX_SIZE) {
+            return
+        }
+
+        val overflow = atAllPermissionWarnTs.size - AT_ALL_WARN_CACHE_MAX_SIZE
+        val keysToEvict = atAllPermissionWarnTs.entries
+            .sortedBy { it.value }
+            .take(overflow)
+            .map { it.key }
+        keysToEvict.forEach { staleKey ->
+            atAllPermissionWarnTs.remove(staleKey)
+        }
     }
 
     /**
