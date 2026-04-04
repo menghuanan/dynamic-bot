@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ProcessGuardianResourceObservabilityTest {
@@ -148,6 +149,74 @@ class ProcessGuardianResourceObservabilityTest {
         assertTrue(
             source.contains("[Native 未归类估算]"),
             "ProcessGuardian should emit a dedicated unattributed native section in daemon logs",
+        )
+    }
+
+    // Native 分析要求输出全量分区，不能再只保留 top 切片。
+    @Test
+    fun `process guardian should keep full native section list without top slicing`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("val sections: List<NativeMemorySection>"),
+            "ProcessGuardian should persist full NMT section list in summary model",
+        )
+        assertFalse(
+            source.contains(".take(8)"),
+            "ProcessGuardian should not truncate native memory sections to top 8",
+        )
+        assertTrue(
+            source.contains("native.sections.forEach"),
+            "ProcessGuardian should emit all NMT sections in daemon logs",
+        )
+    }
+
+    // 任务相关性用于把 Native 增长窗口和任务活动窗口对齐，输出可排查的嫌疑任务排行。
+    @Test
+    fun `process guardian should emit native task correlation hints`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("collectNativeTaskCorrelations"),
+            "ProcessGuardian should compute native task correlation hints",
+        )
+        assertTrue(
+            source.contains("nativeTaskCorrelations"),
+            "ProcessGuardian should keep correlation hints in monitor report",
+        )
+        assertTrue(
+            source.contains("[Native 任务相关性]"),
+            "ProcessGuardian should emit a dedicated native task correlation section",
+        )
+    }
+
+    // 非堆排查需要覆盖全部 NON_HEAP 池，避免只看 Metaspace/CodeCache 漏掉其它分区。
+    @Test
+    fun `process guardian should collect all non heap pools by memory type`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("MemoryType.NON_HEAP"),
+            "ProcessGuardian should filter all non-heap pools by MemoryType.NON_HEAP",
+        )
+    }
+
+    // 线上排障要求“非堆只要增长就记点”，守护进程需要把非堆增长直接升级为可落盘事件。
+    @Test
+    fun `process guardian should mark non heap growth as immediate log trigger`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("lastNonHeapUsedByPoolNameBytes"),
+            "ProcessGuardian should keep last non-heap pool usage snapshot for growth detection",
+        )
+        assertTrue(
+            source.contains("非堆增长"),
+            "ProcessGuardian should record non-heap growth details for daemon log emission",
+        )
+        assertTrue(
+            source.contains("hasNonHeapGrowthIssue"),
+            "ProcessGuardian should expose explicit non-heap growth issue flag",
         )
     }
 

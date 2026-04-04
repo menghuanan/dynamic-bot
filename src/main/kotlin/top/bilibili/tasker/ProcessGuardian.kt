@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory
 import top.bilibili.client.BiliClient
 import top.bilibili.connector.PlatformObservabilitySnapshot
 import top.bilibili.core.BiliBiliBot
+import top.bilibili.core.resource.BusinessLifecycleManager
+import top.bilibili.core.resource.BusinessOwnerActivitySnapshot
 import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.ImageCache
 import java.io.File
@@ -14,6 +16,7 @@ import java.io.PrintWriter
 import java.nio.charset.StandardCharsets
 import java.lang.management.BufferPoolMXBean
 import java.lang.management.ManagementFactory
+import java.lang.management.MemoryType
 import java.lang.management.ThreadMXBean
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -62,6 +65,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private const val NATIVE_MEMORY_COMMAND_TIMEOUT_MS = 5_000L
     private const val NATIVE_MEMORY_DESTROY_WAIT_MS = 500L
     private const val PROCESS_OUTPUT_DRAIN_TIMEOUT_MS = 1_000L
+    private const val NATIVE_TASK_CORRELATION_LIMIT = 8
     private const val RSS_SOFT_LIMIT_MB = 300L
     private const val RSS_SOFT_LIMIT_HOLD_MS = 30 * 60 * 1000L
     private const val RSS_SOFT_LIMIT_WARN_AFTER_MS = 10 * 60 * 1000L
@@ -72,6 +76,8 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private var disconnectedDuration = 0
     private var lastNativeMemorySampleAtMillis = 0L
     private var lastNativeMemorySummary: NativeMemorySummary? = null
+    private var lastNonHeapUsedByPoolNameBytes: Map<String, Long> = emptyMap()
+    private var lastBusinessOwnerRunTotals: Map<String, Long> = emptyMap()
     private var rssAboveSoftLimitSinceMillis = 0L
     private var lastNormalLogMinute = -1L
 
@@ -116,6 +122,9 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
 
         // 5.5 按异常或固定周期采集一次可降级的 NMT 摘要。
         captureNativeMemorySummary(report)
+
+        // 5.6 仅在本轮完成 native 重采样时执行任务相关性推断，避免每轮都做无意义评分。
+        collectNativeTaskCorrelations(report)
 
         // 5.8 基于 RSS 连续高位触发软限制告警，并在满足窗口后执行条件重启。
         evaluateRssSoftLimit(report)
@@ -225,10 +234,13 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
      */
     private fun checkNonHeapMemory(report: MonitorReport) {
         val memoryPools = ManagementFactory.getMemoryPoolMXBeans()
+            .filter { pool -> pool.type == MemoryType.NON_HEAP }
         val nonHeapBreakdown = mutableListOf<NonHeapPartitionUsage>()
+        val currentNonHeapUsedByPoolNameBytes = mutableMapOf<String, Long>()
 
         for (pool in memoryPools) {
             val usage = pool.usage ?: continue
+            currentNonHeapUsedByPoolNameBytes[pool.name] = usage.used
             val usedMB = usage.used / 1024 / 1024
             val maxMB = usage.max
                 .takeIf { it > 0L }
@@ -237,17 +249,19 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 ?.takeIf { it > 0L }
                 ?.let { limit -> ((usedMB * 100L) / limit).toInt() }
 
+            // 非堆细分需要保留全部 NON_HEAP 分区，避免只看热点区域导致漏判。
+            nonHeapBreakdown.add(
+                NonHeapPartitionUsage(
+                    name = pool.name,
+                    usedMB = usedMB,
+                    maxMB = maxMB,
+                    usagePercent = usagePercent,
+                ),
+            )
+
             when {
                 pool.name.contains("Metaspace", ignoreCase = true) -> {
                     report.metaspaceUsedMB = usedMB
-                    nonHeapBreakdown.add(
-                        NonHeapPartitionUsage(
-                            name = pool.name,
-                            usedMB = usedMB,
-                            maxMB = maxMB,
-                            usagePercent = usagePercent,
-                        ),
-                    )
                     val ratio = usedMB.toDouble() / METASPACE_LIMIT_MB
                     if (ratio > NON_HEAP_WARNING_THRESHOLD) {
                         report.hasNonHeapIssue = true
@@ -258,19 +272,28 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 pool.name.contains("CodeCache", ignoreCase = true) ||
                 pool.name.contains("CodeHeap", ignoreCase = true) -> {
                     report.codeCacheUsedMB += usedMB
-                    nonHeapBreakdown.add(
-                        NonHeapPartitionUsage(
-                            name = pool.name,
-                            usedMB = usedMB,
-                            maxMB = maxMB,
-                            usagePercent = usagePercent,
-                        ),
-                    )
                 }
             }
         }
         // 输出 Metaspace / CodeCache 的分区细分，用于定位是单一 code heap 还是总量抬升。
         report.nonHeapBreakdown = nonHeapBreakdown.sortedByDescending { it.usedMB }
+        // 非堆增长按“任意分区正向增长即记点”执行，确保排障不会错过关键时间窗口。
+        val nonHeapGrowthEntries = detectNonHeapGrowth(
+            previousUsageByPoolNameBytes = lastNonHeapUsedByPoolNameBytes,
+            currentUsageByPoolNameBytes = currentNonHeapUsedByPoolNameBytes,
+        )
+        if (nonHeapGrowthEntries.isNotEmpty()) {
+            val nonHeapGrowthDetails = nonHeapGrowthEntries.map { growth ->
+                "${growth.poolName} +${growth.deltaBytes / 1024L}KB " +
+                    "(from ${growth.previousBytes / 1024L}KB to ${growth.currentBytes / 1024L}KB)"
+            }
+            report.hasNonHeapIssue = true
+            report.hasNonHeapGrowthIssue = true
+            report.nonHeapGrowthDetails = nonHeapGrowthDetails
+            report.nonHeapIssueDetails.addAll(nonHeapGrowthDetails.map { detail -> "非堆增长: $detail" })
+            logger.warn("检测到非堆增长: {}", nonHeapGrowthDetails)
+        }
+        lastNonHeapUsedByPoolNameBytes = currentNonHeapUsedByPoolNameBytes
 
         // 检查 CodeCache 总量
         val codeCacheRatio = report.codeCacheUsedMB.toDouble() / CODECACHE_LIMIT_MB
@@ -286,6 +309,35 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     }
 
     /**
+     * 比较前后两轮非堆分区占用，返回所有正向增长分区的明细。
+     */
+    private fun detectNonHeapGrowth(
+        previousUsageByPoolNameBytes: Map<String, Long>,
+        currentUsageByPoolNameBytes: Map<String, Long>,
+    ): List<NonHeapGrowth> {
+        if (previousUsageByPoolNameBytes.isEmpty() || currentUsageByPoolNameBytes.isEmpty()) {
+            return emptyList()
+        }
+
+        return currentUsageByPoolNameBytes.entries
+            .mapNotNull { (poolName, currentUsedBytes) ->
+                val previousUsedBytes = previousUsageByPoolNameBytes[poolName] ?: 0L
+                val deltaBytes = currentUsedBytes - previousUsedBytes
+                if (deltaBytes > 0L) {
+                    NonHeapGrowth(
+                        poolName = poolName,
+                        deltaBytes = deltaBytes,
+                        previousBytes = previousUsedBytes,
+                        currentBytes = currentUsedBytes,
+                    )
+                } else {
+                    null
+                }
+            }
+            .sortedByDescending { growth -> growth.deltaBytes }
+    }
+
+    /**
      * 收集进程、线程、受管协程和 Skia 运行态快照。
      */
     private fun collectRuntimeResourceSnapshot(report: MonitorReport) {
@@ -293,6 +345,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         report.bufferPools = collectBufferPoolMetrics()
         report.threadMetrics = collectThreadMetrics()
         report.coroutineMetrics = collectManagedCoroutineMetrics()
+        report.businessActivitySnapshots = BusinessLifecycleManager.runtimeActivitySnapshot()
         report.biliClientMetrics = BiliClient.runtimeSnapshot()
         report.platformObservability = collectPlatformRuntimeObservability()
         report.skiaStatus = SkiaManager.getStatus()
@@ -479,13 +532,17 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val now = System.currentTimeMillis()
         if (!shouldCaptureNativeSummary(report, now)) {
             report.nativeMemorySummary = lastNativeMemorySummary
+            report.nativeSampleCaptured = false
             return
         }
 
+        val previousSummary = lastNativeMemorySummary
         val summary = collectNativeMemorySummary()
         lastNativeMemorySampleAtMillis = now
         lastNativeMemorySummary = summary
         report.nativeMemorySummary = summary
+        report.nativeSampleCaptured = true
+        report.nativeSectionDeltas = buildNativeSectionDeltas(previousSummary, summary)
     }
 
     /**
@@ -496,6 +553,134 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             return true
         }
         return now - lastNativeMemorySampleAtMillis >= NATIVE_MEMORY_SAMPLE_INTERVAL_MS
+    }
+
+    /**
+     * 对连续两次 NMT 摘要计算分区增量，辅助排查是哪类 native 区在持续抬升。
+     */
+    private fun buildNativeSectionDeltas(previous: NativeMemorySummary?, current: NativeMemorySummary): List<NativeMemorySectionDelta> {
+        if (previous?.status != "OK" || current.status != "OK") {
+            return emptyList()
+        }
+
+        val previousSections = previous.sections.associateBy { section -> section.name }
+        return current.sections
+            .map { section ->
+                val previousSection = previousSections[section.name]
+                NativeMemorySectionDelta(
+                    name = section.name,
+                    deltaReservedMB = section.reservedMB - (previousSection?.reservedMB ?: 0L),
+                    deltaCommittedMB = section.committedMB - (previousSection?.committedMB ?: 0L),
+                    currentReservedMB = section.reservedMB,
+                    currentCommittedMB = section.committedMB,
+                )
+            }
+            .sortedByDescending { delta -> kotlin.math.abs(delta.deltaCommittedMB) }
+    }
+
+    /**
+     * 把 native 分区增量与 owner 维度业务活动增量按同一采样窗口对齐，输出“疑似任务”线索。
+     */
+    private fun collectNativeTaskCorrelations(report: MonitorReport) {
+        val nativeSummary = report.nativeMemorySummary ?: return
+        if (!report.nativeSampleCaptured || nativeSummary.status != "OK") {
+            return
+        }
+
+        val currentOwnerTotals = report.businessActivitySnapshots
+            .associate { snapshot -> snapshot.owner to snapshot.totalRuns }
+        val ownerSnapshots = report.businessActivitySnapshots
+            .associateBy { snapshot -> snapshot.owner }
+        val ownerNetworkPressure = collectOwnerNetworkPressure(report.biliClientMetrics)
+        val positiveNativeGrowthMB = report.nativeSectionDeltas
+            .filter { delta -> delta.deltaCommittedMB > 0L }
+            .sumOf { delta -> delta.deltaCommittedMB }
+
+        // 仅在 native committed 存在正向增长时给出任务相关性排名，避免把空窗口误导为任务异常。
+        if (positiveNativeGrowthMB <= 0L) {
+            report.nativeTaskCorrelations = emptyList()
+            lastBusinessOwnerRunTotals = currentOwnerTotals
+            return
+        }
+
+        val candidateOwners = buildSet {
+            addAll(ownerSnapshots.keys)
+            addAll(ownerNetworkPressure.keys)
+            addAll(lastBusinessOwnerRunTotals.keys)
+        }
+
+        report.nativeTaskCorrelations = candidateOwners
+            .mapNotNull { owner ->
+                val ownerSnapshot = ownerSnapshots[owner]
+                val totalRuns = currentOwnerTotals[owner] ?: 0L
+                val previousRuns = lastBusinessOwnerRunTotals[owner] ?: 0L
+                val operationDelta = (totalRuns - previousRuns).coerceAtLeast(0L)
+                val activeSessions = ownerSnapshot?.activeSessions ?: 0
+                val networkPressure = ownerNetworkPressure[owner] ?: OwnerNetworkPressure.EMPTY
+
+                // 评分以业务活动增量为主，网络并发为辅，避免把共享基础设施噪音直接当成责任任务。
+                val score = operationDelta * 10L +
+                    activeSessions * 3L +
+                    networkPressure.runningCalls.toLong() * 2L +
+                    networkPressure.queuedCalls.toLong() +
+                    networkPressure.createdSlots.toLong()
+                if (score <= 0L) {
+                    null
+                } else {
+                    NativeTaskCorrelation(
+                        taskName = owner,
+                        score = score,
+                        operationDelta = operationDelta,
+                        activeSessions = activeSessions,
+                        clientRunningCalls = networkPressure.runningCalls,
+                        clientQueuedCalls = networkPressure.queuedCalls,
+                        evidence = buildString {
+                            append("opsDelta=").append(operationDelta)
+                            append(", activeSessions=").append(activeSessions)
+                            append(", httpRunning=").append(networkPressure.runningCalls)
+                            append(", httpQueued=").append(networkPressure.queuedCalls)
+                            append(", nativeGrowth=").append(positiveNativeGrowthMB).append("MB")
+                        },
+                    )
+                }
+            }
+            .sortedByDescending { correlation -> correlation.score }
+            .take(NATIVE_TASK_CORRELATION_LIMIT)
+
+        lastBusinessOwnerRunTotals = currentOwnerTotals
+    }
+
+    /**
+     * 聚合 BiliClient ownerTag 的网络并发指标，供 native 相关性评分复用。
+     */
+    private fun collectOwnerNetworkPressure(
+        snapshot: top.bilibili.client.BiliClientRuntimeSnapshot?,
+    ): Map<String, OwnerNetworkPressure> {
+        if (snapshot == null) {
+            return emptyMap()
+        }
+
+        return snapshot.instances
+            .groupBy { instance -> instance.ownerTag }
+            .mapValues { (_, instances) ->
+                var runningCalls = 0
+                var queuedCalls = 0
+                var createdSlots = 0
+                instances.forEach { instance ->
+                    createdSlots += instance.createdRetrySlotCount
+                    instance.retrySlots
+                        .filter { slot -> slot.created }
+                        .forEach { slot ->
+                            runningCalls += slot.runningCallsCount ?: 0
+                            queuedCalls += slot.queuedCallsCount ?: 0
+                        }
+                }
+                OwnerNetworkPressure(
+                    runningCalls = runningCalls,
+                    queuedCalls = queuedCalls,
+                    createdSlots = createdSlots,
+                )
+            }
     }
 
     /**
@@ -562,7 +747,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
 
             val totalMatch = Regex("""Total:\s*reserved=(\d+)KB,\s*committed=(\d+)KB""")
                 .find(output)
-            val sectionMatches = Regex("""(?m)^\s*-\s*([A-Za-z ]+)\s*\(reserved=(\d+)KB,\s*committed=(\d+)KB\)""")
+            val sections = Regex("""(?m)^\s*-\s*([A-Za-z0-9 _\-/]+)\s*\(reserved=(\d+)KB,\s*committed=(\d+)KB\)""")
                 .findAll(output)
                 .map { match ->
                     NativeMemorySection(
@@ -572,7 +757,6 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     )
                 }
                 .sortedByDescending { it.committedMB }
-                .take(8)
                 .toList()
 
             return NativeMemorySummary(
@@ -581,7 +765,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 sampledAt = System.currentTimeMillis(),
                 totalReservedMB = totalMatch?.groupValues?.getOrNull(1)?.toLongOrNull()?.div(1024L),
                 totalCommittedMB = totalMatch?.groupValues?.getOrNull(2)?.toLongOrNull()?.div(1024L),
-                topSections = sectionMatches,
+                sections = sections,
             )
         } finally {
             // jcmd 采样是短生命周期子进程，必须在所有路径统一释放三路流与进程句柄。
@@ -990,6 +1174,12 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                         writer.println("    - $detail")
                     }
                 }
+                if (report.hasNonHeapGrowthIssue && report.nonHeapGrowthDetails.isNotEmpty()) {
+                    writer.println("  增长:")
+                    report.nonHeapGrowthDetails.forEach { detail ->
+                        writer.println("    - $detail")
+                    }
+                }
                 if (report.nonHeapBreakdown.isNotEmpty()) {
                     writer.println("[非堆细分]")
                     report.nonHeapBreakdown.forEach { partition ->
@@ -1054,7 +1244,21 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     writer.println("  说明: ${coroutines.note}")
                 }
 
-                // 2.12 BiliClient / OkHttp 运行态
+                // 2.12 owner 维度业务活动快照
+                if (report.businessActivitySnapshots.isNotEmpty()) {
+                    writer.println("[业务生命周期活动]")
+                    report.businessActivitySnapshots.forEach { owner ->
+                        val topOperations = owner.operations.entries
+                            .sortedByDescending { entry -> entry.value }
+                            .take(3)
+                            .joinToString { entry -> "${entry.key}=${entry.value}" }
+                        writer.println(
+                            "  ${owner.owner}: active=${owner.activeSessions}, runs=${owner.totalRuns}, ops=${if (topOperations.isBlank()) "无" else topOperations}"
+                        )
+                    }
+                }
+
+                // 2.13 BiliClient / OkHttp 运行态
                 report.biliClientMetrics?.let { clients ->
                     writer.println("[BiliClient / OkHttp]")
                     writer.println(
@@ -1082,7 +1286,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     }
                 }
 
-                // 2.13 平台 transport HttpClient / OkHttp 运行态
+                // 2.14 平台 transport HttpClient / OkHttp 运行态
                 writer.println("[Platform HttpClient / OkHttp]")
                 report.platformObservability.note?.let { writer.println("  说明: $it") }
                 if (report.platformObservability.clients.isEmpty()) {
@@ -1101,7 +1305,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     }
                 }
 
-                // 2.14 Skia 运行态
+                // 2.15 Skia 运行态
                 report.skiaStatus?.let { skia ->
                     writer.println("[Skia 状态]")
                     writer.println(
@@ -1113,7 +1317,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     )
                 }
 
-                // 2.15 可降级的 Native Memory Tracking 摘要
+                // 2.16 可降级的 Native Memory Tracking 摘要（全量分区）
                 report.nativeMemorySummary?.let { native ->
                     writer.println("[Native Memory Summary]")
                     writer.println("  状态: ${native.status}")
@@ -1121,10 +1325,35 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     if (native.status == "OK") {
                         writer.println(
                             "  Total reserved=${native.totalReservedMB?.let { "${it}MB" } ?: "未知"}, " +
-                                "committed=${native.totalCommittedMB?.let { "${it}MB" } ?: "未知"}"
+                                "committed=${native.totalCommittedMB?.let { "${it}MB" } ?: "未知"}, sections=${native.sections.size}"
                         )
-                        native.topSections.forEach { section ->
+                        native.sections.forEach { section ->
                             writer.println("    - ${section.name}: reserved=${section.reservedMB}MB, committed=${section.committedMB}MB")
+                        }
+                    }
+                }
+                if (report.nativeSectionDeltas.isNotEmpty()) {
+                    writer.println("[Native 增量]")
+                    report.nativeSectionDeltas.forEach { delta ->
+                        writer.println(
+                            "  ${delta.name}: deltaCommitted=${delta.deltaCommittedMB}MB, " +
+                                "deltaReserved=${delta.deltaReservedMB}MB, " +
+                                "currentCommitted=${delta.currentCommittedMB}MB"
+                        )
+                    }
+                }
+                if (report.nativeSampleCaptured) {
+                    writer.println("[Native 任务相关性]")
+                    if (report.nativeTaskCorrelations.isEmpty()) {
+                        writer.println("  无显著相关任务（本轮 native committed 未出现正向增长或任务活动不足）")
+                    } else {
+                        report.nativeTaskCorrelations.forEachIndexed { index, correlation ->
+                            writer.println(
+                                "  ${index + 1}. ${correlation.taskName}: score=${correlation.score}, " +
+                                    "opsDelta=${correlation.operationDelta}, active=${correlation.activeSessions}, " +
+                                    "running=${correlation.clientRunningCalls}, queued=${correlation.clientQueuedCalls}"
+                            )
+                            writer.println("     evidence=${correlation.evidence}")
                         }
                     }
                 }
@@ -1236,9 +1465,11 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
 
         // 非堆内存 (Metaspace, CodeCache)
         var hasNonHeapIssue: Boolean = false,
+        var hasNonHeapGrowthIssue: Boolean = false,
         var metaspaceUsedMB: Long = 0,
         var codeCacheUsedMB: Long = 0,
         var nonHeapIssueDetails: MutableList<String> = mutableListOf(),
+        var nonHeapGrowthDetails: List<String> = emptyList(),
         var nonHeapBreakdown: List<NonHeapPartitionUsage> = emptyList(),
 
         // 进程 / 线程 / 协程 / Skia 轻量快照
@@ -1246,10 +1477,14 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         var bufferPools: List<BufferPoolMetrics> = emptyList(),
         var threadMetrics: ThreadMetrics? = null,
         var coroutineMetrics: CoroutineMetrics? = null,
+        var businessActivitySnapshots: List<BusinessOwnerActivitySnapshot> = emptyList(),
         var biliClientMetrics: top.bilibili.client.BiliClientRuntimeSnapshot? = null,
         var platformObservability: PlatformObservabilitySnapshot = PlatformObservabilitySnapshot.empty("platform adapter is not initialized"),
         var skiaStatus: top.bilibili.skia.SkiaManagerStatus? = null,
         var nativeMemorySummary: NativeMemorySummary? = null,
+        var nativeSampleCaptured: Boolean = false,
+        var nativeSectionDeltas: List<NativeMemorySectionDelta> = emptyList(),
+        var nativeTaskCorrelations: List<NativeTaskCorrelation> = emptyList(),
         var nmtCommittedMB: Long? = null,
         var rssMinusNmtMB: Long? = null,
         var unattributedNativeMB: Long? = null,
@@ -1285,6 +1520,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             return hasTaskerIssue ||
                 hasMemoryIssue ||
                 hasNonHeapIssue ||
+                hasNonHeapGrowthIssue ||
                 hasRssSoftLimitIssue ||
                 hasConnectionIssue ||
                 hasZombieTaskers ||
@@ -1344,6 +1580,16 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val usedMB: Long,
         val maxMB: Long?,
         val usagePercent: Int?,
+    )
+
+    /**
+     * 单个非堆分区在相邻巡检窗口中的增长快照（按字节统计，避免低于 1MB 的增长被舍入丢失）。
+     */
+    private data class NonHeapGrowth(
+        val poolName: String,
+        val deltaBytes: Long,
+        val previousBytes: Long,
+        val currentBytes: Long,
     )
 
     /**
@@ -1438,6 +1684,47 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     )
 
     /**
+     * 单个 NMT 分区在相邻采样窗口中的增量信息。
+     */
+    private data class NativeMemorySectionDelta(
+        val name: String,
+        val deltaReservedMB: Long,
+        val deltaCommittedMB: Long,
+        val currentReservedMB: Long,
+        val currentCommittedMB: Long,
+    )
+
+    /**
+     * Native 增长与任务活动的相关性线索。
+     */
+    private data class NativeTaskCorrelation(
+        val taskName: String,
+        val score: Long,
+        val operationDelta: Long,
+        val activeSessions: Int,
+        val clientRunningCalls: Int,
+        val clientQueuedCalls: Int,
+        val evidence: String,
+    )
+
+    /**
+     * ownerTag 维度的网络并发压力快照。
+     */
+    private data class OwnerNetworkPressure(
+        val runningCalls: Int,
+        val queuedCalls: Int,
+        val createdSlots: Int,
+    ) {
+        companion object {
+            val EMPTY = OwnerNetworkPressure(
+                runningCalls = 0,
+                queuedCalls = 0,
+                createdSlots = 0,
+            )
+        }
+    }
+
+    /**
      * VM.native_memory summary 的可降级采样结果。
      */
     private data class NativeMemorySummary(
@@ -1446,7 +1733,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val sampledAt: Long,
         val totalReservedMB: Long?,
         val totalCommittedMB: Long?,
-        val topSections: List<NativeMemorySection>,
+        val sections: List<NativeMemorySection>,
     ) {
         companion object {
             /**
@@ -1459,7 +1746,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     sampledAt = System.currentTimeMillis(),
                     totalReservedMB = null,
                     totalCommittedMB = null,
-                    topSections = emptyList(),
+                    sections = emptyList(),
                 )
             }
         }
