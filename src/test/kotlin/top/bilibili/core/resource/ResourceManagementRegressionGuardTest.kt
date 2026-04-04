@@ -74,6 +74,10 @@ class ResourceManagementRegressionGuardTest {
         val bot = read("src/main/kotlin/top/bilibili/core/BiliBiliBot.kt")
 
         assertTrue(
+            bot.contains("closeUtilsClient()"),
+            "BiliBiliBot stop path should close utils shared BiliClient",
+        )
+        assertTrue(
             bot.contains("closeServiceClient()"),
             "BiliBiliBot stop path should close service shared BiliClient",
         )

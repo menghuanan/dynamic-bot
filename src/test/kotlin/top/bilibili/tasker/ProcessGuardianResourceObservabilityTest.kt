@@ -100,6 +100,14 @@ class ProcessGuardianResourceObservabilityTest {
             source.contains("report.platformObservability.note?.let"),
             "ProcessGuardian should emit the empty snapshot note instead of failing when platform observability is unavailable",
         )
+        assertTrue(
+            source.contains("platform runtime observability unavailable"),
+            "ProcessGuardian should downgrade connector-manager race windows to an explicit empty platform snapshot",
+        )
+        assertTrue(
+            source.contains("获取平台连接状态失败，已降级跳过本轮连接检查"),
+            "ProcessGuardian should downgrade runtime-status race windows instead of throwing in guardian loop",
+        )
     }
 
     // RSS 与 NMT 的差值是定位 JVM 外驻留增长最直接的指标，守护日志必须显式输出便于长期对比。
@@ -153,5 +161,14 @@ class ProcessGuardianResourceObservabilityTest {
             source.contains("exitProcess"),
             "ProcessGuardian should trigger process restart when RSS soft limit guard is exceeded",
         )
+    }
+
+    // 正常态日志应按 10 分钟窗口去重，避免 30 秒巡检周期在同一分钟重复写盘。
+    @Test
+    fun `process guardian should de duplicate normal monitor logs within the same minute bucket`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(source.contains("lastNormalLogMinute"))
+        assertTrue(source.contains("lastNormalLogMinute != currentMinute"))
     }
 }

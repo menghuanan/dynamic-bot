@@ -14,8 +14,16 @@ private object ServiceClientLifecycle {
     private var sharedClient: BiliClient? = null
 
     fun get(): BiliClient {
+        // 停机阶段禁止再创建 service 共享客户端，避免在资源回收窗口“关闭后复活”。
+        if (BiliBiliBot.isStopping()) {
+            throw IllegalStateException("service.shared BiliClient is unavailable while bot is stopping")
+        }
         sharedClient?.let { return it }
         return synchronized(this) {
+            // 双重检查用于覆盖并发窗口：进入锁后再次确认停机状态，阻断晚到请求创建新实例。
+            if (BiliBiliBot.isStopping()) {
+                throw IllegalStateException("service.shared BiliClient is unavailable while bot is stopping")
+            }
             // 服务层共享客户端使用固定 owner 标签，便于守护日志区分轮询链路和命令服务链路。
             sharedClient ?: BiliClient("service.shared").also { sharedClient = it }
         }

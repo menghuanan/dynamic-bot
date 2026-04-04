@@ -57,4 +57,62 @@ class StabilityResourceLifecycleRegressionTest {
         assertTrue(source.contains("fun md5(`in`: InputStream): String?"))
         assertTrue(source.contains("`in`.use { input ->"))
     }
+
+    @Test
+    fun `shared service clients should reject recreation while bot is stopping`() {
+        val serviceGeneral = read("src/main/kotlin/top/bilibili/service/General.kt")
+        val checkTasker = read("src/main/kotlin/top/bilibili/tasker/BiliCheckTasker.kt")
+        val utilsGeneral = read("src/main/kotlin/top/bilibili/utils/General.kt")
+
+        assertTrue(serviceGeneral.contains("if (BiliBiliBot.isStopping())"))
+        assertTrue(serviceGeneral.contains("service.shared BiliClient is unavailable while bot is stopping"))
+
+        assertTrue(checkTasker.contains("if (BiliBiliBot.isStopping())"))
+        assertTrue(checkTasker.contains("BiliCheckTasker shared BiliClient is unavailable while bot is stopping"))
+
+        assertTrue(utilsGeneral.contains("if (BiliBiliBot.isStopping())"))
+        assertTrue(utilsGeneral.contains("utils.shared BiliClient is unavailable while bot is stopping"))
+        assertTrue(utilsGeneral.contains("fun closeUtilsClient()"))
+    }
+
+    @Test
+    fun `message command router should stop scheduling async commands during shutdown`() {
+        val source = read("src/main/kotlin/top/bilibili/service/MessageCommandRouterService.kt")
+
+        assertTrue(source.contains("if (BiliBiliBot.isStopping())"))
+        assertTrue(source.contains("停机期间忽略命令异步任务"))
+    }
+
+    @Test
+    fun `process guardian jcmd probe should not leak short lived process handles`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(source.contains("probeJcmdInPath()"))
+        assertTrue(source.contains("closeProcessHandles(process)"))
+        assertTrue(source.contains("private fun closeProcessHandles(process: Process)"))
+        assertTrue(source.contains("probe.destroyForcibly()"))
+        assertTrue(source.contains("probe.inputStream.close()"))
+        assertTrue(source.contains("probe.errorStream.close()"))
+        assertTrue(source.contains("probe.outputStream.close()"))
+        assertTrue(source.contains("probe.waitFor("))
+        kotlin.test.assertFalse(source.contains("ProcessBuilder(it, \"-h\").start().destroy()"))
+    }
+
+    @Test
+    fun `tasker cancel should clear managed worker metadata`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/BiliTasker.kt")
+
+        assertTrue(source.contains("managedWorkers.clear()"))
+        assertTrue(source.contains("managedWorkerDefinitions.clear()"))
+    }
+
+    @Test
+    fun `tasker start should reject restart during shutdown and duplicate activation`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/BiliTasker.kt")
+
+        assertTrue(source.contains("if (BiliBiliBot.isStopping())"))
+        assertTrue(source.contains("停机阶段拒绝启动任务"))
+        assertTrue(source.contains("if (job?.isActive == true)"))
+        assertTrue(source.contains("任务已在运行，忽略重复启动"))
+    }
 }

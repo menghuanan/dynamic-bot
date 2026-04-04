@@ -73,6 +73,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private var lastNativeMemorySampleAtMillis = 0L
     private var lastNativeMemorySummary: NativeMemorySummary? = null
     private var rssAboveSoftLimitSinceMillis = 0L
+    private var lastNormalLogMinute = -1L
 
     override fun init() {
         logger.info("ProcessGuardian 守护进程已启动")
@@ -279,7 +280,12 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         if (!BiliBiliBot.isPlatformAdapterInitialized()) {
             return PlatformObservabilitySnapshot.empty("platform adapter is not initialized")
         }
-        return BiliBiliBot.requireConnectorManager().runtimeObservability()
+        // 平台连接器在停机阶段可能于检查后立刻释放，这里降级为空快照以避免 guardian 误判自身失败。
+        return runCatching {
+            BiliBiliBot.requireConnectorManager().runtimeObservability()
+        }.getOrElse { error ->
+            PlatformObservabilitySnapshot.empty("platform runtime observability unavailable: ${error.message}")
+        }
     }
 
     /**
@@ -492,68 +498,70 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             return NativeMemorySummary.unavailable("jcmd 启动失败: ${error.message}")
         }
 
-        // 先异步排空 stdout/stderr，再等待退出，避免 jcmd 因管道写满而卡死在 waitFor 之前。
-        val outputDrain = drainProcessOutputAsync(process)
-        val completed = runCatching {
-            process.waitFor(NATIVE_MEMORY_COMMAND_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        }.getOrElse { error ->
-            runCatching { process.inputStream.close() }
-            process.destroyForcibly()
-            process.waitFor(NATIVE_MEMORY_DESTROY_WAIT_MS, TimeUnit.MILLISECONDS)
-            outputDrain.awaitOutput(PROCESS_OUTPUT_DRAIN_TIMEOUT_MS)
-            return NativeMemorySummary.unavailable("jcmd 执行失败: ${error.message}")
-        }
-        if (!completed) {
-            runCatching { process.inputStream.close() }
-            process.destroyForcibly()
-            process.waitFor(NATIVE_MEMORY_DESTROY_WAIT_MS, TimeUnit.MILLISECONDS)
-            outputDrain.awaitOutput(PROCESS_OUTPUT_DRAIN_TIMEOUT_MS)
-            return NativeMemorySummary.unavailable("jcmd 执行超时，已降级跳过 VM.native_memory summary")
-        }
-
-        val output = outputDrain.awaitOutput(PROCESS_OUTPUT_DRAIN_TIMEOUT_MS)
-        if (outputDrain.isAlive()) {
-            return NativeMemorySummary.unavailable("jcmd 输出读取未在限定时间内完成，已降级跳过 VM.native_memory summary")
-        }
-        outputDrain.failureMessage()?.let { failure ->
-            if (output.isBlank()) {
-                return NativeMemorySummary.unavailable("jcmd 输出读取失败: $failure")
+        try {
+            // 先异步排空 stdout/stderr，再等待退出，避免 jcmd 因管道写满而卡死在 waitFor 之前。
+            val outputDrain = drainProcessOutputAsync(process)
+            val completed = runCatching {
+                process.waitFor(NATIVE_MEMORY_COMMAND_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            }.getOrElse { error ->
+                outputDrain.awaitOutput(PROCESS_OUTPUT_DRAIN_TIMEOUT_MS)
+                return NativeMemorySummary.unavailable("jcmd 执行失败: ${error.message}")
             }
-        }
 
-        if (process.exitValue() != 0) {
-            return NativeMemorySummary.unavailable("jcmd 返回非零退出码: ${process.exitValue()}")
-        }
-        if (output.contains("Native memory tracking is not enabled", ignoreCase = true)) {
-            return NativeMemorySummary.unavailable("JVM 未开启 NMT，已降级跳过 VM.native_memory summary")
-        }
-        if (output.contains("Could not find", ignoreCase = true) || output.contains("AttachNotSupported", ignoreCase = true)) {
-            return NativeMemorySummary.unavailable("jcmd attach 不可用，已降级跳过 VM.native_memory summary")
-        }
-
-        val totalMatch = Regex("""Total:\s*reserved=(\d+)KB,\s*committed=(\d+)KB""")
-            .find(output)
-        val sectionMatches = Regex("""(?m)^\s*-\s*([A-Za-z ]+)\s*\(reserved=(\d+)KB,\s*committed=(\d+)KB\)""")
-            .findAll(output)
-            .map { match ->
-                NativeMemorySection(
-                    name = match.groupValues[1].trim(),
-                    reservedMB = match.groupValues[2].toLong() / 1024L,
-                    committedMB = match.groupValues[3].toLong() / 1024L,
-                )
+            if (!completed) {
+                return NativeMemorySummary.unavailable("jcmd 执行超时，已降级跳过 VM.native_memory summary")
             }
-            .sortedByDescending { it.committedMB }
-            .take(8)
-            .toList()
 
-        return NativeMemorySummary(
-            status = "OK",
-            reason = null,
-            sampledAt = System.currentTimeMillis(),
-            totalReservedMB = totalMatch?.groupValues?.getOrNull(1)?.toLongOrNull()?.div(1024L),
-            totalCommittedMB = totalMatch?.groupValues?.getOrNull(2)?.toLongOrNull()?.div(1024L),
-            topSections = sectionMatches,
-        )
+            val output = outputDrain.awaitOutput(PROCESS_OUTPUT_DRAIN_TIMEOUT_MS)
+            if (outputDrain.isAlive()) {
+                // 读取线程超时后先主动关闭输入流，避免 daemon 线程卡在 read() 导致累计线程残留。
+                runCatching { process.inputStream.close() }
+                outputDrain.awaitOutput(PROCESS_OUTPUT_DRAIN_TIMEOUT_MS)
+                return NativeMemorySummary.unavailable("jcmd 输出读取未在限定时间内完成，已降级跳过 VM.native_memory summary")
+            }
+            outputDrain.failureMessage()?.let { failure ->
+                if (output.isBlank()) {
+                    return NativeMemorySummary.unavailable("jcmd 输出读取失败: $failure")
+                }
+            }
+
+            if (process.exitValue() != 0) {
+                return NativeMemorySummary.unavailable("jcmd 返回非零退出码: ${process.exitValue()}")
+            }
+            if (output.contains("Native memory tracking is not enabled", ignoreCase = true)) {
+                return NativeMemorySummary.unavailable("JVM 未开启 NMT，已降级跳过 VM.native_memory summary")
+            }
+            if (output.contains("Could not find", ignoreCase = true) || output.contains("AttachNotSupported", ignoreCase = true)) {
+                return NativeMemorySummary.unavailable("jcmd attach 不可用，已降级跳过 VM.native_memory summary")
+            }
+
+            val totalMatch = Regex("""Total:\s*reserved=(\d+)KB,\s*committed=(\d+)KB""")
+                .find(output)
+            val sectionMatches = Regex("""(?m)^\s*-\s*([A-Za-z ]+)\s*\(reserved=(\d+)KB,\s*committed=(\d+)KB\)""")
+                .findAll(output)
+                .map { match ->
+                    NativeMemorySection(
+                        name = match.groupValues[1].trim(),
+                        reservedMB = match.groupValues[2].toLong() / 1024L,
+                        committedMB = match.groupValues[3].toLong() / 1024L,
+                    )
+                }
+                .sortedByDescending { it.committedMB }
+                .take(8)
+                .toList()
+
+            return NativeMemorySummary(
+                status = "OK",
+                reason = null,
+                sampledAt = System.currentTimeMillis(),
+                totalReservedMB = totalMatch?.groupValues?.getOrNull(1)?.toLongOrNull()?.div(1024L),
+                totalCommittedMB = totalMatch?.groupValues?.getOrNull(2)?.toLongOrNull()?.div(1024L),
+                topSections = sectionMatches,
+            )
+        } finally {
+            // jcmd 采样是短生命周期子进程，必须在所有路径统一释放三路流与进程句柄。
+            closeProcessHandles(process)
+        }
     }
 
     /**
@@ -576,7 +584,50 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         ).filterNotNull()
 
         return candidates.firstOrNull { it.exists() && it.canExecute() }?.absolutePath
-            ?: "jcmd".takeIf { runCatching { ProcessBuilder(it, "-h").start().destroy() }.isSuccess }
+            ?: "jcmd".takeIf { probeJcmdInPath() }
+    }
+
+    /**
+     * 探测 PATH 中的 jcmd 命令是否可执行，并确保探测子进程句柄完整回收。
+     */
+    private fun probeJcmdInPath(): Boolean {
+        return runCatching {
+            val probe = ProcessBuilder("jcmd", "-h")
+                .redirectErrorStream(true)
+                .start()
+            try {
+                val outputDrain = drainProcessOutputAsync(probe)
+                val completed = probe.waitFor(NATIVE_MEMORY_COMMAND_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                if (!completed) {
+                    probe.destroyForcibly()
+                    probe.waitFor(NATIVE_MEMORY_DESTROY_WAIT_MS, TimeUnit.MILLISECONDS)
+                }
+                outputDrain.awaitOutput(PROCESS_OUTPUT_DRAIN_TIMEOUT_MS)
+                completed
+            } finally {
+                // 探测子进程也必须显式关闭全部流，避免 7x24 周期探测累计句柄。
+                runCatching { probe.inputStream.close() }
+                runCatching { probe.errorStream.close() }
+                runCatching { probe.outputStream.close() }
+                if (probe.isAlive) {
+                    probe.destroyForcibly()
+                    runCatching { probe.waitFor(NATIVE_MEMORY_DESTROY_WAIT_MS, TimeUnit.MILLISECONDS) }
+                }
+            }
+        }.getOrDefault(false)
+    }
+
+    /**
+     * 统一回收 jcmd 子进程的输入/输出流与进程句柄，避免守护进程长期运行时出现句柄滞留。
+     */
+    private fun closeProcessHandles(process: Process) {
+        runCatching { process.inputStream.close() }
+        runCatching { process.errorStream.close() }
+        runCatching { process.outputStream.close() }
+        if (process.isAlive) {
+            process.destroyForcibly()
+            runCatching { process.waitFor(NATIVE_MEMORY_DESTROY_WAIT_MS, TimeUnit.MILLISECONDS) }
+        }
     }
 
     /**
@@ -653,7 +704,15 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             return
         }
 
-        val runtimeStatus = BiliBiliBot.requireConnectorManager().runtimeStatus()
+        // 连接管理器在停机窗口内可能被并发释放，守护进程应降级为不可用而不是抛异常退出本轮巡检。
+        val runtimeStatus = runCatching {
+            BiliBiliBot.requireConnectorManager().runtimeStatus()
+        }.getOrElse { error ->
+            logger.debug("获取平台连接状态失败，已降级跳过本轮连接检查: ${error.message}")
+            report.hasConnectionIssue = false
+            report.connectionStatus = "UNKNOWN"
+            return
+        }
         val isConnected = runtimeStatus.connected
         val reconnectAttempts = runtimeStatus.reconnectAttempts
 
@@ -852,12 +911,17 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
      */
     private fun writeMonitorLog(report: MonitorReport) {
         val hasAnyIssue = report.hasAnyIssue()
+        val currentMinute = System.currentTimeMillis() / 1000 / 60
 
-        // 每10分钟（20次检查）写入一次正常状态日志
-        val shouldWriteNormalLog = !hasAnyIssue && (System.currentTimeMillis() / 1000 / 60 % 10 == 0L)
+        // 仅在分钟边界首次命中时写入，避免 30 秒巡检间隔导致同一分钟重复写入“正常”日志。
+        val shouldWriteNormalLog = !hasAnyIssue && (currentMinute % 10 == 0L) && lastNormalLogMinute != currentMinute
 
         if (!hasAnyIssue && !shouldWriteNormalLog) {
             return
+        }
+
+        if (shouldWriteNormalLog) {
+            lastNormalLogMinute = currentMinute
         }
 
         // 获取或创建今日日志文件

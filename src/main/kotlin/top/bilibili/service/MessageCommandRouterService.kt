@@ -167,7 +167,17 @@ object MessageCommandRouterService {
         strictness: ResourceStrictness = ResourceStrictness.STRICT,
         block: suspend () -> Unit,
     ) {
+        // 停机期间不再调度新的异步命令任务，避免资源回收阶段继续拉起业务协程。
+        if (BiliBiliBot.isStopping()) {
+            BiliBiliBot.logger.info("停机期间忽略命令异步任务: $operation")
+            return
+        }
         BiliBiliBot.launch {
+            // 调度到根作用域后再次校验停机状态，覆盖停机信号与协程实际启动之间的竞态窗口。
+            if (BiliBiliBot.isStopping()) {
+                BiliBiliBot.logger.info("停机期间忽略命令异步任务: $operation")
+                return@launch
+            }
             BusinessLifecycleManager.run(
                 owner = "MessageCommandRouterService",
                 operation = operation,

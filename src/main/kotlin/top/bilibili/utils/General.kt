@@ -59,9 +59,47 @@ internal val logger by lazy {
     BiliBiliBot.logger
 }
 
-// 共享 biliClient 改为按需初始化，避免仅加载工具函数就提前常驻整套 API 客户端资源。
-val biliClient by lazy {
-    BiliClient("utils.shared")
+private object UtilsClientLifecycle {
+    @Volatile
+    private var sharedClient: BiliClient? = null
+
+    fun get(): BiliClient {
+        // 停机阶段禁止创建新的 utils 共享客户端，避免在资源回收窗口“关闭后复活”。
+        if (BiliBiliBot.isStopping()) {
+            throw IllegalStateException("utils.shared BiliClient is unavailable while bot is stopping")
+        }
+        sharedClient?.let { return it }
+        return synchronized(this) {
+            // 进入锁后再校验一次停机状态，阻断并发路径上的晚到创建请求。
+            if (BiliBiliBot.isStopping()) {
+                throw IllegalStateException("utils.shared BiliClient is unavailable while bot is stopping")
+            }
+            sharedClient ?: BiliClient("utils.shared").also { sharedClient = it }
+        }
+    }
+
+    fun close() {
+        val toClose = synchronized(this) {
+            val current = sharedClient
+            sharedClient = null
+            current
+        }
+        runCatching { toClose?.close() }
+            .onFailure { logger.warn("关闭 utils 共享 BiliClient 失败: ${it.message}", it) }
+    }
+}
+
+/**
+ * 工具层共享 BiliClient，使用受控生命周期以支持停机关闭与同进程重启重建。
+ */
+val biliClient: BiliClient
+    get() = UtilsClientLifecycle.get()
+
+/**
+ * 主动关闭工具层共享 BiliClient，避免停机后继续持有旧连接池与调度器线程。
+ */
+fun closeUtilsClient() {
+    UtilsClientLifecycle.close()
 }
 
 /**

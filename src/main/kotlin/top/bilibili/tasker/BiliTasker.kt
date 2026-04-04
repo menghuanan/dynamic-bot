@@ -291,6 +291,17 @@ abstract class BiliTasker(
     }
 
     override fun start(): Boolean {
+        // 停机阶段禁止新任务拉起，避免资源回收窗口内出现“边关边起”的生命周期竞态。
+        if (BiliBiliBot.isStopping()) {
+            BiliBiliBot.logger.warn("停机阶段拒绝启动任务: {}", taskDisplayName)
+            return false
+        }
+        // 已在运行的 tasker 禁止重复 start，避免覆盖 job 引用导致旧协程失管。
+        if (job?.isActive == true) {
+            BiliBiliBot.logger.warn("任务已在运行，忽略重复启动: {}", taskDisplayName)
+            return false
+        }
+
         // 预留未使用变量 policy: val policy = TaskResourcePolicyRegistry.policyOf(taskDisplayName)
         TaskResourcePolicyRegistry.policyOf(taskDisplayName)
             ?: error("任务未声明资源策略: $taskDisplayName")
@@ -370,6 +381,9 @@ abstract class BiliTasker(
         }
         job?.cancel(cause)
         coroutineContext.cancelChildren(cause)
+        // 停机后清空受管 worker 元数据，避免同进程重复启动时继承旧状态或触发重复注册。
+        managedWorkers.clear()
+        managedWorkerDefinitions.clear()
         taskers.remove(this)
     }
 

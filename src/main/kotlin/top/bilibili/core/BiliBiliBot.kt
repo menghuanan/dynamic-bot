@@ -41,6 +41,7 @@ import top.bilibili.tasker.BiliTasker
 import top.bilibili.utils.parsePlatformContact
 import top.bilibili.utils.ImageCache
 import top.bilibili.utils.actionNotify
+import top.bilibili.utils.closeUtilsClient
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
@@ -483,7 +484,7 @@ object BiliBiliBot : CoroutineScope {
                 strictness = ResourceStrictness.STRICT,
                 shutdownPhase = ShutdownPhase.DEPENDENCIES,
                 stopAction = {
-                    top.bilibili.utils.biliClient.close()
+                    closeUtilsClient()
                     logger.info("共享 biliClient 已停止")
                 },
             ),
@@ -640,7 +641,7 @@ object BiliBiliBot : CoroutineScope {
         runCatching { ImageCache.close() }
             .onFailure { logger.warn("兜底关闭图片缓存失败: ${it.message}", it) }
 
-        runCatching { top.bilibili.utils.biliClient.close() }
+        runCatching { closeUtilsClient() }
             .onFailure { logger.warn("兜底关闭 biliClient 失败: ${it.message}", it) }
 
         runCatching { closeServiceClient() }

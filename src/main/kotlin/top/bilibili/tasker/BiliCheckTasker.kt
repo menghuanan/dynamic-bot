@@ -2,6 +2,7 @@ package top.bilibili.tasker
 
 import top.bilibili.BiliConfigManager
 import top.bilibili.client.BiliClient
+import top.bilibili.core.BiliBiliBot
 import top.bilibili.utils.logger
 import java.time.Instant
 import java.time.LocalTime
@@ -36,6 +37,10 @@ abstract class BiliCheckTasker(
          */
         @Synchronized
         private fun getSharedClient(): BiliClient {
+            // 停机阶段禁止再创建轮询共享客户端，避免资源分区进入回收后被新请求重新拉起。
+            if (BiliBiliBot.isStopping()) {
+                throw IllegalStateException("BiliCheckTasker shared BiliClient is unavailable while bot is stopping")
+            }
             // 共享轮询客户端使用固定 owner 标签，便于 ProcessGuardian 在日志中识别轮询链路资源。
             return sharedClient ?: BiliClient("BiliCheckTasker.shared").also { sharedClient = it }
         }

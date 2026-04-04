@@ -48,14 +48,22 @@ class BiliClientSourceRegressionTest {
         )
     }
 
-    // 全局工具客户端应延迟到真正访问相关 API 时再初始化，避免仅启动轮询链路就额外常驻一组 OkHttp 资源。
+    // 全局工具客户端需要可延迟初始化且可关闭后重建，避免 stop->start 后继续引用已关闭实例。
     @Test
-    fun `general utility bili client should be lazy`() {
+    fun `general utility bili client should support managed lifecycle`() {
         val text = read("src/main/kotlin/top/bilibili/utils/General.kt")
 
         assertTrue(
-            text.contains("val biliClient by lazy"),
-            "General.kt should lazily initialize the shared biliClient",
+            text.contains("private object UtilsClientLifecycle"),
+            "General.kt should define an explicit lifecycle holder for shared biliClient",
+        )
+        assertTrue(
+            text.contains("val biliClient: BiliClient"),
+            "General.kt should expose shared biliClient through a managed getter",
+        )
+        assertTrue(
+            text.contains("fun closeUtilsClient()"),
+            "General.kt should expose an explicit close entry for shared utility biliClient",
         )
     }
 
