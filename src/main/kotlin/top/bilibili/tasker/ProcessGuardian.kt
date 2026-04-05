@@ -305,9 +305,13 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             currentUsageByPoolNameBytes = currentNonHeapUsedByPoolNameBytes,
         )
         if (nonHeapGrowthEntries.isNotEmpty()) {
+            // 将突发增长详情统一为“基线/当前/峰值”字段风格，便于和回落日志直接对读。
             val nonHeapGrowthDetails = nonHeapGrowthEntries.map { growth ->
-                "${growth.poolName} +${growth.deltaBytes / 1024L}KB " +
-                    "(from ${growth.previousBytes / 1024L}KB to ${growth.currentBytes / 1024L}KB)"
+                val baselineBytes = growth.previousBytes
+                val currentBytes = growth.currentBytes
+                val peakGrowthBytes = (growth.currentBytes - baselineBytes).coerceAtLeast(0L)
+                "${growth.poolName} 较基线 +${peakGrowthBytes / 1024L}KB " +
+                    "(当前=${currentBytes / 1024L}KB, 基线=${baselineBytes / 1024L}KB, 峰值+${peakGrowthBytes / 1024L}KB)"
             }
             val hasBurstGrowth = nonHeapGrowthEntries.any { growth -> growth.deltaBytes >= NON_HEAP_GROWTH_BURST_WARN_BYTES }
             report.nonHeapGrowthDetails = nonHeapGrowthDetails
@@ -315,7 +319,21 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 report.hasNonHeapIssue = true
                 report.hasNonHeapGrowthIssue = true
                 report.nonHeapIssueDetails.addAll(nonHeapGrowthDetails.map { detail -> "非堆增长: $detail" })
-                logger.warn("检测到非堆突发增长: {}", nonHeapGrowthDetails)
+                nonHeapGrowthEntries
+                    .filter { growth -> growth.deltaBytes >= NON_HEAP_GROWTH_BURST_WARN_BYTES }
+                    .forEach { growth ->
+                        val baselineBytes = growth.previousBytes
+                        val currentBytes = growth.currentBytes
+                        val peakGrowthBytes = (growth.currentBytes - baselineBytes).coerceAtLeast(0L)
+                        logger.warn(
+                            "检测到非堆突发增长: {} 较基线 +{}KB (当前={}KB, 基线={}KB, 峰值+{}KB)",
+                            growth.poolName,
+                            peakGrowthBytes / 1024L,
+                            currentBytes / 1024L,
+                            baselineBytes / 1024L,
+                            peakGrowthBytes / 1024L,
+                        )
+                    }
             } else {
                 // 轻微增长只作为趋势信号，不升级为 issue，避免触发 30 秒一次的高频 NMT 重采样。
                 logger.debug("检测到轻微非堆波动(已降级为趋势信号): {}", nonHeapGrowthDetails)
@@ -479,14 +497,18 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val longGrowthDetails = buildList {
             metaspaceGrowthEvidence?.let { evidence ->
                 add(
-                    "Metaspace 长期增长: +${evidence.netIncreaseBytes / 1024L}KB, " +
-                        "maxRetrace=${evidence.maxRetraceBytes / 1024L}KB, duration=${evidence.durationMillis / 1000L}s",
+                    "Metaspace 较基线 +${evidence.netIncreaseBytes / 1024L}KB " +
+                        "(当前=${evidence.currentBytes / 1024L}KB, 基线=${evidence.baselineBytes / 1024L}KB, " +
+                        "峰值+${(evidence.peakBytes - evidence.baselineBytes).coerceAtLeast(0L) / 1024L}KB, " +
+                        "最大回落=${evidence.maxRetraceBytes / 1024L}KB, 持续=${evidence.durationMillis / 1000L}s)",
                 )
             }
             codeCacheGrowthEvidence?.let { evidence ->
                 add(
-                    "CodeCache 长期增长: +${evidence.netIncreaseBytes / 1024L}KB, " +
-                        "maxRetrace=${evidence.maxRetraceBytes / 1024L}KB, duration=${evidence.durationMillis / 1000L}s",
+                    "CodeCache 较基线 +${evidence.netIncreaseBytes / 1024L}KB " +
+                        "(当前=${evidence.currentBytes / 1024L}KB, 基线=${evidence.baselineBytes / 1024L}KB, " +
+                        "峰值+${(evidence.peakBytes - evidence.baselineBytes).coerceAtLeast(0L) / 1024L}KB, " +
+                        "最大回落=${evidence.maxRetraceBytes / 1024L}KB, 持续=${evidence.durationMillis / 1000L}s)",
                 )
             }
         }
@@ -496,7 +518,31 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             report.hasNonHeapLongGrowthIssue = true
             report.nonHeapLongGrowthDetails = longGrowthDetails
             report.nonHeapIssueDetails.addAll(longGrowthDetails.map { detail -> "长期增长: $detail" })
-            logger.warn("检测到非堆长期增长: {}", longGrowthDetails)
+            // 告警日志与回落日志共用“基线/当前/峰值”字段，便于排障时逐行对比。
+            metaspaceGrowthEvidence?.let { evidence ->
+                logger.warn(
+                    "检测到非堆长期增长: {} 较基线 +{}KB (当前={}KB, 基线={}KB, 峰值+{}KB, 最大回落={}KB, 持续={}s)",
+                    "Metaspace",
+                    evidence.netIncreaseBytes / 1024L,
+                    evidence.currentBytes / 1024L,
+                    evidence.baselineBytes / 1024L,
+                    (evidence.peakBytes - evidence.baselineBytes).coerceAtLeast(0L) / 1024L,
+                    evidence.maxRetraceBytes / 1024L,
+                    evidence.durationMillis / 1000L,
+                )
+            }
+            codeCacheGrowthEvidence?.let { evidence ->
+                logger.warn(
+                    "检测到非堆长期增长: {} 较基线 +{}KB (当前={}KB, 基线={}KB, 峰值+{}KB, 最大回落={}KB, 持续={}s)",
+                    "CodeCache",
+                    evidence.netIncreaseBytes / 1024L,
+                    evidence.currentBytes / 1024L,
+                    evidence.baselineBytes / 1024L,
+                    (evidence.peakBytes - evidence.baselineBytes).coerceAtLeast(0L) / 1024L,
+                    evidence.maxRetraceBytes / 1024L,
+                    evidence.durationMillis / 1000L,
+                )
+            }
         } else {
             report.hasNonHeapLongGrowthIssue = false
             report.nonHeapLongGrowthDetails = emptyList()
@@ -582,7 +628,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     ) {
         activeEvidenceByArea.forEach { (areaName, evidence) ->
             val currentBytes = currentUsageByAreaBytes[areaName] ?: return@forEach
-            val baselineEstimateBytes = (currentBytes - evidence.netIncreaseBytes).coerceAtLeast(0L)
+            val baselineEstimateBytes = evidence.baselineBytes.coerceAtLeast(0L)
             val tracker = nonHeapLongGrowthTrackersByArea[areaName]
             if (tracker == null) {
                 nonHeapLongGrowthTrackersByArea[areaName] = NonHeapRollbackTracker(
@@ -670,7 +716,10 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         }
 
         val values = samples.map(selector)
-        val netIncreaseBytes = values.last() - values.first()
+        val baselineBytes = values.first()
+        val currentBytes = values.last()
+        val peakBytes = values.maxOrNull() ?: currentBytes
+        val netIncreaseBytes = currentBytes - baselineBytes
         if (netIncreaseBytes < minIncreaseBytes) {
             return null
         }
@@ -695,6 +744,9 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             netIncreaseBytes = netIncreaseBytes,
             maxRetraceBytes = maxRetraceBytes,
             durationMillis = (samples.last().sampledAtMillis - samples.first().sampledAtMillis).coerceAtLeast(0L),
+            baselineBytes = baselineBytes,
+            currentBytes = currentBytes,
+            peakBytes = peakBytes,
         )
     }
 
@@ -1999,6 +2051,9 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val netIncreaseBytes: Long,
         val maxRetraceBytes: Long,
         val durationMillis: Long,
+        val baselineBytes: Long,
+        val currentBytes: Long,
+        val peakBytes: Long,
     )
 
     /**

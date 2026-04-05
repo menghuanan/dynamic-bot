@@ -296,6 +296,21 @@ class ProcessGuardianResourceObservabilityTest {
         )
     }
 
+    // 非堆增长告警与回落日志应统一为“基线/当前/峰值”表达，便于值班时做横向对读。
+    @Test
+    fun `process guardian should align burst and sustained growth warning format with rollback style`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("检测到非堆突发增长: {} 较基线 +{}KB (当前={}KB, 基线={}KB, 峰值+{}KB)"),
+            "ProcessGuardian should use baseline/current/peak style for burst non-heap growth warnings",
+        )
+        assertTrue(
+            source.contains("检测到非堆长期增长: {} 较基线 +{}KB (当前={}KB, 基线={}KB, 峰值+{}KB, 最大回落={}KB, 持续={}s)"),
+            "ProcessGuardian should use baseline/current/peak style for sustained non-heap growth warnings",
+        )
+    }
+
     // Linux 上 RSS 增长需要区分匿名页与文件映射页，守护进程应采集 smaps_rollup 的关键分项。
     @Test
     fun `process guardian should collect smaps rollup anonymous file and shmem metrics`() {
