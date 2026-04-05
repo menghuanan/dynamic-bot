@@ -258,6 +258,29 @@ class ProcessGuardianResourceObservabilityTest {
         )
     }
 
+    // 非堆增长告警在后续回落时需要输出 info 级别恢复提示，避免只看到告警而看不到缓解结果。
+    @Test
+    fun `process guardian should emit rollback info after non heap burst or sustained growth`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("检测到非堆增长已回落"),
+            "ProcessGuardian should log an info message when burst non-heap growth is fully recovered",
+        )
+        assertTrue(
+            source.contains("检测到非堆增长部分回落"),
+            "ProcessGuardian should log an info message when burst non-heap growth is partially recovered",
+        )
+        assertTrue(
+            source.contains("检测到非堆长期增长已回落"),
+            "ProcessGuardian should log an info message when sustained non-heap growth is recovered",
+        )
+        assertTrue(
+            source.contains("检测到非堆长期增长部分回落"),
+            "ProcessGuardian should log an info message when sustained non-heap growth is partially recovered",
+        )
+    }
+
     // Linux 上 RSS 增长需要区分匿名页与文件映射页，守护进程应采集 smaps_rollup 的关键分项。
     @Test
     fun `process guardian should collect smaps rollup anonymous file and shmem metrics`() {

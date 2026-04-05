@@ -88,9 +88,13 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private var lastNativeMemorySampleAtMillis = 0L
     private var lastNativeMemorySummary: NativeMemorySummary? = null
     private var lastNonHeapUsedByPoolNameBytes: Map<String, Long> = emptyMap()
+    // 非堆突发增长追踪：记录每个分区的基线与峰值，用于在后续回落时输出恢复日志。
+    private val nonHeapGrowthTrackersByPoolName: MutableMap<String, NonHeapRollbackTracker> = mutableMapOf()
     private val nonHeapTrendSamples = ArrayDeque<NonHeapTrendSample>()
     private var nonHeapWarmupCompleted = false
     private var nonHeapWarmupCompletedAtMillis = 0L
+    // 非堆长期增长追踪：记录 Metaspace/CodeCache 在长期增长告警后的峰值，用于识别回落。
+    private val nonHeapLongGrowthTrackersByArea: MutableMap<String, NonHeapRollbackTracker> = mutableMapOf()
     private var lastBusinessOwnerRunTotals: Map<String, Long> = emptyMap()
     private var rssAboveSoftLimitSinceMillis = 0L
     private var lastNormalLogMinute = -1L
@@ -317,6 +321,8 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 logger.debug("检测到轻微非堆波动(已降级为趋势信号): {}", nonHeapGrowthDetails)
             }
         }
+        updateNonHeapGrowthTrackers(nonHeapGrowthEntries)
+        logNonHeapGrowthRollback(currentNonHeapUsedByPoolNameBytes)
         lastNonHeapUsedByPoolNameBytes = currentNonHeapUsedByPoolNameBytes
         // 在同一采样窗口内维护“预热完成 -> 长期增长”状态机，避免仅凭单次增长就误报长期风险。
         evaluateNonHeapTrend(
@@ -421,6 +427,10 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
 
         report.nonHeapWarmupCompleted = nonHeapWarmupCompleted
         report.nonHeapWarmupCompletedAtMillis = nonHeapWarmupCompletedAtMillis.takeIf { value -> value > 0L }
+        val currentUsageByAreaBytes = mapOf(
+            "Metaspace" to metaspaceUsedBytes,
+            "CodeCache" to codeCacheUsedBytes,
+        )
 
         if (!nonHeapWarmupCompleted) {
             val missingSamples = (NON_HEAP_WARMUP_WINDOW_SAMPLES - samples.size).coerceAtLeast(0)
@@ -431,6 +441,10 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             )
             report.hasNonHeapLongGrowthIssue = false
             report.nonHeapLongGrowthDetails = emptyList()
+            syncNonHeapLongGrowthRollback(
+                activeEvidenceByArea = emptyMap(),
+                currentUsageByAreaBytes = currentUsageByAreaBytes,
+            )
             return
         }
 
@@ -447,6 +461,14 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             selector = { entry -> entry.codeCacheUsedBytes },
             minIncreaseBytes = NON_HEAP_LONG_GROWTH_MIN_INCREASE_CODECACHE_BYTES,
             maxRetraceBytesThreshold = NON_HEAP_LONG_GROWTH_MAX_RETRACE_CODECACHE_BYTES,
+        )
+        val activeLongGrowthEvidenceByArea = buildMap {
+            metaspaceGrowthEvidence?.let { evidence -> put("Metaspace", evidence) }
+            codeCacheGrowthEvidence?.let { evidence -> put("CodeCache", evidence) }
+        }
+        syncNonHeapLongGrowthRollback(
+            activeEvidenceByArea = activeLongGrowthEvidenceByArea,
+            currentUsageByAreaBytes = currentUsageByAreaBytes,
         )
 
         report.nonHeapTrendDetails = listOf(
@@ -478,6 +500,157 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         } else {
             report.hasNonHeapLongGrowthIssue = false
             report.nonHeapLongGrowthDetails = emptyList()
+        }
+    }
+
+    /**
+     * 记录突发增长分区的基线与峰值，供后续“已回落/部分回落”日志复用。
+     */
+    private fun updateNonHeapGrowthTrackers(growthEntries: List<NonHeapGrowth>) {
+        growthEntries.forEach { growth ->
+            val tracker = nonHeapGrowthTrackersByPoolName[growth.poolName]
+            if (tracker == null) {
+                nonHeapGrowthTrackersByPoolName[growth.poolName] = NonHeapRollbackTracker(
+                    baselineBytes = growth.previousBytes,
+                    peakBytes = growth.currentBytes,
+                )
+                return@forEach
+            }
+            if (growth.previousBytes < tracker.baselineBytes) {
+                tracker.baselineBytes = growth.previousBytes
+            }
+            if (growth.currentBytes > tracker.peakBytes) {
+                tracker.peakBytes = growth.currentBytes
+                tracker.lastRollbackLoggedAtBytes = null
+            }
+        }
+    }
+
+    /**
+     * 对已记录的突发增长分区判定是否回落，并输出 info 级“已回落/部分回落”提示。
+     */
+    private fun logNonHeapGrowthRollback(currentUsageByPoolNameBytes: Map<String, Long>) {
+        val iterator = nonHeapGrowthTrackersByPoolName.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            val poolName = entry.key
+            val tracker = entry.value
+            val currentBytes = currentUsageByPoolNameBytes[poolName] ?: 0L
+            if (currentBytes >= tracker.peakBytes) {
+                continue
+            }
+            if (tracker.lastRollbackLoggedAtBytes == currentBytes) {
+                continue
+            }
+            val recoveredBytes = tracker.peakBytes - currentBytes
+            if (recoveredBytes < NON_HEAP_GROWTH_LOG_MIN_BYTES) {
+                continue
+            }
+            val totalGrowthBytes = (tracker.peakBytes - tracker.baselineBytes).coerceAtLeast(0L)
+            val remainingBytes = (currentBytes - tracker.baselineBytes).coerceAtLeast(0L)
+            if (remainingBytes <= NON_HEAP_GROWTH_LOG_MIN_BYTES) {
+                logger.info(
+                    "检测到非堆增长已回落: {} 已回落 {}KB (峰值+{}KB, 当前={}KB, 基线={}KB)",
+                    poolName,
+                    recoveredBytes / 1024L,
+                    totalGrowthBytes / 1024L,
+                    currentBytes / 1024L,
+                    tracker.baselineBytes / 1024L,
+                )
+                iterator.remove()
+            } else {
+                logger.info(
+                    "检测到非堆增长部分回落: {} 已回落 {}KB, 仍较基线 +{}KB (峰值+{}KB)",
+                    poolName,
+                    recoveredBytes / 1024L,
+                    remainingBytes / 1024L,
+                    totalGrowthBytes / 1024L,
+                )
+                tracker.lastRollbackLoggedAtBytes = currentBytes
+            }
+        }
+    }
+
+    /**
+     * 同步长期增长告警的状态机，在告警保持或解除后输出“部分回落/已回落”日志。
+     */
+    private fun syncNonHeapLongGrowthRollback(
+        activeEvidenceByArea: Map<String, NonHeapLongGrowthEvidence>,
+        currentUsageByAreaBytes: Map<String, Long>,
+    ) {
+        activeEvidenceByArea.forEach { (areaName, evidence) ->
+            val currentBytes = currentUsageByAreaBytes[areaName] ?: return@forEach
+            val baselineEstimateBytes = (currentBytes - evidence.netIncreaseBytes).coerceAtLeast(0L)
+            val tracker = nonHeapLongGrowthTrackersByArea[areaName]
+            if (tracker == null) {
+                nonHeapLongGrowthTrackersByArea[areaName] = NonHeapRollbackTracker(
+                    baselineBytes = baselineEstimateBytes,
+                    peakBytes = currentBytes,
+                )
+                return@forEach
+            }
+            if (baselineEstimateBytes < tracker.baselineBytes) {
+                tracker.baselineBytes = baselineEstimateBytes
+            }
+            if (currentBytes > tracker.peakBytes) {
+                tracker.peakBytes = currentBytes
+                tracker.lastRollbackLoggedAtBytes = null
+            }
+        }
+
+        val iterator = nonHeapLongGrowthTrackersByArea.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            val areaName = entry.key
+            val tracker = entry.value
+            val currentBytes = currentUsageByAreaBytes[areaName] ?: continue
+            val recoveredBytes = tracker.peakBytes - currentBytes
+            if (recoveredBytes <= 0L) {
+                if (!activeEvidenceByArea.containsKey(areaName) &&
+                    currentBytes <= tracker.baselineBytes + longGrowthRollbackToleranceBytes(areaName)
+                ) {
+                    // 告警已解除且已回到基线容忍范围时，清理状态避免后续重复判定。
+                    iterator.remove()
+                }
+                continue
+            }
+            if (tracker.lastRollbackLoggedAtBytes == currentBytes) {
+                continue
+            }
+            val totalGrowthBytes = (tracker.peakBytes - tracker.baselineBytes).coerceAtLeast(0L)
+            val remainingBytes = (currentBytes - tracker.baselineBytes).coerceAtLeast(0L)
+            val resolved = remainingBytes <= longGrowthRollbackToleranceBytes(areaName)
+            if (resolved) {
+                logger.info(
+                    "检测到非堆长期增长已回落: {} 已回落 {}KB (峰值+{}KB, 当前={}KB, 基线={}KB)",
+                    areaName,
+                    recoveredBytes / 1024L,
+                    totalGrowthBytes / 1024L,
+                    currentBytes / 1024L,
+                    tracker.baselineBytes / 1024L,
+                )
+                iterator.remove()
+            } else {
+                logger.info(
+                    "检测到非堆长期增长部分回落: {} 已回落 {}KB, 仍较基线 +{}KB (峰值+{}KB)",
+                    areaName,
+                    recoveredBytes / 1024L,
+                    remainingBytes / 1024L,
+                    totalGrowthBytes / 1024L,
+                )
+                tracker.lastRollbackLoggedAtBytes = currentBytes
+            }
+        }
+    }
+
+    /**
+     * 长期增长“已回落”判定容忍值按分区区分，避免 Metaspace 与 CodeCache 复用同一阈值造成误判。
+     */
+    private fun longGrowthRollbackToleranceBytes(areaName: String): Long {
+        return if (areaName.equals("CodeCache", ignoreCase = true)) {
+            NON_HEAP_LONG_GROWTH_MAX_RETRACE_CODECACHE_BYTES
+        } else {
+            NON_HEAP_LONG_GROWTH_MAX_RETRACE_METASPACE_BYTES
         }
     }
 
@@ -1824,6 +1997,15 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val netIncreaseBytes: Long,
         val maxRetraceBytes: Long,
         val durationMillis: Long,
+    )
+
+    /**
+     * 非堆增长回落追踪状态，统一复用于“突发增长”与“长期增长”两类恢复日志。
+     */
+    private data class NonHeapRollbackTracker(
+        var baselineBytes: Long,
+        var peakBytes: Long,
+        var lastRollbackLoggedAtBytes: Long? = null,
     )
 
     /**
