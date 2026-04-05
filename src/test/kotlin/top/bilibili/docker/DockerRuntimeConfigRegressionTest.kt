@@ -26,16 +26,20 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
-    fun `docker compose should cap swap usage to container memory hard limit`() {
+    fun `docker compose should not enforce hard memory limit by default`() {
         val compose = read("docker-compose.yml")
 
-        assertTrue(
+        assertFalse(
             compose.contains("mem_limit: 512m"),
-            "docker-compose should define a concrete memory hard limit for local runtime",
+            "docker-compose should not keep fixed mem_limit=512m hard cap by default",
         )
-        assertTrue(
+        assertFalse(
             compose.contains("memswap_limit: 512m"),
-            "docker-compose should cap swap to the same value as memory hard limit",
+            "docker-compose should not keep fixed memswap_limit=512m hard cap by default",
+        )
+        assertFalse(
+            compose.contains("memory: 512M"),
+            "docker-compose should not keep deploy memory=512M hard cap by default",
         )
         // /dev/shm 需要显式配置，避免渲染路径落回 Docker 默认 64MB 造成共享内存瓶颈。
         assertTrue(
@@ -84,28 +88,28 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
-    fun `docker runtime should pin a 512mb memory budget and align non heap caps to first five hour beta evidence`() {
+    fun `docker runtime should avoid fixed 512mb jvm maxram budget`() {
         val dockerfile = read("Dockerfile")
 
-        // 镜像侧需要固定 512MB 预算基线，确保 JVM 自适应参数不会越过容器硬限制预期。
-        assertTrue(
+        // Docker 默认不再强制 512MB 预算基线，保留 JVM 按运行环境自适应。
+        assertFalse(
             dockerfile.contains("-XX:MaxRAM=512m"),
-            "Dockerfile should pin JVM MaxRAM to 512m for container budget alignment",
+            "Dockerfile should remove fixed JVM MaxRAM=512m budget",
         )
-        // beta 日志前5小时峰值 Metaspace=32MB，容器侧建议保留约 1.5x 余量到 48MB。
+        // Metaspace 仍维持上限，避免类元数据膨胀导致长期 RSS 抖动。
         assertTrue(
             dockerfile.contains("-XX:MaxMetaspaceSize=48m"),
-            "Dockerfile should cap MaxMetaspaceSize to 48m based on first-5-hour beta peak and safety margin",
+            "Dockerfile should keep MaxMetaspaceSize guardrail for long-running stability",
         )
-        // beta 日志前5小时峰值 CodeCache=21MB，容器侧建议限制在 32MB。
+        // CodeCache 仍维持上限，避免低并发场景无效膨胀。
         assertTrue(
             dockerfile.contains("-XX:ReservedCodeCacheSize=32m"),
-            "Dockerfile should cap ReservedCodeCacheSize to 32m for the 512MB runtime budget",
+            "Dockerfile should keep ReservedCodeCacheSize guardrail for long-running stability",
         )
-        // Skia native 缓存应收紧到 48MB，减少未被 NMT 归类 native 区增长空间。
+        // Skia 缓存上限继续保留，避免 native 缓存无界增长。
         assertTrue(
             dockerfile.contains("-Dskiko.resourceCache.maxBytes=50331648"),
-            "Dockerfile should set skiko.resourceCache.maxBytes to 48MB under the 512MB memory budget",
+            "Dockerfile should keep skiko.resourceCache.maxBytes guardrail for native memory stability",
         )
     }
 
@@ -221,26 +225,22 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
-    fun `docker entrypoint should enforce cgroup memory budget and keep watchdog below 512mb hard cap`() {
+    fun `docker entrypoint should not enforce fixed cgroup memory budget by default`() {
         val entrypoint = read("docker-entrypoint.sh")
 
-        // 入口脚本需要主动校验 cgroup 内存限制，避免容器被以无限制方式启动。
-        assertTrue(
-            entrypoint.contains("read_cgroup_memory_limit_mb()"),
-            "docker-entrypoint should define read_cgroup_memory_limit_mb to detect cgroup memory limit",
-        )
-        assertTrue(
+        // 入口脚本不应默认拒绝无限制容器启动，由部署侧按需设置资源限制。
+        assertFalse(
             entrypoint.contains("enforce_container_memory_budget()"),
-            "docker-entrypoint should enforce the configured container memory budget before launching Java",
+            "docker-entrypoint should remove fixed cgroup budget enforcement by default",
         )
-        assertTrue(
+        assertFalse(
             entrypoint.contains("CONTAINER_MEMORY_LIMIT_MB"),
-            "docker-entrypoint should support CONTAINER_MEMORY_LIMIT_MB budget configuration",
+            "docker-entrypoint should remove fixed container memory budget env dependency by default",
         )
-        // watchdog 阈值需明确低于 512MB，保留 OOM 前缓冲空间。
-        assertTrue(
+        // 不应保留绑定 512MB 预算的 watchdog 默认阈值。
+        assertFalse(
             entrypoint.contains("MEMORY_THRESHOLD_MB:-460"),
-            "docker-entrypoint should default watchdog threshold to 460MB under the 512MB budget",
+            "docker-entrypoint should not keep 460MB watchdog default bound to 512MB budget",
         )
     }
 }

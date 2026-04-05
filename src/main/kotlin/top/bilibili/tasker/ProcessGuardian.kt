@@ -61,12 +61,17 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private const val METASPACE_LIMIT_MB = 48L
     private const val CODECACHE_LIMIT_MB = 32L
     private const val NON_HEAP_WARNING_THRESHOLD = 0.8  // 80%
+    private const val NON_HEAP_GROWTH_LOG_MIN_BYTES = 8L * 1024L
+    private const val NON_HEAP_GROWTH_BURST_WARN_BYTES = 256L * 1024L
     private const val NON_HEAP_TREND_MAX_SAMPLES = 240
     private const val NON_HEAP_WARMUP_WINDOW_SAMPLES = 20
-    private const val NON_HEAP_WARMUP_STABLE_DRIFT_BYTES = 512L * 1024L
+    private const val NON_HEAP_WARMUP_STABLE_DRIFT_BYTES = 256L * 1024L
+    private const val NON_HEAP_WARMUP_MAX_NET_GROWTH_BYTES = 128L * 1024L
     private const val NON_HEAP_LONG_GROWTH_WINDOW_SAMPLES = 40
-    private const val NON_HEAP_LONG_GROWTH_MIN_INCREASE_BYTES = 1024L * 1024L
-    private const val NON_HEAP_LONG_GROWTH_MAX_RETRACE_BYTES = 64L * 1024L
+    private const val NON_HEAP_LONG_GROWTH_MIN_INCREASE_METASPACE_BYTES = 256L * 1024L
+    private const val NON_HEAP_LONG_GROWTH_MIN_INCREASE_CODECACHE_BYTES = 768L * 1024L
+    private const val NON_HEAP_LONG_GROWTH_MAX_RETRACE_METASPACE_BYTES = 128L * 1024L
+    private const val NON_HEAP_LONG_GROWTH_MAX_RETRACE_CODECACHE_BYTES = 256L * 1024L
     private const val NATIVE_MEMORY_SAMPLE_INTERVAL_MS = 10 * 60 * 1000L
     private const val NATIVE_MEMORY_COMMAND_TIMEOUT_MS = 5_000L
     private const val NATIVE_MEMORY_DESTROY_WAIT_MS = 500L
@@ -300,11 +305,17 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 "${growth.poolName} +${growth.deltaBytes / 1024L}KB " +
                     "(from ${growth.previousBytes / 1024L}KB to ${growth.currentBytes / 1024L}KB)"
             }
-            report.hasNonHeapIssue = true
-            report.hasNonHeapGrowthIssue = true
+            val hasBurstGrowth = nonHeapGrowthEntries.any { growth -> growth.deltaBytes >= NON_HEAP_GROWTH_BURST_WARN_BYTES }
             report.nonHeapGrowthDetails = nonHeapGrowthDetails
-            report.nonHeapIssueDetails.addAll(nonHeapGrowthDetails.map { detail -> "非堆增长: $detail" })
-            logger.warn("检测到非堆增长: {}", nonHeapGrowthDetails)
+            if (!nonHeapWarmupCompleted || hasBurstGrowth) {
+                report.hasNonHeapIssue = true
+                report.hasNonHeapGrowthIssue = true
+                report.nonHeapIssueDetails.addAll(nonHeapGrowthDetails.map { detail -> "非堆增长: $detail" })
+                logger.warn("检测到非堆增长: {}", nonHeapGrowthDetails)
+            } else {
+                // 预热完成后允许小幅抖动，避免把 JVM 正常的细粒度提交噪音升级为告警。
+                logger.debug("预热完成后检测到小幅非堆波动: {}", nonHeapGrowthDetails)
+            }
         }
         lastNonHeapUsedByPoolNameBytes = currentNonHeapUsedByPoolNameBytes
         // 在同一采样窗口内维护“预热完成 -> 长期增长”状态机，避免仅凭单次增长就误报长期风险。
@@ -342,7 +353,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             .mapNotNull { (poolName, currentUsedBytes) ->
                 val previousUsedBytes = previousUsageByPoolNameBytes[poolName] ?: 0L
                 val deltaBytes = currentUsedBytes - previousUsedBytes
-                if (deltaBytes > 0L) {
+                if (deltaBytes >= NON_HEAP_GROWTH_LOG_MIN_BYTES) {
                     NonHeapGrowth(
                         poolName = poolName,
                         deltaBytes = deltaBytes,
@@ -382,19 +393,29 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val warmupCodeDriftBytes = if (warmupWindow.isEmpty()) 0L else {
             warmupWindow.maxOf { entry -> entry.codeCacheUsedBytes } - warmupWindow.minOf { entry -> entry.codeCacheUsedBytes }
         }
+        val warmupMetaNetGrowthBytes = if (warmupWindow.size < 2) 0L else {
+            (warmupWindow.last().metaspaceUsedBytes - warmupWindow.first().metaspaceUsedBytes).coerceAtLeast(0L)
+        }
+        val warmupCodeNetGrowthBytes = if (warmupWindow.size < 2) 0L else {
+            (warmupWindow.last().codeCacheUsedBytes - warmupWindow.first().codeCacheUsedBytes).coerceAtLeast(0L)
+        }
 
         if (!nonHeapWarmupCompleted &&
             samples.size >= NON_HEAP_WARMUP_WINDOW_SAMPLES &&
             warmupMetaDriftBytes <= NON_HEAP_WARMUP_STABLE_DRIFT_BYTES &&
-            warmupCodeDriftBytes <= NON_HEAP_WARMUP_STABLE_DRIFT_BYTES
+            warmupCodeDriftBytes <= NON_HEAP_WARMUP_STABLE_DRIFT_BYTES &&
+            warmupMetaNetGrowthBytes <= NON_HEAP_WARMUP_MAX_NET_GROWTH_BYTES &&
+            warmupCodeNetGrowthBytes <= NON_HEAP_WARMUP_MAX_NET_GROWTH_BYTES
         ) {
             nonHeapWarmupCompleted = true
             nonHeapWarmupCompletedAtMillis = sample.sampledAtMillis
             logger.info(
-                "非堆预热完成: window={} samples, metaspaceDrift={}KB, codeCacheDrift={}KB",
+                "非堆预热完成: window={} samples, metaspaceDrift={}KB, codeCacheDrift={}KB, metaspaceNet={}KB, codeCacheNet={}KB",
                 NON_HEAP_WARMUP_WINDOW_SAMPLES,
                 warmupMetaDriftBytes / 1024L,
                 warmupCodeDriftBytes / 1024L,
+                warmupMetaNetGrowthBytes / 1024L,
+                warmupCodeNetGrowthBytes / 1024L,
             )
         }
 
@@ -406,6 +427,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             report.nonHeapTrendDetails = listOf(
                 "预热状态: 进行中 (samples=${samples.size}/${NON_HEAP_WARMUP_WINDOW_SAMPLES}, missing=$missingSamples)",
                 "预热窗口波动: Metaspace=${warmupMetaDriftBytes / 1024L}KB, CodeCache=${warmupCodeDriftBytes / 1024L}KB, 阈值=${NON_HEAP_WARMUP_STABLE_DRIFT_BYTES / 1024L}KB",
+                "预热窗口净增长: Metaspace=${warmupMetaNetGrowthBytes / 1024L}KB, CodeCache=${warmupCodeNetGrowthBytes / 1024L}KB, 阈值=${NON_HEAP_WARMUP_MAX_NET_GROWTH_BYTES / 1024L}KB",
             )
             report.hasNonHeapLongGrowthIssue = false
             report.nonHeapLongGrowthDetails = emptyList()
@@ -417,15 +439,19 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val metaspaceGrowthEvidence = detectSustainedNonHeapGrowth(
             samples = trendWindow,
             selector = { entry -> entry.metaspaceUsedBytes },
+            minIncreaseBytes = NON_HEAP_LONG_GROWTH_MIN_INCREASE_METASPACE_BYTES,
+            maxRetraceBytesThreshold = NON_HEAP_LONG_GROWTH_MAX_RETRACE_METASPACE_BYTES,
         )
         val codeCacheGrowthEvidence = detectSustainedNonHeapGrowth(
             samples = trendWindow,
             selector = { entry -> entry.codeCacheUsedBytes },
+            minIncreaseBytes = NON_HEAP_LONG_GROWTH_MIN_INCREASE_CODECACHE_BYTES,
+            maxRetraceBytesThreshold = NON_HEAP_LONG_GROWTH_MAX_RETRACE_CODECACHE_BYTES,
         )
 
         report.nonHeapTrendDetails = listOf(
             "预热状态: 已完成 (completedAt=${formatTimestamp(report.nonHeapWarmupCompletedAtMillis)})",
-            "趋势窗口: ${trendWindowSize} samples, 长期增长阈值=${NON_HEAP_LONG_GROWTH_MIN_INCREASE_BYTES / 1024L}KB, 最大回落容忍=${NON_HEAP_LONG_GROWTH_MAX_RETRACE_BYTES / 1024L}KB",
+            "趋势窗口: ${trendWindowSize} samples, Metaspace阈值=${NON_HEAP_LONG_GROWTH_MIN_INCREASE_METASPACE_BYTES / 1024L}KB/回落容忍=${NON_HEAP_LONG_GROWTH_MAX_RETRACE_METASPACE_BYTES / 1024L}KB, CodeCache阈值=${NON_HEAP_LONG_GROWTH_MIN_INCREASE_CODECACHE_BYTES / 1024L}KB/回落容忍=${NON_HEAP_LONG_GROWTH_MAX_RETRACE_CODECACHE_BYTES / 1024L}KB",
         )
 
         val longGrowthDetails = buildList {
@@ -461,6 +487,8 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private fun detectSustainedNonHeapGrowth(
         samples: List<NonHeapTrendSample>,
         selector: (NonHeapTrendSample) -> Long,
+        minIncreaseBytes: Long,
+        maxRetraceBytesThreshold: Long,
     ): NonHeapLongGrowthEvidence? {
         if (samples.size < 2) {
             return null
@@ -468,18 +496,23 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
 
         val values = samples.map(selector)
         val netIncreaseBytes = values.last() - values.first()
-        if (netIncreaseBytes < NON_HEAP_LONG_GROWTH_MIN_INCREASE_BYTES) {
+        if (netIncreaseBytes < minIncreaseBytes) {
             return null
         }
 
+        var peakValue = values.first()
         var maxRetraceBytes = 0L
-        for (index in 1 until values.size) {
-            val deltaBytes = values[index] - values[index - 1]
-            if (deltaBytes < 0L) {
-                maxRetraceBytes = maxOf(maxRetraceBytes, -deltaBytes)
+        values.forEach { currentValue ->
+            if (currentValue >= peakValue) {
+                peakValue = currentValue
+            } else {
+                val retraceBytes = peakValue - currentValue
+                if (retraceBytes > maxRetraceBytes) {
+                    maxRetraceBytes = retraceBytes
+                }
             }
         }
-        if (maxRetraceBytes > NON_HEAP_LONG_GROWTH_MAX_RETRACE_BYTES) {
+        if (maxRetraceBytes > maxRetraceBytesThreshold) {
             return null
         }
 

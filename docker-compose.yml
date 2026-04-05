@@ -34,20 +34,15 @@ services:
     # 网络模式
     network_mode: "bridge"
 
-    # 资源限制 - 基于优化后的内存预算 (目标 300-400MB)
+    # 资源配置 - 默认仅保留 CPU 约束，内存限制由部署侧按需显式配置
     deploy:
       resources:
         limits:
           cpus: '2'
-          memory: 512M    # 硬限制，留有余量
         reservations:
           cpus: '0.5'
-          memory: 256M    # 最小保证
 
-    # 运行时内存与交换区限制（非 Swarm 的 docker compose up 也可生效）
-    # 约束策略: memswap_limit 不高于 mem_limit，避免容器通过 swap 扩张导致长期抖动
-    mem_limit: 512m
-    memswap_limit: 512m
+    # 运行时内存与交换区限制默认不设置，避免在本地环境引入固定 512MB 硬限制
 
     # 共享内存配置（纯软件渲染下仍为图形/native 缓冲预留余量）
     shm_size: 256m
