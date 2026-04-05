@@ -1,7 +1,6 @@
 package top.bilibili.tasker
 
 import top.bilibili.core.BiliBiliBot
-import top.bilibili.BiliConfigManager
 import top.bilibili.api.getLiveStatus
 import top.bilibili.data.LIVE_LINK
 import top.bilibili.data.LiveCloseMessage
@@ -16,7 +15,8 @@ import java.time.Instant
  */
 object LiveCloseCheckTasker : BiliCheckTasker("LiveCloseCheckTasker")  {
 
-    override var interval: Int = BiliConfigManager.config.checkConfig.liveInterval
+    // 下播检测同样复用区间调度；lowSpeedEnable=false 时会固定走 normalRange。
+    override var interval: Int = 60
 
     override var lowSpeedEnable = false
     override var checkReportEnable = false

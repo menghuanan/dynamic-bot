@@ -3,7 +3,6 @@ package top.bilibili.tasker
 import java.io.File
 import java.time.Instant
 import kotlinx.coroutines.withTimeout
-import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
 import top.bilibili.api.getNewDynamic
 import top.bilibili.core.BiliBiliBot
@@ -20,7 +19,8 @@ import top.bilibili.utils.time
  */
 object DynamicCheckTasker : BiliCheckTasker("DynamicCheckTasker") {
 
-    override var interval = BiliConfigManager.config.checkConfig.interval
+    // 真实轮询间隔由 BiliCheckTasker 按 normalRange/lowSpeedRange 动态重算；这里仅保留初始化回退值。
+    override var interval = 60
 
     private val dynamicChannel by BiliBiliBot::dynamicChannel
 

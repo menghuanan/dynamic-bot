@@ -65,49 +65,66 @@ abstract class BiliCheckTasker(
     }
 
     override fun init() {
-        if (lowSpeedEnable) runCatching {
-            // 解析低频时段配置：如 "22-8" 表示晚上10点到早上8点
-            lowSpeedTimeRange = BiliConfigManager.config.checkConfig.lowSpeedTime
-                .split("-").map { it.trim().toInt() }
-
-            // 解析低频间隔范围：如 "60-240"
-            lowSpeedIntervalRange = BiliConfigManager.config.checkConfig.lowSpeedRange
-                .split("-").map { it.trim().toInt() }
-
+        runCatching {
             // 解析正常间隔范围：如 "30-120"
             normalIntervalRange = BiliConfigManager.config.checkConfig.normalRange
                 .split("-").map { it.trim().toInt() }
-
             // 验证配置
-            if (lowSpeedTimeRange.size != 2 || lowSpeedIntervalRange.size != 2 || normalIntervalRange.size != 2) {
-                throw IllegalArgumentException("配置格式错误")
+            if (normalIntervalRange.size != 2) {
+                throw IllegalArgumentException("normalRange 配置格式错误")
             }
-
             // 确保最小间隔至少为30秒
-            if (lowSpeedIntervalRange[0] < 30) {
-                lowSpeedIntervalRange = listOf(30, lowSpeedIntervalRange[1])
-                logger.warn("低频间隔最小值不能小于30秒，已自动调整为30秒")
-            }
             if (normalIntervalRange[0] < 30) {
                 normalIntervalRange = listOf(30, normalIntervalRange[1])
                 logger.warn("正常间隔最小值不能小于30秒，已自动调整为30秒")
             }
-
-            // 检查是否禁用（开始和结束时间相同表示禁用）
-            lowSpeedEnable = lowSpeedTimeRange[0] != lowSpeedTimeRange[1]
-
-            if (lowSpeedEnable) {
-                logger.info("$taskerName 动态轮询已启用：")
-                logger.info("  低频时段：${lowSpeedTimeRange[0]}-${lowSpeedTimeRange[1]} 点，间隔 ${lowSpeedIntervalRange[0]}-${lowSpeedIntervalRange[1]} 秒（随机）")
-                logger.info("  正常时段：${if (lowSpeedTimeRange[0] <= lowSpeedTimeRange[1])
-                    "${lowSpeedTimeRange[1]}-${lowSpeedTimeRange[0]}"
-                    else
-                    "${lowSpeedTimeRange[1]}-${lowSpeedTimeRange[0]}"} 点，间隔 ${normalIntervalRange[0]}-${normalIntervalRange[1]} 秒（随机）")
-            }
         }.onFailure {
-            logger.error("低频检测参数错误: ${it.message}")
-            lowSpeedEnable = false
+            logger.error("正常检测参数错误: ${it.message}")
+            // normalRange 解析失败时回退为当前默认间隔，避免轮询任务因配置错误长时间停滞。
+            val fallback = intervalTime.coerceAtLeast(30)
+            normalIntervalRange = listOf(fallback, fallback)
         }
+
+        if (lowSpeedEnable) {
+            runCatching {
+                // 解析低频时段配置：如 "22-8" 表示晚上10点到早上8点
+                lowSpeedTimeRange = BiliConfigManager.config.checkConfig.lowSpeedTime
+                    .split("-").map { it.trim().toInt() }
+
+                // 解析低频间隔范围：如 "60-240"
+                lowSpeedIntervalRange = BiliConfigManager.config.checkConfig.lowSpeedRange
+                    .split("-").map { it.trim().toInt() }
+
+                // 验证配置
+                if (lowSpeedTimeRange.size != 2 || lowSpeedIntervalRange.size != 2) {
+                    throw IllegalArgumentException("lowSpeed 配置格式错误")
+                }
+
+                // 确保最小间隔至少为30秒
+                if (lowSpeedIntervalRange[0] < 30) {
+                    lowSpeedIntervalRange = listOf(30, lowSpeedIntervalRange[1])
+                    logger.warn("低频间隔最小值不能小于30秒，已自动调整为30秒")
+                }
+
+                // 检查是否禁用（开始和结束时间相同表示禁用）
+                lowSpeedEnable = lowSpeedTimeRange[0] != lowSpeedTimeRange[1]
+
+                if (lowSpeedEnable) {
+                    logger.info("$taskerName 动态轮询已启用：")
+                    logger.info("  低频时段：${lowSpeedTimeRange[0]}-${lowSpeedTimeRange[1]} 点，间隔 ${lowSpeedIntervalRange[0]}-${lowSpeedIntervalRange[1]} 秒（随机）")
+                    logger.info("  正常时段：${if (lowSpeedTimeRange[0] <= lowSpeedTimeRange[1])
+                        "${lowSpeedTimeRange[1]}-${lowSpeedTimeRange[0]}"
+                        else
+                        "${lowSpeedTimeRange[1]}-${lowSpeedTimeRange[0]}"} 点，间隔 ${normalIntervalRange[0]}-${normalIntervalRange[1]} 秒（随机）")
+                }
+            }.onFailure {
+                logger.error("低频检测参数错误: ${it.message}")
+                lowSpeedEnable = false
+            }
+        }
+
+        // 初始化阶段先计算一次间隔，确保首轮执行后的休眠时间也遵循区间配置。
+        interval = calcTime(intervalTime)
     }
 
     override fun before() {
@@ -123,7 +140,7 @@ abstract class BiliCheckTasker(
     }
 
     override fun after() {
-        if (lowSpeedEnable) interval = calcTime(intervalTime)
+        interval = calcTime(intervalTime)
     }
 
     /**
@@ -132,7 +149,8 @@ abstract class BiliCheckTasker(
      * @param time 默认轮询间隔
      */
     private fun calcTime(time: Int): Int {
-        if (!lowSpeedEnable) return time
+        // range 配置异常时回退到默认间隔，避免随机区间非法导致任务中断。
+        val (normalMin, normalMax) = normalizeRange(normalIntervalRange, time)
 
         val hour = LocalTime.now().hour
         val isInLowSpeedPeriod = if (lowSpeedTimeRange[0] > lowSpeedTimeRange[1]) {
@@ -143,21 +161,37 @@ abstract class BiliCheckTasker(
             hour >= lowSpeedTimeRange[0] && hour < lowSpeedTimeRange[1]
         }
 
+        if (!lowSpeedEnable) {
+            // 在未启用低频时段时，统一使用正常时段区间。
+            val randomInterval = (normalMin..normalMax).random()
+            logger.debug("$taskerName 当前低频未启用，下次检查间隔：$randomInterval 秒")
+            return randomInterval
+        }
+
         return if (isInLowSpeedPeriod) {
             // 在低频时段，使用随机间隔
-            val min = lowSpeedIntervalRange[0]
-            val max = lowSpeedIntervalRange[1]
+            val (min, max) = normalizeRange(lowSpeedIntervalRange, normalMin)
             val randomInterval = (min..max).random()
             logger.debug("$taskerName 当前处于低频时段（${hour}点），下次检查间隔：$randomInterval 秒")
             randomInterval
         } else {
             // 在正常时段，使用正常随机间隔
-            val min = normalIntervalRange[0]
-            val max = normalIntervalRange[1]
-            val randomInterval = (min..max).random()
+            val randomInterval = (normalMin..normalMax).random()
             logger.debug("$taskerName 当前处于正常时段（${hour}点），下次检查间隔：$randomInterval 秒")
             randomInterval
         }
+    }
+
+    /**
+     * 归一化区间上下界，自动处理配置缺项、最小值不足和反向区间。
+     */
+    private fun normalizeRange(range: List<Int>, fallback: Int): Pair<Int, Int> {
+        val fallbackValue = fallback.coerceAtLeast(30)
+        val rawMin = range.getOrElse(0) { fallbackValue }
+        val rawMax = range.getOrElse(1) { rawMin }
+        val min = rawMin.coerceAtLeast(30)
+        val max = rawMax.coerceAtLeast(min)
+        return min to max
     }
 
     /**

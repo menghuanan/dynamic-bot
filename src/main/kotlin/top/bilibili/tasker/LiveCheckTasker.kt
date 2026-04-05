@@ -15,7 +15,8 @@ import java.time.Instant
  * 轮询关注列表中的新开播直播并投递到消息流水线。
  */
 object LiveCheckTasker : BiliCheckTasker("LiveCheckTasker") {
-    override var interval = BiliConfigManager.config.checkConfig.liveInterval
+    // 真实轮询间隔由 BiliCheckTasker 按 normalRange/lowSpeedRange 动态重算；这里仅保留初始化回退值。
+    override var interval = 60
     private val liveCloseEnable = BiliConfigManager.config.enableConfig.liveCloseNotifyEnable
 
     private val liveChannel by BiliBiliBot::liveChannel

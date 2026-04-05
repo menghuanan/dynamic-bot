@@ -156,12 +156,10 @@ data class BiliAccountConfig(
 )
 
 /**
- * 动态与直播检测频率配置。
+ * 动态与直播检测频率区间配置。
  */
 @Serializable
 data class CheckConfig(
-    var interval: Int = 15,
-    var liveInterval: Int = 15,
     /** 低频检测时段，格式："开始小时-结束小时"，如 "22-8" 表示晚上10点到早上8点（跨午夜），默认晚22点到早8点为低频时段 */
     var lowSpeedTime: String = "22-8",
     /** 低频检测间隔范围（秒），格式："最小-最大"，如 "60-240" 表示60-240秒随机间隔，默认为正常间隔的2倍 */
