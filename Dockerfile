@@ -76,8 +76,9 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:MetaspaceSize=16m \
     -XX:MaxMetaspaceSize=48m \
     -XX:CompressedClassSpaceSize=16m \
-    -XX:InitialCodeCacheSize=8m \
+    -XX:InitialCodeCacheSize=32m \
     -XX:ReservedCodeCacheSize=32m \
+    -XX:TieredStopAtLevel=1 \
     -XX:+HeapDumpOnOutOfMemoryError \
     -XX:HeapDumpPath=/app/logs/heapdump.hprof \
     -XX:+ExitOnOutOfMemoryError \

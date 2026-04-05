@@ -295,7 +295,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         }
         // 输出 Metaspace / CodeCache 的分区细分，用于定位是单一 code heap 还是总量抬升。
         report.nonHeapBreakdown = nonHeapBreakdown.sortedByDescending { it.usedMB }
-        // 非堆增长按“任意分区正向增长即记点”执行，确保排障不会错过关键时间窗口。
+        // 非堆增长默认按“趋势信号”记录；仅突发增长才升级为异常，避免守护采样形成自激闭环。
         val nonHeapGrowthEntries = detectNonHeapGrowth(
             previousUsageByPoolNameBytes = lastNonHeapUsedByPoolNameBytes,
             currentUsageByPoolNameBytes = currentNonHeapUsedByPoolNameBytes,
@@ -307,14 +307,14 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             }
             val hasBurstGrowth = nonHeapGrowthEntries.any { growth -> growth.deltaBytes >= NON_HEAP_GROWTH_BURST_WARN_BYTES }
             report.nonHeapGrowthDetails = nonHeapGrowthDetails
-            if (!nonHeapWarmupCompleted || hasBurstGrowth) {
+            if (hasBurstGrowth) {
                 report.hasNonHeapIssue = true
                 report.hasNonHeapGrowthIssue = true
                 report.nonHeapIssueDetails.addAll(nonHeapGrowthDetails.map { detail -> "非堆增长: $detail" })
-                logger.warn("检测到非堆增长: {}", nonHeapGrowthDetails)
+                logger.warn("检测到非堆突发增长: {}", nonHeapGrowthDetails)
             } else {
-                // 预热完成后允许小幅抖动，避免把 JVM 正常的细粒度提交噪音升级为告警。
-                logger.debug("预热完成后检测到小幅非堆波动: {}", nonHeapGrowthDetails)
+                // 轻微增长只作为趋势信号，不升级为 issue，避免触发 30 秒一次的高频 NMT 重采样。
+                logger.debug("检测到轻微非堆波动(已降级为趋势信号): {}", nonHeapGrowthDetails)
             }
         }
         lastNonHeapUsedByPoolNameBytes = currentNonHeapUsedByPoolNameBytes
@@ -1736,7 +1736,6 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             return hasTaskerIssue ||
                 hasMemoryIssue ||
                 hasNonHeapIssue ||
-                hasNonHeapGrowthIssue ||
                 hasNonHeapLongGrowthIssue ||
                 hasRssSoftLimitIssue ||
                 hasConnectionIssue ||

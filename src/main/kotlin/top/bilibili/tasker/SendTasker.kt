@@ -468,6 +468,23 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     /**
+     * 复用发送链路中的模板渲染与能力检查逻辑做启动预热，不实际投递到平台侧。
+     *
+     * @param message 预热消息
+     * @param contactStr 目标联系人
+     * @return 预热后得到的最终消息段
+     */
+    suspend fun warmupMessageBuildPath(
+        message: BiliMessage,
+        contactStr: String,
+    ): List<OutgoingPart> {
+        val segments = buildMessageSegments(message, contactStr)
+        val contact = parsePlatformContact(contactStr) ?: return segments
+        // 预热阶段仅覆盖“发送前处理”路径，不触发实际发送。
+        return applyAtAllIfNeeded(contact, contactStr, message, segments)
+    }
+
+    /**
      * 构建 OneBot v11 消息段
      */
     private suspend fun buildMessageSegments(

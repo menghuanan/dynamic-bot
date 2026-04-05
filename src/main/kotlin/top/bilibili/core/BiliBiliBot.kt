@@ -33,6 +33,7 @@ import top.bilibili.service.DefaultMessageGateway
 import top.bilibili.service.FirstRunService
 import top.bilibili.service.MessageEventDispatchService
 import top.bilibili.service.MessageGatewayProvider
+import top.bilibili.service.RuntimeWarmupService
 import top.bilibili.service.StartupDataInitService
 import top.bilibili.service.TaskBootstrapService
 import top.bilibili.service.closeServiceClient
@@ -288,10 +289,12 @@ object BiliBiliBot : CoroutineScope {
 
             startupTaskBootstrapJob = launch {
                 try {
-                    withTimeout(30_000) {
+                    withTimeout(120_000) {
                         // 任务启动放到连接与基础数据之后，可以减少首屏启动时的并发峰值。
                         delay(5_000)
                         TaskBootstrapService.startTasks()
+                        // 在正式流量前预热运行热点，减少首小时内 CodeCache/Metaspace 的持续补增长。
+                        RuntimeWarmupService.warmupOnceAfterStartup()
                         delay(1_000)
                         FirstRunService.checkFirstRun(config)
                     }

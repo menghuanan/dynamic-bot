@@ -162,6 +162,26 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
+    fun `docker runtime should preallocate code cache and cap tiered compilation level`() {
+        val dockerfile = read("Dockerfile")
+
+        // 预分配 CodeCache 到保留上限，避免运行期渐进扩容造成细粒度 committed 抖动。
+        assertTrue(
+            dockerfile.contains("-XX:InitialCodeCacheSize=32m"),
+            "Dockerfile should preallocate InitialCodeCacheSize to 32m",
+        )
+        assertTrue(
+            dockerfile.contains("-XX:ReservedCodeCacheSize=32m"),
+            "Dockerfile should keep ReservedCodeCacheSize at 32m",
+        )
+        // 分层编译仅保留 C1，可显著降低运行期持续 C2 编译导致的 CodeCache 增量。
+        assertTrue(
+            dockerfile.contains("-XX:TieredStopAtLevel=1"),
+            "Dockerfile should cap tiered compilation with TieredStopAtLevel=1",
+        )
+    }
+
+    @Test
     fun `docker runtime should avoid aggressive jit and overly constrained g1 tuning for small heap`() {
         val dockerfile = read("Dockerfile")
 
