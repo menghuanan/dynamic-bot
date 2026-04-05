@@ -26,20 +26,23 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
-    fun `docker compose should not enforce hard memory limit by default`() {
+    fun `docker compose should enforce hard memory limit by default`() {
         val compose = read("docker-compose.yml")
 
-        assertFalse(
+        // 当前版本默认保留容器 512MB 内存硬限制，确保线上资源预算与本地运行模板一致。
+        assertTrue(
             compose.contains("mem_limit: 512m"),
-            "docker-compose should not keep fixed mem_limit=512m hard cap by default",
+            "docker-compose should keep fixed mem_limit=512m hard cap by default",
         )
+        // deploy 资源限制同样应声明 512MB，避免部署侧只配置了 mem_limit 导致行为不一致。
+        assertTrue(
+            compose.contains("memory: 512m"),
+            "docker-compose should keep deploy memory=512m hard cap by default",
+        )
+        // 当前策略仅约束内存上限，不额外绑定 memswap 限制，避免在不同引擎上触发兼容问题。
         assertFalse(
             compose.contains("memswap_limit: 512m"),
-            "docker-compose should not keep fixed memswap_limit=512m hard cap by default",
-        )
-        assertFalse(
-            compose.contains("memory: 512M"),
-            "docker-compose should not keep deploy memory=512M hard cap by default",
+            "docker-compose should not keep fixed memswap_limit=512m hard cap by default policy",
         )
         // /dev/shm 需要显式配置，避免渲染路径落回 Docker 默认 64MB 造成共享内存瓶颈。
         assertTrue(
