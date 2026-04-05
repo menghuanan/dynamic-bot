@@ -258,7 +258,7 @@ class ProcessGuardianResourceObservabilityTest {
         )
     }
 
-    // 非堆增长告警在后续回落时需要输出 info 级别恢复提示，避免只看到告警而看不到缓解结果。
+    // 非堆增长告警在后续回落时需要输出恢复提示，避免只看到告警而看不到缓解结果。
     @Test
     fun `process guardian should emit rollback info after non heap burst or sustained growth`() {
         val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
@@ -269,7 +269,7 @@ class ProcessGuardianResourceObservabilityTest {
         )
         assertTrue(
             source.contains("检测到非堆增长部分回落"),
-            "ProcessGuardian should log an info message when burst non-heap growth is partially recovered",
+            "ProcessGuardian should log a rollback message when burst non-heap growth is partially recovered",
         )
         assertTrue(
             source.contains("检测到非堆长期增长已回落"),
@@ -277,7 +277,22 @@ class ProcessGuardianResourceObservabilityTest {
         )
         assertTrue(
             source.contains("检测到非堆长期增长部分回落"),
-            "ProcessGuardian should log an info message when sustained non-heap growth is partially recovered",
+            "ProcessGuardian should log a rollback message when sustained non-heap growth is partially recovered",
+        )
+    }
+
+    // 非堆“部分回落”在 30 秒巡检下可能高频抖动，默认应降级到 DEBUG，避免刷屏挤压关键日志。
+    @Test
+    fun `process guardian should downgrade noisy non heap partial rollback logs to debug`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("logger.debug(\n                    \"检测到非堆增长部分回落"),
+            "ProcessGuardian should downgrade burst-growth partial rollback logs to debug",
+        )
+        assertTrue(
+            source.contains("logger.debug(\n                    \"检测到非堆长期增长部分回落"),
+            "ProcessGuardian should downgrade sustained-growth partial rollback logs to debug",
         )
     }
 

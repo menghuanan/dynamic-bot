@@ -527,7 +527,8 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     }
 
     /**
-     * 对已记录的突发增长分区判定是否回落，并输出 info 级“已回落/部分回落”提示。
+     * 对已记录的突发增长分区判定是否回落。
+     * “已回落”保留 info 便于值班快速确认恢复，“部分回落”降级为 debug 避免 30 秒巡检刷屏。
      */
     private fun logNonHeapGrowthRollback(currentUsageByPoolNameBytes: Map<String, Long>) {
         val iterator = nonHeapGrowthTrackersByPoolName.iterator()
@@ -559,7 +560,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 )
                 iterator.remove()
             } else {
-                logger.info(
+                logger.debug(
                     "检测到非堆增长部分回落: {} 已回落 {}KB, 仍较基线 +{}KB (峰值+{}KB)",
                     poolName,
                     recoveredBytes / 1024L,
@@ -572,7 +573,8 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     }
 
     /**
-     * 同步长期增长告警的状态机，在告警保持或解除后输出“部分回落/已回落”日志。
+     * 同步长期增长告警的状态机。
+     * “已回落”保留 info，“部分回落”降级为 debug，避免长期窗口内细碎波动反复打屏。
      */
     private fun syncNonHeapLongGrowthRollback(
         activeEvidenceByArea: Map<String, NonHeapLongGrowthEvidence>,
@@ -631,7 +633,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 )
                 iterator.remove()
             } else {
-                logger.info(
+                logger.debug(
                     "检测到非堆长期增长部分回落: {} 已回落 {}KB, 仍较基线 +{}KB (峰值+{}KB)",
                     areaName,
                     recoveredBytes / 1024L,
