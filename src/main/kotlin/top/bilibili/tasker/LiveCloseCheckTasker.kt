@@ -15,10 +15,8 @@ import java.time.Instant
  */
 object LiveCloseCheckTasker : BiliCheckTasker("LiveCloseCheckTasker")  {
 
-    // 下播检测同样复用区间调度；lowSpeedEnable=false 时会固定走 normalRange。
+    // 下播检测同样复用区间调度，统一遵守 normalRange/lowSpeedRange 配置。
     override var interval: Int = 60
-
-    override var lowSpeedEnable = false
     override var checkReportEnable = false
 
     private val liveUsers by BiliBiliBot::liveUsers

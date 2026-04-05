@@ -61,6 +61,12 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private const val METASPACE_LIMIT_MB = 48L
     private const val CODECACHE_LIMIT_MB = 32L
     private const val NON_HEAP_WARNING_THRESHOLD = 0.8  // 80%
+    private const val NON_HEAP_TREND_MAX_SAMPLES = 240
+    private const val NON_HEAP_WARMUP_WINDOW_SAMPLES = 20
+    private const val NON_HEAP_WARMUP_STABLE_DRIFT_BYTES = 512L * 1024L
+    private const val NON_HEAP_LONG_GROWTH_WINDOW_SAMPLES = 40
+    private const val NON_HEAP_LONG_GROWTH_MIN_INCREASE_BYTES = 1024L * 1024L
+    private const val NON_HEAP_LONG_GROWTH_MAX_RETRACE_BYTES = 64L * 1024L
     private const val NATIVE_MEMORY_SAMPLE_INTERVAL_MS = 10 * 60 * 1000L
     private const val NATIVE_MEMORY_COMMAND_TIMEOUT_MS = 5_000L
     private const val NATIVE_MEMORY_DESTROY_WAIT_MS = 500L
@@ -77,6 +83,9 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private var lastNativeMemorySampleAtMillis = 0L
     private var lastNativeMemorySummary: NativeMemorySummary? = null
     private var lastNonHeapUsedByPoolNameBytes: Map<String, Long> = emptyMap()
+    private val nonHeapTrendSamples = ArrayDeque<NonHeapTrendSample>()
+    private var nonHeapWarmupCompleted = false
+    private var nonHeapWarmupCompletedAtMillis = 0L
     private var lastBusinessOwnerRunTotals: Map<String, Long> = emptyMap()
     private var rssAboveSoftLimitSinceMillis = 0L
     private var lastNormalLogMinute = -1L
@@ -237,6 +246,8 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             .filter { pool -> pool.type == MemoryType.NON_HEAP }
         val nonHeapBreakdown = mutableListOf<NonHeapPartitionUsage>()
         val currentNonHeapUsedByPoolNameBytes = mutableMapOf<String, Long>()
+        var metaspaceUsedBytes = 0L
+        var codeCacheUsedBytes = 0L
 
         for (pool in memoryPools) {
             val usage = pool.usage ?: continue
@@ -261,6 +272,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
 
             when {
                 pool.name.contains("Metaspace", ignoreCase = true) -> {
+                    metaspaceUsedBytes += usage.used
                     report.metaspaceUsedMB = usedMB
                     val ratio = usedMB.toDouble() / METASPACE_LIMIT_MB
                     if (ratio > NON_HEAP_WARNING_THRESHOLD) {
@@ -271,6 +283,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 }
                 pool.name.contains("CodeCache", ignoreCase = true) ||
                 pool.name.contains("CodeHeap", ignoreCase = true) -> {
+                    codeCacheUsedBytes += usage.used
                     report.codeCacheUsedMB += usedMB
                 }
             }
@@ -294,6 +307,12 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             logger.warn("检测到非堆增长: {}", nonHeapGrowthDetails)
         }
         lastNonHeapUsedByPoolNameBytes = currentNonHeapUsedByPoolNameBytes
+        // 在同一采样窗口内维护“预热完成 -> 长期增长”状态机，避免仅凭单次增长就误报长期风险。
+        evaluateNonHeapTrend(
+            report = report,
+            metaspaceUsedBytes = metaspaceUsedBytes,
+            codeCacheUsedBytes = codeCacheUsedBytes,
+        )
 
         // 检查 CodeCache 总量
         val codeCacheRatio = report.codeCacheUsedMB.toDouble() / CODECACHE_LIMIT_MB
@@ -335,6 +354,153 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 }
             }
             .sortedByDescending { growth -> growth.deltaBytes }
+    }
+
+    /**
+     * 维护非堆趋势窗口并识别“预热完成后长期增长且不回落”的风险模式。
+     */
+    private fun evaluateNonHeapTrend(
+        report: MonitorReport,
+        metaspaceUsedBytes: Long,
+        codeCacheUsedBytes: Long,
+    ) {
+        val sample = NonHeapTrendSample(
+            sampledAtMillis = System.currentTimeMillis(),
+            metaspaceUsedBytes = metaspaceUsedBytes,
+            codeCacheUsedBytes = codeCacheUsedBytes,
+        )
+        nonHeapTrendSamples.addLast(sample)
+        while (nonHeapTrendSamples.size > NON_HEAP_TREND_MAX_SAMPLES) {
+            nonHeapTrendSamples.removeFirst()
+        }
+
+        val samples = nonHeapTrendSamples.toList()
+        val warmupWindow = samples.takeLast(minOf(NON_HEAP_WARMUP_WINDOW_SAMPLES, samples.size))
+        val warmupMetaDriftBytes = if (warmupWindow.isEmpty()) 0L else {
+            warmupWindow.maxOf { entry -> entry.metaspaceUsedBytes } - warmupWindow.minOf { entry -> entry.metaspaceUsedBytes }
+        }
+        val warmupCodeDriftBytes = if (warmupWindow.isEmpty()) 0L else {
+            warmupWindow.maxOf { entry -> entry.codeCacheUsedBytes } - warmupWindow.minOf { entry -> entry.codeCacheUsedBytes }
+        }
+
+        if (!nonHeapWarmupCompleted &&
+            samples.size >= NON_HEAP_WARMUP_WINDOW_SAMPLES &&
+            warmupMetaDriftBytes <= NON_HEAP_WARMUP_STABLE_DRIFT_BYTES &&
+            warmupCodeDriftBytes <= NON_HEAP_WARMUP_STABLE_DRIFT_BYTES
+        ) {
+            nonHeapWarmupCompleted = true
+            nonHeapWarmupCompletedAtMillis = sample.sampledAtMillis
+            logger.info(
+                "非堆预热完成: window={} samples, metaspaceDrift={}KB, codeCacheDrift={}KB",
+                NON_HEAP_WARMUP_WINDOW_SAMPLES,
+                warmupMetaDriftBytes / 1024L,
+                warmupCodeDriftBytes / 1024L,
+            )
+        }
+
+        report.nonHeapWarmupCompleted = nonHeapWarmupCompleted
+        report.nonHeapWarmupCompletedAtMillis = nonHeapWarmupCompletedAtMillis.takeIf { value -> value > 0L }
+
+        if (!nonHeapWarmupCompleted) {
+            val missingSamples = (NON_HEAP_WARMUP_WINDOW_SAMPLES - samples.size).coerceAtLeast(0)
+            report.nonHeapTrendDetails = listOf(
+                "预热状态: 进行中 (samples=${samples.size}/${NON_HEAP_WARMUP_WINDOW_SAMPLES}, missing=$missingSamples)",
+                "预热窗口波动: Metaspace=${warmupMetaDriftBytes / 1024L}KB, CodeCache=${warmupCodeDriftBytes / 1024L}KB, 阈值=${NON_HEAP_WARMUP_STABLE_DRIFT_BYTES / 1024L}KB",
+            )
+            report.hasNonHeapLongGrowthIssue = false
+            report.nonHeapLongGrowthDetails = emptyList()
+            return
+        }
+
+        val trendWindowSize = minOf(NON_HEAP_LONG_GROWTH_WINDOW_SAMPLES, samples.size)
+        val trendWindow = samples.takeLast(trendWindowSize)
+        val metaspaceGrowthEvidence = detectSustainedNonHeapGrowth(
+            samples = trendWindow,
+            selector = { entry -> entry.metaspaceUsedBytes },
+        )
+        val codeCacheGrowthEvidence = detectSustainedNonHeapGrowth(
+            samples = trendWindow,
+            selector = { entry -> entry.codeCacheUsedBytes },
+        )
+
+        report.nonHeapTrendDetails = listOf(
+            "预热状态: 已完成 (completedAt=${formatTimestamp(report.nonHeapWarmupCompletedAtMillis)})",
+            "趋势窗口: ${trendWindowSize} samples, 长期增长阈值=${NON_HEAP_LONG_GROWTH_MIN_INCREASE_BYTES / 1024L}KB, 最大回落容忍=${NON_HEAP_LONG_GROWTH_MAX_RETRACE_BYTES / 1024L}KB",
+        )
+
+        val longGrowthDetails = buildList {
+            metaspaceGrowthEvidence?.let { evidence ->
+                add(
+                    "Metaspace 长期增长: +${evidence.netIncreaseBytes / 1024L}KB, " +
+                        "maxRetrace=${evidence.maxRetraceBytes / 1024L}KB, duration=${evidence.durationMillis / 1000L}s",
+                )
+            }
+            codeCacheGrowthEvidence?.let { evidence ->
+                add(
+                    "CodeCache 长期增长: +${evidence.netIncreaseBytes / 1024L}KB, " +
+                        "maxRetrace=${evidence.maxRetraceBytes / 1024L}KB, duration=${evidence.durationMillis / 1000L}s",
+                )
+            }
+        }
+
+        if (longGrowthDetails.isNotEmpty()) {
+            report.hasNonHeapIssue = true
+            report.hasNonHeapLongGrowthIssue = true
+            report.nonHeapLongGrowthDetails = longGrowthDetails
+            report.nonHeapIssueDetails.addAll(longGrowthDetails.map { detail -> "长期增长: $detail" })
+            logger.warn("检测到非堆长期增长: {}", longGrowthDetails)
+        } else {
+            report.hasNonHeapLongGrowthIssue = false
+            report.nonHeapLongGrowthDetails = emptyList()
+        }
+    }
+
+    /**
+     * 在固定趋势窗口内判定目标曲线是否满足“净增长达到阈值且无显著回落”。
+     */
+    private fun detectSustainedNonHeapGrowth(
+        samples: List<NonHeapTrendSample>,
+        selector: (NonHeapTrendSample) -> Long,
+    ): NonHeapLongGrowthEvidence? {
+        if (samples.size < 2) {
+            return null
+        }
+
+        val values = samples.map(selector)
+        val netIncreaseBytes = values.last() - values.first()
+        if (netIncreaseBytes < NON_HEAP_LONG_GROWTH_MIN_INCREASE_BYTES) {
+            return null
+        }
+
+        var maxRetraceBytes = 0L
+        for (index in 1 until values.size) {
+            val deltaBytes = values[index] - values[index - 1]
+            if (deltaBytes < 0L) {
+                maxRetraceBytes = maxOf(maxRetraceBytes, -deltaBytes)
+            }
+        }
+        if (maxRetraceBytes > NON_HEAP_LONG_GROWTH_MAX_RETRACE_BYTES) {
+            return null
+        }
+
+        return NonHeapLongGrowthEvidence(
+            netIncreaseBytes = netIncreaseBytes,
+            maxRetraceBytes = maxRetraceBytes,
+            durationMillis = (samples.last().sampledAtMillis - samples.first().sampledAtMillis).coerceAtLeast(0L),
+        )
+    }
+
+    /**
+     * 将毫秒时间戳格式化为守护日志可读时间，空值场景统一输出未完成状态。
+     */
+    private fun formatTimestamp(epochMillis: Long?): String {
+        if (epochMillis == null || epochMillis <= 0L) {
+            return "未完成"
+        }
+        return java.time.Instant.ofEpochMilli(epochMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDateTime()
+            .format(timeFormatter)
     }
 
     /**
@@ -1190,6 +1356,18 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                         )
                     }
                 }
+                if (report.nonHeapTrendDetails.isNotEmpty() || report.nonHeapLongGrowthDetails.isNotEmpty()) {
+                    writer.println("[非堆趋势]")
+                    report.nonHeapTrendDetails.forEach { detail ->
+                        writer.println("  $detail")
+                    }
+                    if (report.hasNonHeapLongGrowthIssue && report.nonHeapLongGrowthDetails.isNotEmpty()) {
+                        writer.println("  长期增长告警:")
+                        report.nonHeapLongGrowthDetails.forEach { detail ->
+                            writer.println("    - $detail")
+                        }
+                    }
+                }
 
                 // 2.8 进程级资源快照
                 report.processMetrics?.let { process ->
@@ -1466,10 +1644,15 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         // 非堆内存 (Metaspace, CodeCache)
         var hasNonHeapIssue: Boolean = false,
         var hasNonHeapGrowthIssue: Boolean = false,
+        var hasNonHeapLongGrowthIssue: Boolean = false,
         var metaspaceUsedMB: Long = 0,
         var codeCacheUsedMB: Long = 0,
         var nonHeapIssueDetails: MutableList<String> = mutableListOf(),
         var nonHeapGrowthDetails: List<String> = emptyList(),
+        var nonHeapLongGrowthDetails: List<String> = emptyList(),
+        var nonHeapWarmupCompleted: Boolean = false,
+        var nonHeapWarmupCompletedAtMillis: Long? = null,
+        var nonHeapTrendDetails: List<String> = emptyList(),
         var nonHeapBreakdown: List<NonHeapPartitionUsage> = emptyList(),
 
         // 进程 / 线程 / 协程 / Skia 轻量快照
@@ -1521,6 +1704,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 hasMemoryIssue ||
                 hasNonHeapIssue ||
                 hasNonHeapGrowthIssue ||
+                hasNonHeapLongGrowthIssue ||
                 hasRssSoftLimitIssue ||
                 hasConnectionIssue ||
                 hasZombieTaskers ||
@@ -1590,6 +1774,24 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val deltaBytes: Long,
         val previousBytes: Long,
         val currentBytes: Long,
+    )
+
+    /**
+     * 单轮守护采样的非堆总量快照，用于判断预热完成与长期增长趋势。
+     */
+    private data class NonHeapTrendSample(
+        val sampledAtMillis: Long,
+        val metaspaceUsedBytes: Long,
+        val codeCacheUsedBytes: Long,
+    )
+
+    /**
+     * 长期增长判定结果，记录净增长、最大回落和覆盖时长，便于在日志中复核判定依据。
+     */
+    private data class NonHeapLongGrowthEvidence(
+        val netIncreaseBytes: Long,
+        val maxRetraceBytes: Long,
+        val durationMillis: Long,
     )
 
     /**

@@ -220,6 +220,44 @@ class ProcessGuardianResourceObservabilityTest {
         )
     }
 
+    // 非堆排查需要区分“预热期正常上涨”和“预热完成后的长期单调上涨”，避免把启动期噪声误判为长期风险。
+    @Test
+    fun `process guardian should track non heap warmup completion and expose warmup state`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("nonHeapWarmupCompleted"),
+            "ProcessGuardian should persist non-heap warmup completion state in monitor report",
+        )
+        assertTrue(
+            source.contains("NON_HEAP_WARMUP"),
+            "ProcessGuardian should define dedicated non-heap warmup thresholds",
+        )
+        assertTrue(
+            source.contains("[非堆趋势]"),
+            "ProcessGuardian should emit a dedicated non-heap trend section in daemon logs",
+        )
+    }
+
+    // 7x24 运行要求在预热完成后识别“长期增长且不回落”并告警，避免只靠瞬时增长事件判断。
+    @Test
+    fun `process guardian should detect sustained non heap growth after warmup`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("hasNonHeapLongGrowthIssue"),
+            "ProcessGuardian should expose explicit sustained non-heap growth issue flag",
+        )
+        assertTrue(
+            source.contains("NON_HEAP_LONG_GROWTH"),
+            "ProcessGuardian should define dedicated sustained non-heap growth thresholds",
+        )
+        assertTrue(
+            source.contains("长期增长"),
+            "ProcessGuardian should record sustained non-heap growth details in daemon logs",
+        )
+    }
+
     // Linux 上 RSS 增长需要区分匿名页与文件映射页，守护进程应采集 smaps_rollup 的关键分项。
     @Test
     fun `process guardian should collect smaps rollup anonymous file and shmem metrics`() {
