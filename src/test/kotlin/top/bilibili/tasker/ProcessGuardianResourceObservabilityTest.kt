@@ -258,6 +258,25 @@ class ProcessGuardianResourceObservabilityTest {
         )
     }
 
+    // 长期增长告警需要加上使用率门槛与冷却窗口，避免 CodeCache 低占用阶段重复告警刷屏。
+    @Test
+    fun `process guardian should throttle sustained codecache alerts with usage gate and cooldown`() {
+        val source = read("src/main/kotlin/top/bilibili/tasker/ProcessGuardian.kt")
+
+        assertTrue(
+            source.contains("NON_HEAP_LONG_GROWTH_ALERT_MIN_CODECACHE_USAGE_RATIO"),
+            "ProcessGuardian should define a minimum CodeCache usage ratio before sustained-growth alerts",
+        )
+        assertTrue(
+            source.contains("NON_HEAP_LONG_GROWTH_ALERT_COOLDOWN_MS"),
+            "ProcessGuardian should define cooldown interval for sustained-growth alerts",
+        )
+        assertTrue(
+            source.contains("lastNonHeapLongGrowthAlertAtMillisByArea"),
+            "ProcessGuardian should track per-area sustained-growth alert timestamp for cooldown suppression",
+        )
+    }
+
     // 非堆增长告警在后续回落时需要输出恢复提示，避免只看到告警而看不到缓解结果。
     @Test
     fun `process guardian should emit rollback info after non heap burst or sustained growth`() {

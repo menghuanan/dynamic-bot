@@ -214,6 +214,27 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
+    fun `docker runtime should tune jit and code cache flushing for long running noise reduction`() {
+        val dockerfile = read("Dockerfile")
+
+        // 长期运行场景应显式开启 CodeCache flushing，避免编译缓存长期累积后只增不回。
+        assertTrue(
+            dockerfile.contains("-XX:+UseCodeCacheFlushing"),
+            "Dockerfile should explicitly enable UseCodeCacheFlushing for long-running workloads",
+        )
+        // 低并发 bot 无需默认并行编译线程数，限制 CICompilerCount 有助于降低编译突发。
+        assertTrue(
+            dockerfile.contains("-XX:CICompilerCount=2"),
+            "Dockerfile should cap CICompilerCount to reduce low-concurrency compilation bursts",
+        )
+        // 适度提高编译阈值可以减少短生命周期热点过早进入 CodeCache。
+        assertTrue(
+            dockerfile.contains("-XX:CompileThreshold=10000"),
+            "Dockerfile should raise CompileThreshold to reduce short-lived hot-path compilation noise",
+        )
+    }
+
+    @Test
     fun `docker entrypoint should include rss watchdog for self protection under native memory growth`() {
         val entrypoint = read("docker-entrypoint.sh")
 

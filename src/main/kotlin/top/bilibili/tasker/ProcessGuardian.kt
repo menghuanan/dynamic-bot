@@ -69,9 +69,11 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private const val NON_HEAP_WARMUP_MAX_NET_GROWTH_BYTES = 128L * 1024L
     private const val NON_HEAP_LONG_GROWTH_WINDOW_SAMPLES = 40
     private const val NON_HEAP_LONG_GROWTH_MIN_INCREASE_METASPACE_BYTES = 256L * 1024L
-    private const val NON_HEAP_LONG_GROWTH_MIN_INCREASE_CODECACHE_BYTES = 768L * 1024L
+    private const val NON_HEAP_LONG_GROWTH_MIN_INCREASE_CODECACHE_BYTES = 2L * 1024L * 1024L
     private const val NON_HEAP_LONG_GROWTH_MAX_RETRACE_METASPACE_BYTES = 128L * 1024L
-    private const val NON_HEAP_LONG_GROWTH_MAX_RETRACE_CODECACHE_BYTES = 256L * 1024L
+    private const val NON_HEAP_LONG_GROWTH_MAX_RETRACE_CODECACHE_BYTES = 1L * 1024L * 1024L
+    private const val NON_HEAP_LONG_GROWTH_ALERT_MIN_CODECACHE_USAGE_RATIO = 0.6
+    private const val NON_HEAP_LONG_GROWTH_ALERT_COOLDOWN_MS = 60L * 60L * 1000L
     private const val NATIVE_MEMORY_SAMPLE_INTERVAL_MS = 10 * 60 * 1000L
     private const val NATIVE_MEMORY_COMMAND_TIMEOUT_MS = 5_000L
     private const val NATIVE_MEMORY_DESTROY_WAIT_MS = 500L
@@ -95,6 +97,8 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private var nonHeapWarmupCompletedAtMillis = 0L
     // 非堆长期增长追踪：记录 Metaspace/CodeCache 在长期增长告警后的峰值，用于识别回落。
     private val nonHeapLongGrowthTrackersByArea: MutableMap<String, NonHeapRollbackTracker> = mutableMapOf()
+    // 非堆长期增长告警冷却：按分区记录上次告警时间，避免同一分区在短窗口内重复告警刷屏。
+    private val lastNonHeapLongGrowthAlertAtMillisByArea: MutableMap<String, Long> = mutableMapOf()
     private var lastBusinessOwnerRunTotals: Map<String, Long> = emptyMap()
     private var rssAboveSoftLimitSinceMillis = 0L
     private var lastNormalLogMinute = -1L
@@ -484,6 +488,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             metaspaceGrowthEvidence?.let { evidence -> put("Metaspace", evidence) }
             codeCacheGrowthEvidence?.let { evidence -> put("CodeCache", evidence) }
         }
+        val nowMillis = sample.sampledAtMillis
         syncNonHeapLongGrowthRollback(
             activeEvidenceByArea = activeLongGrowthEvidenceByArea,
             currentUsageByAreaBytes = currentUsageByAreaBytes,
@@ -494,58 +499,47 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
             "趋势窗口: ${trendWindowSize} samples, Metaspace阈值=${NON_HEAP_LONG_GROWTH_MIN_INCREASE_METASPACE_BYTES / 1024L}KB/回落容忍=${NON_HEAP_LONG_GROWTH_MAX_RETRACE_METASPACE_BYTES / 1024L}KB, CodeCache阈值=${NON_HEAP_LONG_GROWTH_MIN_INCREASE_CODECACHE_BYTES / 1024L}KB/回落容忍=${NON_HEAP_LONG_GROWTH_MAX_RETRACE_CODECACHE_BYTES / 1024L}KB",
         )
 
-        val longGrowthDetails = buildList {
-            metaspaceGrowthEvidence?.let { evidence ->
-                add(
-                    "Metaspace 较基线 +${evidence.netIncreaseBytes / 1024L}KB " +
-                        "(当前=${evidence.currentBytes / 1024L}KB, 基线=${evidence.baselineBytes / 1024L}KB, " +
-                        "峰值+${(evidence.peakBytes - evidence.baselineBytes).coerceAtLeast(0L) / 1024L}KB, " +
-                        "最大回落=${evidence.maxRetraceBytes / 1024L}KB, 持续=${evidence.durationMillis / 1000L}s)",
+        val longGrowthAlertDetails = mutableListOf<String>()
+        val longGrowthSuppressedDetails = mutableListOf<String>()
+        // 对长期增长证据做“使用率门槛 + 冷却窗口”抑噪，仅对通过门槛的分区升级为告警。
+        activeLongGrowthEvidenceByArea.forEach { (areaName, evidence) ->
+            val detail = buildLongGrowthDetail(areaName, evidence)
+            val alertDecision = shouldEmitNonHeapLongGrowthAlert(
+                areaName = areaName,
+                currentBytes = evidence.currentBytes,
+                nowMillis = nowMillis,
+            )
+            if (alertDecision.shouldAlert) {
+                longGrowthAlertDetails.add(detail)
+                lastNonHeapLongGrowthAlertAtMillisByArea[areaName] = nowMillis
+                logger.warn(
+                    "检测到非堆长期增长: {} 较基线 +{}KB (当前={}KB, 基线={}KB, 峰值+{}KB, 最大回落={}KB, 持续={}s)",
+                    areaName,
+                    evidence.netIncreaseBytes / 1024L,
+                    evidence.currentBytes / 1024L,
+                    evidence.baselineBytes / 1024L,
+                    (evidence.peakBytes - evidence.baselineBytes).coerceAtLeast(0L) / 1024L,
+                    evidence.maxRetraceBytes / 1024L,
+                    evidence.durationMillis / 1000L,
                 )
-            }
-            codeCacheGrowthEvidence?.let { evidence ->
-                add(
-                    "CodeCache 较基线 +${evidence.netIncreaseBytes / 1024L}KB " +
-                        "(当前=${evidence.currentBytes / 1024L}KB, 基线=${evidence.baselineBytes / 1024L}KB, " +
-                        "峰值+${(evidence.peakBytes - evidence.baselineBytes).coerceAtLeast(0L) / 1024L}KB, " +
-                        "最大回落=${evidence.maxRetraceBytes / 1024L}KB, 持续=${evidence.durationMillis / 1000L}s)",
-                )
+            } else {
+                val reason = alertDecision.reason ?: "unknown"
+                longGrowthSuppressedDetails.add("长期增长抑制($areaName): $reason")
+                logger.debug("检测到非堆长期增长但已抑制告警: {} -> {}", areaName, reason)
             }
         }
 
-        if (longGrowthDetails.isNotEmpty()) {
+        if (longGrowthAlertDetails.isNotEmpty()) {
             report.hasNonHeapIssue = true
             report.hasNonHeapLongGrowthIssue = true
-            report.nonHeapLongGrowthDetails = longGrowthDetails
-            report.nonHeapIssueDetails.addAll(longGrowthDetails.map { detail -> "长期增长: $detail" })
-            // 告警日志与回落日志共用“基线/当前/峰值”字段，便于排障时逐行对比。
-            metaspaceGrowthEvidence?.let { evidence ->
-                logger.warn(
-                    "检测到非堆长期增长: {} 较基线 +{}KB (当前={}KB, 基线={}KB, 峰值+{}KB, 最大回落={}KB, 持续={}s)",
-                    "Metaspace",
-                    evidence.netIncreaseBytes / 1024L,
-                    evidence.currentBytes / 1024L,
-                    evidence.baselineBytes / 1024L,
-                    (evidence.peakBytes - evidence.baselineBytes).coerceAtLeast(0L) / 1024L,
-                    evidence.maxRetraceBytes / 1024L,
-                    evidence.durationMillis / 1000L,
-                )
-            }
-            codeCacheGrowthEvidence?.let { evidence ->
-                logger.warn(
-                    "检测到非堆长期增长: {} 较基线 +{}KB (当前={}KB, 基线={}KB, 峰值+{}KB, 最大回落={}KB, 持续={}s)",
-                    "CodeCache",
-                    evidence.netIncreaseBytes / 1024L,
-                    evidence.currentBytes / 1024L,
-                    evidence.baselineBytes / 1024L,
-                    (evidence.peakBytes - evidence.baselineBytes).coerceAtLeast(0L) / 1024L,
-                    evidence.maxRetraceBytes / 1024L,
-                    evidence.durationMillis / 1000L,
-                )
-            }
+            report.nonHeapLongGrowthDetails = longGrowthAlertDetails
+            report.nonHeapIssueDetails.addAll(longGrowthAlertDetails.map { detail -> "长期增长: $detail" })
         } else {
             report.hasNonHeapLongGrowthIssue = false
             report.nonHeapLongGrowthDetails = emptyList()
+        }
+        if (longGrowthSuppressedDetails.isNotEmpty()) {
+            report.nonHeapTrendDetails = report.nonHeapTrendDetails + longGrowthSuppressedDetails
         }
     }
 
@@ -700,6 +694,48 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         } else {
             NON_HEAP_LONG_GROWTH_MAX_RETRACE_METASPACE_BYTES
         }
+    }
+
+    /**
+     * 统一构造长期增长明细，确保 report 中的详情字段与告警日志使用一致的基线/当前/峰值语义。
+     */
+    private fun buildLongGrowthDetail(areaName: String, evidence: NonHeapLongGrowthEvidence): String {
+        return "$areaName 较基线 +${evidence.netIncreaseBytes / 1024L}KB " +
+            "(当前=${evidence.currentBytes / 1024L}KB, 基线=${evidence.baselineBytes / 1024L}KB, " +
+            "峰值+${(evidence.peakBytes - evidence.baselineBytes).coerceAtLeast(0L) / 1024L}KB, " +
+            "最大回落=${evidence.maxRetraceBytes / 1024L}KB, 持续=${evidence.durationMillis / 1000L}s)"
+    }
+
+    /**
+     * 长期增长告警抑噪决策：CodeCache 先过使用率门槛，再经过分区冷却窗口，才升级为 warn。
+     */
+    private fun shouldEmitNonHeapLongGrowthAlert(
+        areaName: String,
+        currentBytes: Long,
+        nowMillis: Long,
+    ): NonHeapLongGrowthAlertDecision {
+        if (areaName.equals("CodeCache", ignoreCase = true)) {
+            val limitBytes = CODECACHE_LIMIT_MB * 1024L * 1024L
+            val usageRatio = if (limitBytes <= 0L) 0.0 else currentBytes.toDouble() / limitBytes.toDouble()
+            if (usageRatio < NON_HEAP_LONG_GROWTH_ALERT_MIN_CODECACHE_USAGE_RATIO) {
+                return NonHeapLongGrowthAlertDecision(
+                    shouldAlert = false,
+                    reason = "CodeCache 使用率 ${(usageRatio * 100).toInt()}% 低于门槛 ${(NON_HEAP_LONG_GROWTH_ALERT_MIN_CODECACHE_USAGE_RATIO * 100).toInt()}%",
+                )
+            }
+        }
+
+        val lastAlertAtMillis = lastNonHeapLongGrowthAlertAtMillisByArea[areaName] ?: 0L
+        if (lastAlertAtMillis > 0L) {
+            val elapsedMillis = nowMillis - lastAlertAtMillis
+            if (elapsedMillis in 0 until NON_HEAP_LONG_GROWTH_ALERT_COOLDOWN_MS) {
+                return NonHeapLongGrowthAlertDecision(
+                    shouldAlert = false,
+                    reason = "告警冷却中，剩余 ${(NON_HEAP_LONG_GROWTH_ALERT_COOLDOWN_MS - elapsedMillis) / 1000L}s",
+                )
+            }
+        }
+        return NonHeapLongGrowthAlertDecision(shouldAlert = true, reason = null)
     }
 
     /**
@@ -2054,6 +2090,14 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val baselineBytes: Long,
         val currentBytes: Long,
         val peakBytes: Long,
+    )
+
+    /**
+     * 长期增长告警抑噪决策结果，区分“可以告警”与“被门槛/冷却抑制”两类路径。
+     */
+    private data class NonHeapLongGrowthAlertDecision(
+        val shouldAlert: Boolean,
+        val reason: String?,
     )
 
     /**

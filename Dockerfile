@@ -78,7 +78,10 @@ ENV JAVA_TOOL_OPTIONS="\
     -XX:CompressedClassSpaceSize=16m \
     -XX:InitialCodeCacheSize=32m \
     -XX:ReservedCodeCacheSize=32m \
+    -XX:+UseCodeCacheFlushing \
     -XX:TieredStopAtLevel=1 \
+    -XX:CICompilerCount=2 \
+    -XX:CompileThreshold=10000 \
     -XX:+HeapDumpOnOutOfMemoryError \
     -XX:HeapDumpPath=/app/logs/heapdump.hprof \
     -XX:+ExitOnOutOfMemoryError \
