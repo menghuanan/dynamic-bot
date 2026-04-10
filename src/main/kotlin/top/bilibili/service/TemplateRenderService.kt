@@ -2,7 +2,6 @@ package top.bilibili.service
 
 import top.bilibili.BiliConfig
 import top.bilibili.BiliConfigManager
-import top.bilibili.BiliData
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.data.BiliMessage
@@ -10,7 +9,6 @@ import top.bilibili.data.DynamicMessage
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
 import top.bilibili.utils.ImageCache
-import top.bilibili.utils.normalizeContactSubject
 
 /**
  * 将模板和业务消息拼装成最终消息段，避免推送任务重复实现模板渲染细节。
@@ -30,9 +28,9 @@ object TemplateRenderService {
 
         return try {
             val template = overrideTemplate ?: when (message) {
-                is DynamicMessage -> resolveTemplate(config, contactStr, message.mid, "dynamic")
-                is LiveMessage -> resolveTemplate(config, contactStr, message.mid, "live")
-                is LiveCloseMessage -> resolveTemplate(config, contactStr, message.mid, "liveClose")
+                is DynamicMessage -> resolveDefaultTemplate(config, "dynamic")
+                is LiveMessage -> resolveDefaultTemplate(config, "live")
+                is LiveCloseMessage -> resolveDefaultTemplate(config, "liveClose")
             }
 
             val messageParts = template.split("\r")
@@ -64,35 +62,17 @@ object TemplateRenderService {
         }
     }
 
-    private fun resolveTemplate(config: BiliConfig, contactStr: String, mid: Long, type: String): String {
-        val data = BiliData
-        val normalizedContact = normalizeContactSubject(contactStr) ?: contactStr
-
-        val templateMap = when (type) {
-            "dynamic" -> data.dynamicPushTemplate
-            "live" -> data.livePushTemplate
-            "liveClose" -> data.liveCloseTemplate
-            else -> return ""
-        }
-
-        val uidTemplate = when (type) {
-            "dynamic" -> data.dynamicPushTemplateByUid[normalizedContact]?.get(mid)
-            "live" -> data.livePushTemplateByUid[normalizedContact]?.get(mid)
-            "liveClose" -> data.liveCloseTemplateByUid[normalizedContact]?.get(mid)
-            else -> null
-        }
-
-        val customTemplate = templateMap.entries.find { (_, contacts) ->
-            normalizedContact in contacts
-        }?.key
-
-        val templateName = uidTemplate ?: customTemplate ?: when (type) {
+    /**
+     * 在没有显式模板正文时，仅按全局默认模板读取正文。
+     * 模板策略选择已经上移到发送链路，这里不再读取旧绑定结构。
+     */
+    private fun resolveDefaultTemplate(config: BiliConfig, type: String): String {
+        val templateName = when (type) {
             "dynamic" -> config.templateConfig.defaultDynamicPush
             "live" -> config.templateConfig.defaultLivePush
             "liveClose" -> config.templateConfig.defaultLiveClose
             else -> "OneMsg"
         }
-
         return when (type) {
             "dynamic" -> config.templateConfig.dynamicPush[templateName] ?: "{draw}\n{name}@{type}\n{link}"
             "live" -> config.templateConfig.livePush[templateName] ?: "{draw}\n{name}@直播\n{link}"

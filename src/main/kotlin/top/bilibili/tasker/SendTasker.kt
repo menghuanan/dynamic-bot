@@ -9,6 +9,7 @@ import top.bilibili.BiliData
 import top.bilibili.DynamicFilter
 import top.bilibili.DynamicFilterType
 import top.bilibili.FilterMode
+import top.bilibili.SubData
 import top.bilibili.connector.CapabilityGuard
 import top.bilibili.connector.CapabilityGuardResult
 import top.bilibili.connector.OutgoingPart
@@ -22,9 +23,13 @@ import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
 import top.bilibili.data.DynamicType
 import top.bilibili.service.AtAllService
+import top.bilibili.service.SelectedTemplate
+import top.bilibili.service.TemplateSelectionService
 import top.bilibili.service.TemplateRenderService
 import top.bilibili.utils.actionNotify
+import top.bilibili.utils.normalizeContactSubject
 import top.bilibili.utils.parsePlatformContact
+import top.bilibili.utils.subjectsEquivalent
 import top.bilibili.utils.toSubject
 
 /**
@@ -154,6 +159,7 @@ object SendTasker : BiliTasker("SendTasker") {
      * 发送消息到所有订阅者
      */
     private suspend fun sendToSubscribers(message: BiliMessage) {
+        val messageIdentity = buildMessageIdentity(message)
         val dynamicMessage = message as? DynamicMessage
         val isPgcMessage = dynamicMessage != null &&
             (dynamicMessage.type == DynamicType.DYNAMIC_TYPE_PGC || dynamicMessage.type == DynamicType.DYNAMIC_TYPE_PGC_UNION)
@@ -178,51 +184,59 @@ object SendTasker : BiliTasker("SendTasker") {
         // 如果消息已指定联系人，只发送给该联系人
         val specificContact = message.contact
         if (specificContact != null) {
-            BiliBiliBot.logger.info("消息指定了联系人: $specificContact")
-            val contact = parsePlatformContact(specificContact) ?: return
-            if (!shouldSendToContact(message, specificContact)) {
-                BiliBiliBot.logger.info("过滤器已拦截发送到 $specificContact")
-                return
+            try {
+                BiliBiliBot.logger.info("消息指定了联系人: $specificContact")
+                val contact = parsePlatformContact(specificContact) ?: return
+                if (!shouldSendToContact(message, specificContact)) {
+                    BiliBiliBot.logger.info("过滤器已拦截发送到 $specificContact")
+                    return
+                }
+                val segments = buildMessageSegments(message, specificContact, dynamicSub, messageIdentity)
+                val finalSegments = applyAtAllIfNeeded(contact, specificContact, message, segments)
+                messageQueue.send(contact to finalSegments)
+            } finally {
+                TemplateSelectionService.clearBatchSelections(messageIdentity)
             }
-            val segments = buildMessageSegments(message, specificContact)
-            val finalSegments = applyAtAllIfNeeded(contact, specificContact, message, segments)
-            messageQueue.send(contact to finalSegments)
             return
         }
 
-        // 发送给所有订阅该用户的联系人
-        for (contactStr in contacts) {
-            try {
-                BiliBiliBot.logger.info("处理联系人: $contactStr")
-                val contact = parsePlatformContact(contactStr) ?: continue
+        try {
+            // 发送给所有订阅该用户的联系人
+            for (contactStr in contacts) {
+                try {
+                    BiliBiliBot.logger.info("处理联系人: $contactStr")
+                    val contact = parsePlatformContact(contactStr) ?: continue
 
-                // 检查是否被禁用
-                if (banList.contains(contactStr)) {
-                    BiliBiliBot.logger.debug("联系人 $contactStr 已禁用推送")
-                    continue
+                    // 检查是否被禁用
+                    if (banList.contains(contactStr)) {
+                        BiliBiliBot.logger.debug("联系人 $contactStr 已禁用推送")
+                        continue
+                    }
+
+                    if (!shouldSendToContact(message, contactStr)) {
+                        BiliBiliBot.logger.debug("过滤器已拦截发送到 $contactStr")
+                        continue
+                    }
+
+                    // 发送链路先解析模板策略，再把模板正文交给渲染层，避免渲染层继续读取旧绑定结构。
+                    val segments = buildMessageSegments(message, contactStr, dynamicSub, messageIdentity)
+                    BiliBiliBot.logger.info("为联系人 $contactStr 构建了 ${segments.size} 个消息段")
+
+                    val finalSegments = applyAtAllIfNeeded(contact, contactStr, message, segments)
+
+                    // 加入发送队列
+                    messageQueue.send(contact to finalSegments)
+                    BiliBiliBot.logger.info("消息已加入发送队列: {}", contact.toSubject())
+
+                    // 消息间隔
+                    delay(BiliConfigManager.config.pushConfig.messageInterval)
+
+                } catch (e: Exception) {
+                    BiliBiliBot.logger.error("处理联系人 $contactStr 时出错: ${e.message}", e)
                 }
-
-                if (!shouldSendToContact(message, contactStr)) {
-                    BiliBiliBot.logger.debug("过滤器已拦截发送到 $contactStr")
-                    continue
-                }
-
-                // 构建消息段
-                val segments = buildMessageSegments(message, contactStr)
-                BiliBiliBot.logger.info("为联系人 $contactStr 构建了 ${segments.size} 个消息段")
-
-                val finalSegments = applyAtAllIfNeeded(contact, contactStr, message, segments)
-
-                // 加入发送队列
-                messageQueue.send(contact to finalSegments)
-                BiliBiliBot.logger.info("消息已加入发送队列: {}", contact.toSubject())
-
-                // 消息间隔
-                delay(BiliConfigManager.config.pushConfig.messageInterval)
-
-            } catch (e: Exception) {
-                BiliBiliBot.logger.error("处理联系人 $contactStr 时出错: ${e.message}", e)
             }
+        } finally {
+            TemplateSelectionService.clearBatchSelections(messageIdentity)
         }
     }
 
@@ -478,7 +492,12 @@ object SendTasker : BiliTasker("SendTasker") {
         message: BiliMessage,
         contactStr: String,
     ): List<OutgoingPart> {
-        val segments = buildMessageSegments(message, contactStr)
+        val segments = buildMessageSegments(
+            message = message,
+            contactStr = contactStr,
+            subData = BiliData.dynamic[message.mid],
+            messageIdentity = buildMessageIdentity(message),
+        )
         val contact = parsePlatformContact(contactStr) ?: return segments
         // 预热阶段仅覆盖“发送前处理”路径，不触发实际发送。
         return applyAtAllIfNeeded(contact, contactStr, message, segments)
@@ -489,10 +508,74 @@ object SendTasker : BiliTasker("SendTasker") {
      */
     private suspend fun buildMessageSegments(
         message: BiliMessage,
-        contactStr: String
+        contactStr: String,
+        subData: SubData?,
+        messageIdentity: String,
     ): List<OutgoingPart> {
-        // 消息模板渲染统一下沉到服务层，避免发送链路和命令链路各自维护一套拼装逻辑。
-        return TemplateRenderService.buildSegments(message, contactStr)
+        val normalizedContact = normalizeContactSubject(contactStr) ?: contactStr
+        val selectedTemplate = selectTemplateForContact(message, normalizedContact, subData, messageIdentity)
+        // 消息模板渲染统一下沉到服务层，发送链路只负责确定“用哪个模板正文”。
+        return TemplateRenderService.buildSegments(message, normalizedContact, selectedTemplate.templateContent)
+    }
+
+    /**
+     * 根据联系人命中的 direct / groupRef 作用域选择模板。
+     * 同一联系人可能同时属于多个 groupRef，这里把候选范围交给选择服务统一处理。
+     */
+    private fun selectTemplateForContact(
+        message: BiliMessage,
+        normalizedContact: String,
+        subData: SubData?,
+        messageIdentity: String,
+    ): SelectedTemplate {
+        val groupScopes = subData?.sourceRefs
+            ?.mapNotNull { sourceRef -> parseGroupScopeForContact(sourceRef, normalizedContact) }
+            ?.distinct()
+            .orEmpty()
+        return TemplateSelectionService.selectTemplate(
+            type = messageType(message),
+            uid = message.mid,
+            directScope = "contact:$normalizedContact",
+            groupScopes = groupScopes,
+            messageIdentity = messageIdentity,
+        )
+    }
+
+    /**
+     * 解析当前联系人是否命中某个 groupRef 来源。
+     * 只有当联系人确实属于该分组时，才将其视为模板候选 scope。
+     */
+    private fun parseGroupScopeForContact(sourceRef: String, normalizedContact: String): String? {
+        if (!sourceRef.startsWith("groupRef:")) return null
+        val groupName = sourceRef.removePrefix("groupRef:").takeIf { it.isNotBlank() } ?: return null
+        val matched = BiliData.group[groupName]?.contacts?.any { subject ->
+            subjectsEquivalent(subject, normalizedContact)
+        } == true
+        return if (matched) "groupRef:$groupName" else null
+    }
+
+    /**
+     * 将消息模型映射为模板策略类型。
+     * 选择服务和渲染层共享这一口径，避免同一消息在不同链路命中不同模板池。
+     */
+    private fun messageType(message: BiliMessage): String {
+        return when (message) {
+            is DynamicMessage -> "dynamic"
+            is LiveMessage -> "live"
+            is LiveCloseMessage -> "liveClose"
+        }
+    }
+
+    /**
+     * 为单条消息构造稳定的批次标识。
+     * 该标识用于同分组同批次复用随机模板，并在批次结束后清理临时缓存。
+     */
+    private fun buildMessageIdentity(message: BiliMessage): String {
+        return when (message) {
+            is DynamicMessage -> "dynamic:${message.did}"
+            is LiveMessage -> "live:${message.rid}:${message.timestamp}"
+            is LiveCloseMessage -> "liveClose:${message.rid}:${message.timestamp}"
+        }
     }
 }
 

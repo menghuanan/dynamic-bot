@@ -47,6 +47,17 @@ object TemplateSelectionService {
     }
 
     /**
+     * 清理单次消息发送留下的分组批次缓存。
+     * 发送链路在一个批次结束后调用此入口，避免随机复用状态跨消息堆积。
+     */
+    fun clearBatchSelections(messageIdentity: String) {
+        val suffix = "|$messageIdentity"
+        batchTemplateByMessageKey.keys
+            .filter { key -> key.endsWith(suffix) }
+            .forEach { key -> batchTemplateByMessageKey.remove(key) }
+    }
+
+    /**
      * 按选择顺序解析命中的策略。
      * 多个 group scope 同时命中时固定按字典序取第一个，避免发送结果不稳定。
      */
