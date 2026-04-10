@@ -1,8 +1,11 @@
 package top.bilibili
 
+import com.charleskorn.kaml.Yaml
+import kotlinx.serialization.encodeToString
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class BiliDataWrapperFeatureTest {
@@ -19,27 +22,31 @@ class BiliDataWrapperFeatureTest {
     }
 
     @Test
-    fun `wrapper roundtrip should preserve template and atall uid maps`() {
-        val subject = "group:10001"
+    fun `wrapper serialization should omit legacy template maps`() {
         val uid = 123456L
+        val yaml = Yaml(
+            configuration = Yaml.default.configuration.copy(
+                strictMode = false,
+            ),
+        )
 
-        BiliData.dynamicPushTemplateByUid[subject] = mutableMapOf(uid to "OneMsg")
-        BiliData.livePushTemplateByUid[subject] = mutableMapOf(uid to "DrawOnly")
-        BiliData.liveCloseTemplateByUid[subject] = mutableMapOf(uid to "SimpleMsg")
-        BiliData.atAll[subject] = mutableMapOf(uid to mutableSetOf(AtAllType.LIVE))
+        BiliData.dynamicPushTemplate["OneMsg"] = mutableSetOf("onebot11:group:10001")
+        BiliData.dynamicPushTemplateByUid["onebot11:group:10001"] = mutableMapOf(uid to "TwoMsg")
+        BiliData.dynamicTemplatePolicyByScope["contact:onebot11:group:10001"] = mutableMapOf(
+            uid to TemplatePolicy(templates = mutableListOf("OneMsg")),
+        )
+        BiliData.atAll["onebot11:group:10001"] = mutableMapOf(uid to mutableSetOf(AtAllType.LIVE))
 
-        val wrapper = BiliDataWrapper.from(BiliData)
-        BiliData.dynamicPushTemplateByUid = mutableMapOf()
-        BiliData.livePushTemplateByUid = mutableMapOf()
-        BiliData.liveCloseTemplateByUid = mutableMapOf()
-        BiliData.atAll = mutableMapOf()
+        val serialized = yaml.encodeToString(BiliDataWrapper.from(BiliData))
 
-        BiliDataWrapper.applyTo(wrapper, BiliData)
-
-        assertEquals("OneMsg", BiliData.dynamicPushTemplateByUid[subject]?.get(uid))
-        assertEquals("DrawOnly", BiliData.livePushTemplateByUid[subject]?.get(uid))
-        assertEquals("SimpleMsg", BiliData.liveCloseTemplateByUid[subject]?.get(uid))
-        assertTrue(BiliData.atAll[subject]?.get(uid)?.contains(AtAllType.LIVE) == true)
+        assertFalse(serialized.contains("dynamicPushTemplate:"))
+        assertFalse(serialized.contains("livePushTemplate:"))
+        assertFalse(serialized.contains("liveCloseTemplate:"))
+        assertFalse(serialized.contains("dynamicPushTemplateByUid:"))
+        assertFalse(serialized.contains("livePushTemplateByUid:"))
+        assertFalse(serialized.contains("liveCloseTemplateByUid:"))
+        assertTrue(serialized.contains("dynamicTemplatePolicyByScope:"))
+        assertTrue(serialized.contains("atAll:"))
     }
 
     @Test

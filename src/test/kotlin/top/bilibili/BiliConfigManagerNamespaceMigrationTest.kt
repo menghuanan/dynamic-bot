@@ -1,5 +1,7 @@
 package top.bilibili
 
+import com.charleskorn.kaml.Yaml
+import kotlinx.serialization.encodeToString
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -63,14 +65,14 @@ class BiliConfigManagerNamespaceMigrationTest {
         val changed = migrateViaReflection()
 
         assertTrue(changed, "存在旧联系人目标时，迁移应报告已变更")
-        assertTrue(BiliData.dataVersion >= 3, "命名空间迁移后数据版本应递增")
+        assertTrue(BiliData.dataVersion >= 4, "命名空间迁移后数据版本应递增")
         assertEquals(setOf(migratedSubject, customSubject), BiliData.dynamic[uid]?.contacts?.toSet())
         assertEquals(setOf("direct:$migratedSubject", "groupRef:ops"), BiliData.dynamic[uid]?.sourceRefs?.toSet())
         assertTrue(BiliData.filter.containsKey(migratedSubject))
         assertFalse(BiliData.filter.containsKey(legacySubject))
         assertTrue(customSubject in BiliData.filter.keys, "自定义键应被保留")
-        assertEquals(setOf(migratedSubject, customSubject), BiliData.dynamicPushTemplate["OneMsg"]?.toSet())
-        assertEquals("OneMsg", BiliData.dynamicPushTemplateByUid[migratedSubject]?.get(uid))
+        assertTrue(BiliData.dynamicPushTemplate.isEmpty())
+        assertTrue(BiliData.dynamicPushTemplateByUid.isEmpty())
         assertEquals("#d3edfa", BiliData.dynamicColorByUid[migratedSubject]?.get(uid))
         assertTrue(BiliData.atAll.containsKey(migratedSubject))
         assertEquals(setOf(migratedSubject, customSubject), BiliData.group["ops"]?.contacts?.toSet())
@@ -96,11 +98,57 @@ class BiliConfigManagerNamespaceMigrationTest {
         val contactScope = "contact:$subject"
         assertEquals("TwoMsg", BiliData.dynamicTemplatePolicyByScope[contactScope]?.get(uid)?.templates?.firstOrNull())
         assertFalse(BiliData.dynamicTemplatePolicyByScope[contactScope]?.get(uid)?.randomEnabled == true)
+        assertTrue(BiliData.dynamicPushTemplate.isEmpty())
+        assertTrue(BiliData.dynamicPushTemplateByUid.isEmpty())
+        assertEquals(4, BiliData.dataVersion)
+    }
+
+    @Test
+    fun `load data should upgrade v3 legacy template fields into v4 policy only schema`() {
+        val subject = "onebot11:group:10001"
+        val uid = 123456L
+        val yamlText = """
+            dataVersion: 3
+            dynamic:
+              $uid:
+                name: 测试UP
+                contacts:
+                  - $subject
+                sourceRefs:
+                  - direct:$subject
+            dynamicPushTemplate:
+              OneMsg:
+                - $subject
+            dynamicPushTemplateByUid:
+              $subject:
+                $uid: TwoMsg
+        """.trimIndent()
+
+        val changed = loadFromYamlViaReflection(yamlText)
+        val serialized = Yaml(
+            configuration = Yaml.default.configuration.copy(
+                strictMode = false,
+            ),
+        ).encodeToString(BiliDataWrapper.from(BiliData))
+
+        assertTrue(changed)
+        assertEquals(4, BiliData.dataVersion)
+        assertEquals("TwoMsg", BiliData.dynamicTemplatePolicyByScope["contact:$subject"]?.get(uid)?.templates?.firstOrNull())
+        assertTrue(BiliData.dynamicPushTemplate.isEmpty())
+        assertTrue(BiliData.dynamicPushTemplateByUid.isEmpty())
+        assertFalse(serialized.contains("dynamicPushTemplate:"))
+        assertFalse(serialized.contains("dynamicPushTemplateByUid:"))
     }
 
     private fun migrateViaReflection(): Boolean {
         val method = BiliConfigManager::class.java.getDeclaredMethod("migrateDataIfNeeded", BiliData::class.java)
         method.isAccessible = true
         return method.invoke(BiliConfigManager, BiliData) as Boolean
+    }
+
+    private fun loadFromYamlViaReflection(content: String): Boolean {
+        val method = BiliConfigManager::class.java.getDeclaredMethod("loadDataFromContent", String::class.java, BiliData::class.java)
+        method.isAccessible = true
+        return method.invoke(BiliConfigManager, content, BiliData) as Boolean
     }
 }

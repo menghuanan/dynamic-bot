@@ -17,16 +17,16 @@ object BiliData {
     // key: contact - 动态过滤
     var filter: MutableMap<String, MutableMap<Long, DynamicFilter>> = mutableMapOf()
 
-    // key: template name - 动态推送模板
+    // key: template name - 动态推送模板（仅保留给 dataVersion<4 的兼容读取迁移使用）
     var dynamicPushTemplate: MutableMap<String, MutableSet<String>> = mutableMapOf()
 
-    // key: template name - 直播推送模板
+    // key: template name - 直播推送模板（仅保留给 dataVersion<4 的兼容读取迁移使用）
     var livePushTemplate: MutableMap<String, MutableSet<String>> = mutableMapOf()
 
-    // key: template name - 直播结束模板
+    // key: template name - 直播结束模板（仅保留给 dataVersion<4 的兼容读取迁移使用）
     var liveCloseTemplate: MutableMap<String, MutableSet<String>> = mutableMapOf()
 
-    // key: subject -> uid -> template name（按 UID 绑定模板）
+    // key: subject -> uid -> template name（按 UID 绑定模板，仅保留给 dataVersion<4 的兼容读取迁移使用）
     var dynamicPushTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf()
     var livePushTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf()
     var liveCloseTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf()

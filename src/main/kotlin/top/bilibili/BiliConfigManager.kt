@@ -13,7 +13,7 @@ import java.nio.file.Paths
  */
 object BiliConfigManager {
     private val logger = LoggerFactory.getLogger(BiliConfigManager::class.java)
-    private const val CURRENT_DATA_VERSION = 3
+    private const val CURRENT_DATA_VERSION = 4
 
     lateinit var config: BiliConfig
         private set
@@ -31,6 +31,15 @@ object BiliConfigManager {
         configuration = Yaml.default.configuration.copy(
             strictMode = false,
         ),
+    )
+
+    /**
+     * 仅用于探测数据文件版本号的最小结构。
+     * 先读取版本再选择对应 wrapper，避免旧字段在新版持久化模型里被直接忽略掉。
+     */
+    @kotlinx.serialization.Serializable
+    private data class DataVersionProbe(
+        val dataVersion: Int = 0,
     )
 
     /**
@@ -93,10 +102,7 @@ object BiliConfigManager {
                 return BiliData
             }
 
-            val loadedWrapper = yaml.decodeFromString<BiliDataWrapper>(content)
-            BiliDataWrapper.applyTo(loadedWrapper, BiliData)
-
-            val migrated = migrateDataIfNeeded(BiliData)
+            val migrated = loadDataFromContent(content, BiliData)
             if (migrated) {
                 logger.info("检测到旧版数据结构，已完成迁移并准备写回")
                 saveData(BiliData)
@@ -112,6 +118,32 @@ object BiliConfigManager {
             logger.error("加载数据文件失败，使用默认数据", e)
             BiliData
         }
+    }
+
+    /**
+     * 按 dataVersion 选择合适的读取结构，并在回填后执行迁移。
+     * v4 起只认新的 policy-only 持久化结构，旧版模板绑定字段仅在低版本读取阶段参与迁移。
+     */
+    private fun loadDataFromContent(content: String, targetData: BiliData): Boolean {
+        val dataVersion = readDataVersion(content)
+        if (dataVersion < CURRENT_DATA_VERSION) {
+            val legacyWrapper = yaml.decodeFromString<LegacyBiliDataWrapperV3>(content)
+            LegacyBiliDataWrapperV3.applyTo(legacyWrapper, targetData)
+        } else {
+            val loadedWrapper = yaml.decodeFromString<BiliDataWrapper>(content)
+            BiliDataWrapper.applyTo(loadedWrapper, targetData)
+        }
+        return migrateDataIfNeeded(targetData)
+    }
+
+    /**
+     * 读取数据版本号。
+     * 旧文件缺省 version 时按 0 处理，让迁移链路兜底覆盖最老的结构。
+     */
+    private fun readDataVersion(content: String): Int {
+        return runCatching {
+            yaml.decodeFromString<DataVersionProbe>(content).dataVersion
+        }.getOrDefault(0)
     }
 
     /**
@@ -133,7 +165,10 @@ object BiliConfigManager {
         }
 
         changed = migrateLegacyContactSubjects(data) || changed
-        changed = migrateLegacyTemplatePolicies(data) || changed
+        if (data.dataVersion < 4) {
+            changed = migrateLegacyTemplatePolicies(data) || changed
+            changed = clearLegacyTemplateBindings(data) || changed
+        }
 
         data.dynamic.values.forEach { sub ->
             if (sub.sourceRefs.isEmpty() && sub.contacts.isNotEmpty()) {
@@ -149,6 +184,28 @@ object BiliConfigManager {
         }
 
         return changed
+    }
+
+    /**
+     * 在旧模板绑定迁移完成后清空遗留字段。
+     * 这样 dataVersion 升级后的内存态和持久化态都只保留新的 policy-only 结构。
+     */
+    private fun clearLegacyTemplateBindings(data: BiliData): Boolean {
+        val hadLegacyData = data.dynamicPushTemplate.isNotEmpty() ||
+            data.livePushTemplate.isNotEmpty() ||
+            data.liveCloseTemplate.isNotEmpty() ||
+            data.dynamicPushTemplateByUid.isNotEmpty() ||
+            data.livePushTemplateByUid.isNotEmpty() ||
+            data.liveCloseTemplateByUid.isNotEmpty()
+
+        data.dynamicPushTemplate = mutableMapOf()
+        data.livePushTemplate = mutableMapOf()
+        data.liveCloseTemplate = mutableMapOf()
+        data.dynamicPushTemplateByUid = mutableMapOf()
+        data.livePushTemplateByUid = mutableMapOf()
+        data.liveCloseTemplateByUid = mutableMapOf()
+
+        return hadLegacyData
     }
 
     /**
