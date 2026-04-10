@@ -26,13 +26,6 @@ object TemplateService {
         else -> null
     }
 
-    private fun policyMap(type: String) = when (type) {
-        "d" -> BiliData.dynamicTemplatePolicyByScope
-        "l" -> BiliData.liveTemplatePolicyByScope
-        "le" -> BiliData.liveCloseTemplatePolicyByScope
-        else -> null
-    }
-
     /**
      * 以文本形式列出指定类型模板，便于命令层直接回显模板内容。
      */
@@ -119,13 +112,13 @@ object TemplateService {
      */
     fun addTemplate(type: String, template: String, subject: String, uid: Long, groupName: String?): String {
         val templates = templateMap(type) ?: return "类型错误 d:动态 l:直播 le:直播结束"
+        val policyType = typeKey(type)
         if (!templates.containsKey(template)) return "没有这个模板: $template"
 
         val scope = resolveScope(type, subject, uid, groupName) ?: return scopeError(subject, uid, groupName)
-        val policy = policyMap(type)!!.getOrPut(scope.scopeKey) { mutableMapOf() }
-            .getOrPut(uid) { TemplatePolicy() }
-        if (policy.templates.contains(template)) return "模板已存在于当前策略中"
-        policy.templates.add(template)
+        if (!TemplateRuntimeCoordinator.appendTemplate(policyType, scope.scopeKey, uid, template)) {
+            return "模板已存在于当前策略中"
+        }
         return "添加成功"
     }
 
@@ -135,15 +128,21 @@ object TemplateService {
      */
     fun deleteTemplate(type: String, template: String, subject: String, uid: Long, groupName: String?): String {
         val scope = resolveScope(type, subject, uid, groupName) ?: return scopeError(subject, uid, groupName)
-        val policy = policyMap(type)?.get(scope.scopeKey)?.get(uid) ?: return "当前作用域未配置模板策略"
-        if (!policy.templates.remove(template)) return "当前策略中不存在模板: $template"
-        if (validTemplateCount(type, policy) <= 1) {
-            policy.randomEnabled = false
-        }
-        if (policy.templates.isEmpty()) {
-            policyMap(type)?.get(scope.scopeKey)?.remove(uid)
-            if (policyMap(type)?.get(scope.scopeKey)?.isEmpty() == true) {
-                policyMap(type)?.remove(scope.scopeKey)
+        val policyType = typeKey(type)
+        val policy = TemplateRuntimeCoordinator.readScopePolicies(policyType, scope.scopeKey)[uid]
+            ?: return "当前作用域未配置模板策略"
+        if (!policy.templates.contains(template)) return "当前策略中不存在模板: $template"
+
+        when (TemplateRuntimeCoordinator.removeTemplate(policyType, scope.scopeKey, uid, template)) {
+            RemoveTemplateResult.POLICY_MISSING -> return "当前作用域未配置模板策略"
+            RemoveTemplateResult.TEMPLATE_MISSING -> return "当前策略中不存在模板: $template"
+            RemoveTemplateResult.REMOVED_UID -> return "删除成功"
+            RemoveTemplateResult.UPDATED -> {
+                val remainingPolicy = TemplateRuntimeCoordinator.readScopePolicies(policyType, scope.scopeKey)[uid]
+                    ?: return "删除成功"
+                if (validTemplateCount(type, remainingPolicy) <= 1) {
+                    TemplateRuntimeCoordinator.setRandomEnabled(policyType, scope.scopeKey, uid, false)
+                }
             }
         }
         return "删除成功"
@@ -156,7 +155,7 @@ object TemplateService {
     fun listTemplatePolicy(type: String, subject: String, uid: Long?, groupName: String?): String {
         val scope = resolveScope(type, subject, uid, groupName, requireFollow = false)
             ?: return scopeError(subject, uid, groupName, requireUid = groupName != null)
-        val scopePolicies = policyMap(type)?.get(scope.scopeKey).orEmpty()
+        val scopePolicies = TemplateRuntimeCoordinator.readScopePolicies(typeKey(type), scope.scopeKey)
         if (scopePolicies.isEmpty()) {
             return "当前作用域未配置模板策略"
         }
@@ -193,14 +192,16 @@ object TemplateService {
      */
     fun enableRandom(type: String, subject: String, uid: Long, groupName: String?): String {
         val scope = resolveScope(type, subject, uid, groupName) ?: return scopeError(subject, uid, groupName)
-        val policy = policyMap(type)?.get(scope.scopeKey)?.get(uid) ?: return "当前作用域未配置模板策略"
+        val policyType = typeKey(type)
+        val policy = TemplateRuntimeCoordinator.readScopePolicies(policyType, scope.scopeKey)[uid]
+            ?: return "当前作用域未配置模板策略"
         if (policy.templates.any { templateName -> templateMap(type)?.containsKey(templateName) != true }) {
             return "当前策略包含已失效模板，请先清理后再开启随机"
         }
         if (validTemplateCount(type, policy) < 2) {
             return "开启随机至少需要 2 个有效模板"
         }
-        policy.randomEnabled = true
+        TemplateRuntimeCoordinator.setRandomEnabled(policyType, scope.scopeKey, uid, true)
         return "开启成功"
     }
 
@@ -210,8 +211,11 @@ object TemplateService {
      */
     fun disableRandom(type: String, subject: String, uid: Long, groupName: String?): String {
         val scope = resolveScope(type, subject, uid, groupName) ?: return scopeError(subject, uid, groupName)
-        val policy = policyMap(type)?.get(scope.scopeKey)?.get(uid) ?: return "当前作用域未配置模板策略"
-        policy.randomEnabled = false
+        val policyType = typeKey(type)
+        val policy = TemplateRuntimeCoordinator.readScopePolicies(policyType, scope.scopeKey)[uid]
+            ?: return "当前作用域未配置模板策略"
+        if (policy.templates.isEmpty()) return "当前作用域未配置模板策略"
+        TemplateRuntimeCoordinator.setRandomEnabled(policyType, scope.scopeKey, uid, false)
         return "关闭成功"
     }
 
@@ -226,7 +230,7 @@ object TemplateService {
         groupName: String?,
         requireFollow: Boolean = true,
     ): ScopeResolution? {
-        policyMap(type) ?: return null
+        if (typeKey(type).isBlank()) return null
         if (uid == null) {
             if (groupName != null) {
                 val group = BiliData.group[groupName] ?: return null
@@ -281,6 +285,19 @@ object TemplateService {
      */
     private fun validTemplateCount(type: String, policy: TemplatePolicy): Int {
         return policy.templates.count { templateName -> templateMap(type)?.containsKey(templateName) == true }
+    }
+
+    /**
+     * 将命令层模板类型缩写转换为运行态协调层使用的完整类型键。
+     * 统一转换后，策略服务与发送服务可以复用同一套运行态清理入口。
+     */
+    private fun typeKey(type: String): String {
+        return when (type) {
+            "d" -> "dynamic"
+            "l" -> "live"
+            "le" -> "liveClose"
+            else -> ""
+        }
     }
 
     private fun buildSampleMessage(type: String, subject: String): top.bilibili.data.BiliMessage? {

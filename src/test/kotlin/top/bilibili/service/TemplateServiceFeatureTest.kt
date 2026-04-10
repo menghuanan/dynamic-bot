@@ -28,6 +28,11 @@ class TemplateServiceFeatureTest {
         BiliData.liveTemplatePolicyByScope.clear()
         BiliData.liveCloseTemplatePolicyByScope.clear()
         BiliData.group.clear()
+        TemplateRuntimeCoordinator.replaceAllPolicies(
+            dynamicPolicies = mutableMapOf(),
+            livePolicies = mutableMapOf(),
+            liveClosePolicies = mutableMapOf(),
+        )
     }
 
     @Test
@@ -85,6 +90,69 @@ class TemplateServiceFeatureTest {
     }
 
     @Test
+    fun `deleting the last template from a scope should clear runtime state for that scope`() {
+        BiliData.dynamic[uid] = SubData(name = "测试UP", contacts = mutableSetOf(persistedSubject))
+        BiliData.dynamicTemplatePolicyByScope["contact:$persistedSubject"] = mutableMapOf(
+            uid to TemplatePolicy(
+                templates = mutableListOf("OneMsg"),
+                randomEnabled = false,
+            ),
+        )
+        TemplateSelectionService.selectTemplate(
+            type = "dynamic",
+            uid = uid,
+            directScope = "contact:$persistedSubject",
+            groupScopes = emptyList(),
+            messageIdentity = "dynamic:remove-last",
+        )
+
+        val result = TemplateService.deleteTemplate("d", "OneMsg", subject, uid, null)
+
+        assertTrue(result.contains("成功"))
+        assertFalse(BiliData.dynamicTemplatePolicyByScope.containsKey("contact:$persistedSubject"))
+        assertFalse(runtimeState("lastTemplateByScopeKey").containsKey("dynamic|contact:$persistedSubject|$uid"))
+    }
+
+    @Test
+    fun `deleting one uid last template should clear only that uid runtime state while preserving the scope`() {
+        val secondUid = 654321L
+        BiliData.dynamic[uid] = SubData(name = "测试UP", contacts = mutableSetOf(persistedSubject))
+        BiliData.dynamic[secondUid] = SubData(name = "测试UP2", contacts = mutableSetOf(persistedSubject))
+        BiliData.dynamicTemplatePolicyByScope["contact:$persistedSubject"] = mutableMapOf(
+            uid to TemplatePolicy(
+                templates = mutableListOf("OneMsg"),
+                randomEnabled = false,
+            ),
+            secondUid to TemplatePolicy(
+                templates = mutableListOf("TwoMsg"),
+                randomEnabled = false,
+            ),
+        )
+        TemplateSelectionService.selectTemplate(
+            type = "dynamic",
+            uid = uid,
+            directScope = "contact:$persistedSubject",
+            groupScopes = emptyList(),
+            messageIdentity = "dynamic:first-uid",
+        )
+        TemplateSelectionService.selectTemplate(
+            type = "dynamic",
+            uid = secondUid,
+            directScope = "contact:$persistedSubject",
+            groupScopes = emptyList(),
+            messageIdentity = "dynamic:second-uid",
+        )
+
+        val result = TemplateService.deleteTemplate("d", "OneMsg", subject, uid, null)
+
+        assertTrue(result.contains("成功"))
+        assertFalse(BiliData.dynamicTemplatePolicyByScope["contact:$persistedSubject"]?.containsKey(uid) == true)
+        assertTrue(BiliData.dynamicTemplatePolicyByScope["contact:$persistedSubject"]?.containsKey(secondUid) == true)
+        assertFalse(runtimeState("lastTemplateByScopeKey").containsKey("dynamic|contact:$persistedSubject|$uid"))
+        assertTrue(runtimeState("lastTemplateByScopeKey").containsKey("dynamic|contact:$persistedSubject|$secondUid"))
+    }
+
+    @Test
     fun `on and off should toggle random mode after validation`() {
         BiliData.dynamic[uid] = SubData(name = "测试UP", contacts = mutableSetOf(persistedSubject))
         BiliData.dynamicTemplatePolicyByScope["contact:$persistedSubject"] = mutableMapOf(
@@ -120,5 +188,15 @@ class TemplateServiceFeatureTest {
 
         assertTrue(result.contains("成功"))
         assertEquals(listOf("OneMsg"), policy?.templates?.toList())
+    }
+
+    /**
+     * 读取模板选择服务的运行态缓存，用于断言删除策略后的清理效果。
+     * 这里保留只读反射入口，避免在生产代码中加入测试专用状态暴露。
+     */
+    private fun runtimeState(fieldName: String): MutableMap<*, *> {
+        val field = TemplateSelectionService::class.java.getDeclaredField(fieldName)
+        field.isAccessible = true
+        return field.get(TemplateSelectionService) as MutableMap<*, *>
     }
 }

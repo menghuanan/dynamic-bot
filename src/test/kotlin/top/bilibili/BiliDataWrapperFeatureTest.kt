@@ -2,6 +2,7 @@ package top.bilibili
 
 import com.charleskorn.kaml.Yaml
 import kotlinx.serialization.encodeToString
+import top.bilibili.service.TemplateRuntimeCoordinator
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -87,5 +88,16 @@ class BiliDataWrapperFeatureTest {
 
         assertEquals(listOf("OneMsg", "TwoMsg"), restoredPolicy?.templates?.toList())
         assertTrue(restoredPolicy?.randomEnabled == true)
+    }
+
+    @Test
+    fun `snapshot export should detach serialized policy state from live maps`() {
+        val livePolicy = TemplatePolicy(templates = mutableListOf("OneMsg"), randomEnabled = true)
+        BiliData.dynamicTemplatePolicyByScope["contact:onebot11:group:10001"] = mutableMapOf(123456L to livePolicy)
+
+        val snapshot = TemplateRuntimeCoordinator.snapshotPolicies().dynamic
+        livePolicy.templates += "TwoMsg"
+
+        assertEquals(listOf("OneMsg"), snapshot["contact:onebot11:group:10001"]?.get(123456L)?.templates?.toList())
     }
 }

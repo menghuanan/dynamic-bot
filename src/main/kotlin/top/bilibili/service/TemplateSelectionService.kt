@@ -58,6 +58,56 @@ object TemplateSelectionService {
     }
 
     /**
+     * 清理指定类型与作用域对应的运行态缓存。
+     * 当整段策略作用域被删除时，需要同时回收 last-used 与批次复用状态。
+     */
+    internal fun clearRuntimeScope(type: String, scope: String) {
+        val scopePrefix = "$type|$scope|"
+        lastTemplateByScopeKey.keys
+            .filter { key -> key.startsWith(scopePrefix) }
+            .forEach { key -> lastTemplateByScopeKey.remove(key) }
+        batchTemplateByMessageKey.keys
+            .filter { key -> key.startsWith(scopePrefix) }
+            .forEach { key -> batchTemplateByMessageKey.remove(key) }
+    }
+
+    /**
+     * 清理指定 UID 在全部类型与作用域中的运行态缓存。
+     * 生命周期删除会跨模板类型回收 UID 绑定，这里同步移除所有残留选择状态。
+     */
+    internal fun clearRuntimeUid(uid: Long) {
+        val uidSuffix = "|$uid"
+        lastTemplateByScopeKey.keys
+            .filter { key -> key.endsWith(uidSuffix) }
+            .forEach { key -> lastTemplateByScopeKey.remove(key) }
+        batchTemplateByMessageKey.keys
+            .filter { key -> key.contains("$uidSuffix|") }
+            .forEach { key -> batchTemplateByMessageKey.remove(key) }
+    }
+
+    /**
+     * 清理单个类型、作用域与 UID 对应的运行态缓存。
+     * 当只删除某个 UID 的最后一个模板时，需要精确回收该绑定而不是清空整个作用域。
+     */
+    internal fun clearRuntimeBinding(type: String, scope: String, uid: Long) {
+        val key = buildLastUsedKey(type, scope, uid)
+        lastTemplateByScopeKey.remove(key)
+        val batchPrefix = "$type|$scope|$uid|"
+        batchTemplateByMessageKey.keys
+            .filter { cacheKey -> cacheKey.startsWith(batchPrefix) }
+            .forEach { cacheKey -> batchTemplateByMessageKey.remove(cacheKey) }
+    }
+
+    /**
+     * 清空全部模板选择运行态缓存。
+     * 全量重载策略表时必须同步重置运行态，避免旧缓存继续影响新配置。
+     */
+    internal fun clearAllRuntimeState() {
+        lastTemplateByScopeKey.clear()
+        batchTemplateByMessageKey.clear()
+    }
+
+    /**
      * 按选择顺序解析命中的策略。
      * 多个 group scope 同时命中时固定按字典序取第一个，避免发送结果不稳定。
      */
