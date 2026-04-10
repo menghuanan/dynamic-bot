@@ -18,6 +18,9 @@ class BiliConfigManagerNamespaceMigrationTest {
         BiliData.dynamicPushTemplateByUid.clear()
         BiliData.livePushTemplateByUid.clear()
         BiliData.liveCloseTemplateByUid.clear()
+        BiliData.dynamicTemplatePolicyByScope.clear()
+        BiliData.liveTemplatePolicyByScope.clear()
+        BiliData.liveCloseTemplatePolicyByScope.clear()
         BiliData.dynamicColorByUid.clear()
         BiliData.atAll.clear()
         BiliData.group.clear()
@@ -72,6 +75,27 @@ class BiliConfigManagerNamespaceMigrationTest {
         assertTrue(BiliData.atAll.containsKey(migratedSubject))
         assertEquals(setOf(migratedSubject, customSubject), BiliData.group["ops"]?.contacts?.toSet())
         assertEquals(setOf(migratedSubject, customSubject), BiliData.bangumi[404L]?.contacts?.toSet())
+    }
+
+    @Test
+    fun `migrate should convert legacy template bindings into template policy by scope`() {
+        val subject = "onebot11:group:10001"
+        val uid = 123456L
+
+        BiliData.dataVersion = 3
+        BiliData.dynamicPushTemplate["OneMsg"] = mutableSetOf(subject)
+        BiliData.dynamicPushTemplateByUid[subject] = mutableMapOf(uid to "TwoMsg")
+        BiliData.dynamic[uid] = SubData(
+            name = "测试UP",
+            contacts = mutableSetOf(subject),
+            sourceRefs = mutableSetOf("direct:$subject"),
+        )
+
+        migrateViaReflection()
+
+        val contactScope = "contact:$subject"
+        assertEquals("TwoMsg", BiliData.dynamicTemplatePolicyByScope[contactScope]?.get(uid)?.templates?.firstOrNull())
+        assertFalse(BiliData.dynamicTemplatePolicyByScope[contactScope]?.get(uid)?.randomEnabled == true)
     }
 
     private fun migrateViaReflection(): Boolean {

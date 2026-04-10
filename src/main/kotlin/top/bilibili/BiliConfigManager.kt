@@ -133,6 +133,7 @@ object BiliConfigManager {
         }
 
         changed = migrateLegacyContactSubjects(data) || changed
+        changed = migrateLegacyTemplatePolicies(data) || changed
 
         data.dynamic.values.forEach { sub ->
             if (sub.sourceRefs.isEmpty() && sub.contacts.isNotEmpty()) {
@@ -147,6 +148,33 @@ object BiliConfigManager {
             data.dataVersion = CURRENT_DATA_VERSION
         }
 
+        return changed
+    }
+
+    /**
+     * 将旧模板绑定回填为按 scope 存储的新模板策略。
+     * 旧会话级模板先回填联系人 scope，再由旧 UID 单模板绑定覆盖同一 scope 的默认结果。
+     */
+    private fun migrateLegacyTemplatePolicies(data: BiliData): Boolean {
+        var changed = false
+        changed = migrateLegacyTemplatePolicyMap(
+            legacyTemplateBindings = data.dynamicPushTemplate,
+            legacyTemplateBindingsByUid = data.dynamicPushTemplateByUid,
+            targetPolicies = data.dynamicTemplatePolicyByScope,
+            subscriptions = data.dynamic,
+        ) || changed
+        changed = migrateLegacyTemplatePolicyMap(
+            legacyTemplateBindings = data.livePushTemplate,
+            legacyTemplateBindingsByUid = data.livePushTemplateByUid,
+            targetPolicies = data.liveTemplatePolicyByScope,
+            subscriptions = data.dynamic,
+        ) || changed
+        changed = migrateLegacyTemplatePolicyMap(
+            legacyTemplateBindings = data.liveCloseTemplate,
+            legacyTemplateBindingsByUid = data.liveCloseTemplateByUid,
+            targetPolicies = data.liveCloseTemplatePolicyByScope,
+            subscriptions = data.dynamic,
+        ) || changed
         return changed
     }
 
@@ -255,6 +283,83 @@ object BiliConfigManager {
             changed = true
         }
         return changed
+    }
+
+    /**
+     * 将旧模板绑定映射迁移为新的联系人 scope 策略。
+     * 这里仅在目标策略缺失时回填，避免迁移覆盖已经存在的新结构配置。
+     */
+    private fun migrateLegacyTemplatePolicyMap(
+        legacyTemplateBindings: MutableMap<String, MutableSet<String>>,
+        legacyTemplateBindingsByUid: MutableMap<String, MutableMap<Long, String>>,
+        targetPolicies: MutableMap<String, MutableMap<Long, TemplatePolicy>>,
+        subscriptions: MutableMap<Long, SubData>,
+    ): Boolean {
+        var changed = false
+        val existingPolicyKeys = targetPolicies.flatMap { (scope, policies) ->
+            policies.keys.map { uid -> scope to uid }
+        }.toSet()
+
+        legacyTemplateBindings.forEach { (templateName, contacts) ->
+            contacts.forEach { subject ->
+                val scope = "contact:$subject"
+                subscriptions.forEach { (uid, subData) ->
+                    if (subject in subData.contacts) {
+                        changed = upsertLegacyTemplatePolicy(
+                            targetPolicies = targetPolicies,
+                            scope = scope,
+                            uid = uid,
+                            templateName = templateName,
+                            overwriteExisting = false,
+                        ) || changed
+                    }
+                }
+            }
+        }
+
+        legacyTemplateBindingsByUid.forEach { (subject, bindings) ->
+            val scope = "contact:$subject"
+            bindings.forEach { (uid, templateName) ->
+                changed = upsertLegacyTemplatePolicy(
+                    targetPolicies = targetPolicies,
+                    scope = scope,
+                    uid = uid,
+                    templateName = templateName,
+                    overwriteExisting = (scope to uid) !in existingPolicyKeys,
+                ) || changed
+            }
+        }
+
+        return changed
+    }
+
+    /**
+     * 将单个旧模板名写入新策略。
+     * 迁移出的策略始终是单模板且关闭随机，保持旧行为的可预测性。
+     */
+    private fun upsertLegacyTemplatePolicy(
+        targetPolicies: MutableMap<String, MutableMap<Long, TemplatePolicy>>,
+        scope: String,
+        uid: Long,
+        templateName: String,
+        overwriteExisting: Boolean,
+    ): Boolean {
+        val scopePolicies = targetPolicies.getOrPut(scope) { mutableMapOf() }
+        val existingPolicy = scopePolicies[uid]
+        if (existingPolicy != null && !overwriteExisting) {
+            return false
+        }
+
+        val nextPolicy = TemplatePolicy(
+            templates = mutableListOf(templateName),
+            randomEnabled = false,
+        )
+        if (existingPolicy == nextPolicy) {
+            return false
+        }
+
+        scopePolicies[uid] = nextPolicy
+        return true
     }
 
     /**
