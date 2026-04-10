@@ -218,7 +218,7 @@ object SendTasker : BiliTasker("SendTasker") {
                         continue
                     }
 
-                    // 发送链路先解析模板策略，再把模板正文交给渲染层，避免渲染层继续读取旧绑定结构。
+                    // 构建消息段前先解析模板策略，再把模板正文交给渲染层，避免渲染层继续读取旧绑定结构。
                     val segments = buildMessageSegments(message, contactStr, dynamicSub, messageIdentity)
                     BiliBiliBot.logger.info("为联系人 $contactStr 构建了 ${segments.size} 个消息段")
 

@@ -9,7 +9,10 @@ import kotlin.test.assertTrue
 
 class ProcessGuardianResourceObservabilityTest {
     // 源码回归测试统一使用 UTF-8，避免不同平台默认编码导致关键字匹配漂移。
-    private fun read(path: String): String = Files.readString(Path.of(path), StandardCharsets.UTF_8)
+    private fun read(path: String): String =
+        Files.readString(Path.of(path), StandardCharsets.UTF_8)
+            // 统一换行后再做源码关键字匹配，避免 Windows CRLF 让纯文本守卫产生平台噪音。
+            .replace("\r\n", "\n")
 
     @Test
     fun `process guardian should collect process rss thread buffer pool skia and degradable nmt metrics`() {
