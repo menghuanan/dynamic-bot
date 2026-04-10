@@ -258,7 +258,7 @@ admin: "管理员QQ号"
 ### 2. 动态订阅
 - 订阅 B站用户的动态
 - 自动检测新动态并推送到群聊/私聊
-- 支持自定义推送模板
+- 支持按联系人 / 分组配置 UID 多模板策略与随机模板切换
 - 支持直播开播/关播通知
 
 ### 3. 管理命令（按权限划分）
@@ -320,11 +320,15 @@ admin: "管理员QQ号"
     模式还支持: blacklist / whitelist / 黑名单 / 白名单
 
     模板管理（超管 / 群普通管理员）:
-    /bili template|tpl list|ls <d|l|le> - 查看模板列表
+    /bili template|tpl add <d|l|le> <模板名> <uid> [group <分组名>] - 追加模板到当前联系人或指定分组的 UID 策略
+    /bili template|tpl del|delete|rm <d|l|le> <模板名> <uid> [group <分组名>] - 从当前联系人或指定分组的 UID 策略中删除模板
+    /bili template|tpl list|ls <d|l|le> [uid] [group <分组名>] - 查看当前作用域的模板策略摘要
+    /bili template|tpl on <d|l|le> <uid> [group <分组名>] - 开启随机模板
+    /bili template|tpl off <d|l|le> <uid> [group <分组名>] - 关闭随机模板
     /bili template|tpl preview|pv <d|l|le> <模板名> - 发送模板预览
-    /bili template|tpl set <d|l|le> <模板名> [uid] - 绑定当前会话模板，可选限制到单个 UID
     /bili template|tpl explain|exp <d|l|le> - 查看模板占位符说明
     类型说明: d=动态, l=开播, le=下播
+    说明: 模板策略统一保存在 `contact:<subject>` / `groupRef:<groupName>` 作用域下；开启随机至少需要 2 个有效模板，随机结果会按作用域隔离，并在同一分组单次推送内保持一致
 
     At全体管理（超管 / 群普通管理员，功能仅群聊生效）:
     /bili atall|aa add <类型> <uid> - 添加 @全体 策略
@@ -386,16 +390,39 @@ first_run_flag: 0            # 首次运行标记，程序自动维护
 ### BiliData.yml 示例
 
 ```yaml
+dataVersion: 4
+
 # 动态订阅数据
 dynamic:
   # UID: 订阅信息
   123456:
     name: "用户名"
     contacts:
-      - "group:987654321"  # 群聊
-      - "private:123456789"  # 私聊
+      - "onebot11:group:987654321"
+      - "onebot11:private:123456789"
+    sourceRefs:
+      - "direct:onebot11:group:987654321"
+      - "groupRef:ops"
     banList: {}
+
+# 模板策略（v4 起只保留 policy-only 结构，不再持久化旧 dynamicPushTemplate* 字段）
+dynamicTemplatePolicyByScope:
+  "contact:onebot11:group:987654321":
+    123456:
+      templates:
+        - "OneMsg"
+        - "TwoMsg"
+      randomEnabled: true
+  "groupRef:ops":
+    123456:
+      templates:
+        - "DrawOnly"
+      randomEnabled: false
 ```
+
+- `dataVersion` 由程序自动维护。旧版本 `BiliData.yml` 在启动时会按版本迁移到当前结构，并在写回后移除旧模板绑定字段。
+- `*TemplatePolicyByScope` 是当前唯一的模板持久化来源；直接联系人作用域使用 `contact:<subject>`，分组作用域使用 `groupRef:<groupName>`。
+
 ### BiliConfig.yml 示例
 
 ```yaml
