@@ -1,0 +1,1 @@
+实现/bili template的UID绑定多个模板的功能
