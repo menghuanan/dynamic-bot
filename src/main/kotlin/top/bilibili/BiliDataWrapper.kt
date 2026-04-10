@@ -17,6 +17,9 @@ data class BiliDataWrapper(
     var dynamicPushTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf(),
     var livePushTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf(),
     var liveCloseTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf(),
+    var dynamicTemplatePolicyByScope: MutableMap<String, MutableMap<Long, TemplatePolicy>> = mutableMapOf(),
+    var liveTemplatePolicyByScope: MutableMap<String, MutableMap<Long, TemplatePolicy>> = mutableMapOf(),
+    var liveCloseTemplatePolicyByScope: MutableMap<String, MutableMap<Long, TemplatePolicy>> = mutableMapOf(),
     var dynamicColorByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf(),
     var atAll: MutableMap<String, MutableMap<Long, MutableSet<AtAllType>>> = mutableMapOf(),
     var group: MutableMap<String, Group> = mutableMapOf(),
@@ -39,6 +42,9 @@ data class BiliDataWrapper(
                 dynamicPushTemplateByUid = biliData.dynamicPushTemplateByUid,
                 livePushTemplateByUid = biliData.livePushTemplateByUid,
                 liveCloseTemplateByUid = biliData.liveCloseTemplateByUid,
+                dynamicTemplatePolicyByScope = biliData.dynamicTemplatePolicyByScope,
+                liveTemplatePolicyByScope = biliData.liveTemplatePolicyByScope,
+                liveCloseTemplatePolicyByScope = biliData.liveCloseTemplatePolicyByScope,
                 dynamicColorByUid = biliData.dynamicColorByUid,
                 atAll = biliData.atAll,
                 group = biliData.group,
@@ -61,6 +67,9 @@ data class BiliDataWrapper(
             biliData.dynamicPushTemplateByUid = wrapper.dynamicPushTemplateByUid
             biliData.livePushTemplateByUid = wrapper.livePushTemplateByUid
             biliData.liveCloseTemplateByUid = wrapper.liveCloseTemplateByUid
+            biliData.dynamicTemplatePolicyByScope = wrapper.dynamicTemplatePolicyByScope
+            biliData.liveTemplatePolicyByScope = wrapper.liveTemplatePolicyByScope
+            biliData.liveCloseTemplatePolicyByScope = wrapper.liveCloseTemplatePolicyByScope
             biliData.dynamicColorByUid = wrapper.dynamicColorByUid
             biliData.atAll = wrapper.atAll
             biliData.group = wrapper.group

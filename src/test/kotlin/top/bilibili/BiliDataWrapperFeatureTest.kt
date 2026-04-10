@@ -11,6 +11,9 @@ class BiliDataWrapperFeatureTest {
         BiliData.dynamicPushTemplateByUid.clear()
         BiliData.livePushTemplateByUid.clear()
         BiliData.liveCloseTemplateByUid.clear()
+        BiliData.dynamicTemplatePolicyByScope.clear()
+        BiliData.liveTemplatePolicyByScope.clear()
+        BiliData.liveCloseTemplatePolicyByScope.clear()
         BiliData.dynamicColorByUid.clear()
         BiliData.atAll.clear()
     }
@@ -55,5 +58,27 @@ class BiliDataWrapperFeatureTest {
 
         assertEquals("#d3edfa", BiliData.dynamicColorByUid[firstSubject]?.get(uid))
         assertEquals("#fde8ed", BiliData.dynamicColorByUid[secondSubject]?.get(uid))
+    }
+
+    @Test
+    fun `wrapper roundtrip should preserve template policy by scope maps`() {
+        val scope = "contact:onebot11:group:10001"
+        val uid = 123456L
+
+        BiliData.dynamicTemplatePolicyByScope[scope] = mutableMapOf(
+            uid to TemplatePolicy(
+                templates = mutableListOf("OneMsg", "TwoMsg"),
+                randomEnabled = true,
+            ),
+        )
+
+        val wrapper = BiliDataWrapper.from(BiliData)
+        BiliData.dynamicTemplatePolicyByScope = mutableMapOf<String, MutableMap<Long, TemplatePolicy>>()
+
+        BiliDataWrapper.applyTo(wrapper, BiliData)
+        val restoredPolicy = BiliData.dynamicTemplatePolicyByScope[scope]?.get(uid)
+
+        assertEquals(listOf("OneMsg", "TwoMsg"), restoredPolicy?.templates?.toList())
+        assertTrue(restoredPolicy?.randomEnabled == true)
     }
 }

@@ -31,6 +31,11 @@ object BiliData {
     var livePushTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf()
     var liveCloseTemplateByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf()
 
+    // key: scope -> uid -> policy（固定顺位模板与随机池共用同一份策略）
+    var dynamicTemplatePolicyByScope: MutableMap<String, MutableMap<Long, TemplatePolicy>> = mutableMapOf()
+    var liveTemplatePolicyByScope: MutableMap<String, MutableMap<Long, TemplatePolicy>> = mutableMapOf()
+    var liveCloseTemplatePolicyByScope: MutableMap<String, MutableMap<Long, TemplatePolicy>> = mutableMapOf()
+
     // key: subject -> uid -> custom color
     var dynamicColorByUid: MutableMap<String, MutableMap<Long, String>> = mutableMapOf()
 
@@ -49,6 +54,16 @@ object BiliData {
     // 链接解析黑名单（平台联系人版）- 新增写入走该集合，旧 Long 集合保留兼容读取
     var linkParseBlacklistContacts: MutableSet<String> = mutableSetOf()
 }
+
+/**
+ * 模板策略模型。
+ * 同一份模板列表同时承担固定顺位模板与随机池配置。
+ */
+@Serializable
+data class TemplatePolicy(
+    val templates: MutableList<String> = mutableListOf(),
+    var randomEnabled: Boolean = false,
+)
 
 /**
  * 订阅数据模型。
