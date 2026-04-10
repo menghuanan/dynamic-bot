@@ -38,9 +38,10 @@ object GroupService {
         if (group[name]!!.creator != operator) return@withLock "无权删除"
 
         dynamic.forEach { (_, s) -> s.contacts.remove(name) }
-        BiliConfigManager.data.dynamicPushTemplate.forEach { (_, c) -> c.remove(name) }
-        BiliConfigManager.data.livePushTemplate.forEach { (_, c) -> c.remove(name) }
-        BiliConfigManager.data.liveCloseTemplate.forEach { (_, c) -> c.remove(name) }
+        // 分组删除后同步移除 groupRef scope 的模板策略，避免遗留悬空配置继续参与选择。
+        BiliConfigManager.data.dynamicTemplatePolicyByScope.remove("groupRef:$name")
+        BiliConfigManager.data.liveTemplatePolicyByScope.remove("groupRef:$name")
+        BiliConfigManager.data.liveCloseTemplatePolicyByScope.remove("groupRef:$name")
         filter.remove(name)
         atAll.remove(name)
         group.remove(name)

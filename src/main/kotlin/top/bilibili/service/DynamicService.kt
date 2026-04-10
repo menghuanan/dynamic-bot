@@ -125,20 +125,39 @@ object DynamicService {
             filterMap.remove(uid)
         }
 
-        if (contactsForCleanup.isNotEmpty()) {
-            top.bilibili.BiliData.dynamicPushTemplate.values.forEach { contacts ->
-                contacts.removeAll(contactsForCleanup)
-            }
-            top.bilibili.BiliData.livePushTemplate.values.forEach { contacts ->
-                contacts.removeAll(contactsForCleanup)
-            }
-            top.bilibili.BiliData.liveCloseTemplate.values.forEach { contacts ->
-                contacts.removeAll(contactsForCleanup)
-            }
-        }
+        // 彻底移除 UID 时同步清理新模板策略，避免失效 UID 仍残留在 direct/groupRef scope 中。
+        removeUidTemplatePolicies(uid)
 
         logger.info("已完全移除 UID $uid 的订阅数据（无订阅来源）")
         unfollowUser(uid)
+    }
+
+    /**
+     * 从全部模板策略表中移除指定 UID。
+     * 清理时同时回收空 scope，避免策略树在长期运行中残留无效壳层。
+     */
+    private fun removeUidTemplatePolicies(uid: Long) {
+        removeUidFromPolicyMap(top.bilibili.BiliData.dynamicTemplatePolicyByScope, uid)
+        removeUidFromPolicyMap(top.bilibili.BiliData.liveTemplatePolicyByScope, uid)
+        removeUidFromPolicyMap(top.bilibili.BiliData.liveCloseTemplatePolicyByScope, uid)
+    }
+
+    /**
+     * 从单张 scope -> uid -> policy 映射中移除指定 UID。
+     * 这里集中处理空 scope 的回收逻辑，避免三类模板策略重复手写同样的清理代码。
+     */
+    private fun <T> removeUidFromPolicyMap(
+        policyMap: MutableMap<String, MutableMap<Long, T>>,
+        uid: Long,
+    ) {
+        val emptyScopes = mutableListOf<String>()
+        policyMap.forEach { (scopeKey, policies) ->
+            policies.remove(uid)
+            if (policies.isEmpty()) {
+                emptyScopes += scopeKey
+            }
+        }
+        emptyScopes.forEach { scopeKey -> policyMap.remove(scopeKey) }
     }
 
     private suspend fun createSubData(uid: Long): Pair<SubData?, String?> {
