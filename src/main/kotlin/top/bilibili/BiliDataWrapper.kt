@@ -1,6 +1,8 @@
 package top.bilibili
 
 import kotlinx.serialization.Serializable
+import top.bilibili.service.TemplatePolicySnapshotBundle
+import top.bilibili.service.TemplateRuntimeCoordinator
 
 /**
  * BiliData 包装类，用于序列化
@@ -24,15 +26,19 @@ data class BiliDataWrapper(
     companion object {
         /**
          * 从 [BiliData] 单例创建可序列化的包装对象。
+         * 模板策略字段默认来自协调层快照，避免保存时继续持有 live 可变引用。
          */
-        fun from(biliData: BiliData): BiliDataWrapper {
+        fun from(
+            biliData: BiliData,
+            templatePolicies: TemplatePolicySnapshotBundle = TemplateRuntimeCoordinator.snapshotPolicies(),
+        ): BiliDataWrapper {
             return BiliDataWrapper(
                 dataVersion = biliData.dataVersion,
                 dynamic = biliData.dynamic,
                 filter = biliData.filter,
-                dynamicTemplatePolicyByScope = biliData.dynamicTemplatePolicyByScope,
-                liveTemplatePolicyByScope = biliData.liveTemplatePolicyByScope,
-                liveCloseTemplatePolicyByScope = biliData.liveCloseTemplatePolicyByScope,
+                dynamicTemplatePolicyByScope = templatePolicies.dynamic,
+                liveTemplatePolicyByScope = templatePolicies.live,
+                liveCloseTemplatePolicyByScope = templatePolicies.liveClose,
                 dynamicColorByUid = biliData.dynamicColorByUid,
                 atAll = biliData.atAll,
                 group = biliData.group,
@@ -56,9 +62,12 @@ data class BiliDataWrapper(
             biliData.dynamicPushTemplateByUid = mutableMapOf()
             biliData.livePushTemplateByUid = mutableMapOf()
             biliData.liveCloseTemplateByUid = mutableMapOf()
-            biliData.dynamicTemplatePolicyByScope = wrapper.dynamicTemplatePolicyByScope
-            biliData.liveTemplatePolicyByScope = wrapper.liveTemplatePolicyByScope
-            biliData.liveCloseTemplatePolicyByScope = wrapper.liveCloseTemplatePolicyByScope
+            // 通过协调层安装整份策略表，保证运行态缓存与内存策略在同一时点一起替换。
+            TemplateRuntimeCoordinator.replaceAllPolicies(
+                dynamicPolicies = wrapper.dynamicTemplatePolicyByScope,
+                livePolicies = wrapper.liveTemplatePolicyByScope,
+                liveClosePolicies = wrapper.liveCloseTemplatePolicyByScope,
+            )
             biliData.dynamicColorByUid = wrapper.dynamicColorByUid
             biliData.atAll = wrapper.atAll
             biliData.group = wrapper.group
@@ -109,9 +118,12 @@ data class LegacyBiliDataWrapperV3(
             biliData.dynamicPushTemplateByUid = wrapper.dynamicPushTemplateByUid
             biliData.livePushTemplateByUid = wrapper.livePushTemplateByUid
             biliData.liveCloseTemplateByUid = wrapper.liveCloseTemplateByUid
-            biliData.dynamicTemplatePolicyByScope = wrapper.dynamicTemplatePolicyByScope
-            biliData.liveTemplatePolicyByScope = wrapper.liveTemplatePolicyByScope
-            biliData.liveCloseTemplatePolicyByScope = wrapper.liveCloseTemplatePolicyByScope
+            // 旧版 wrapper 回填时也走协调层，确保迁移前后不会遗留旧运行态缓存。
+            TemplateRuntimeCoordinator.replaceAllPolicies(
+                dynamicPolicies = wrapper.dynamicTemplatePolicyByScope,
+                livePolicies = wrapper.liveTemplatePolicyByScope,
+                liveClosePolicies = wrapper.liveCloseTemplatePolicyByScope,
+            )
             biliData.dynamicColorByUid = wrapper.dynamicColorByUid
             biliData.atAll = wrapper.atAll
             biliData.group = wrapper.group

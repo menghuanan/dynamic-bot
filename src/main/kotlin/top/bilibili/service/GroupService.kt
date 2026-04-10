@@ -39,9 +39,9 @@ object GroupService {
 
         dynamic.forEach { (_, s) -> s.contacts.remove(name) }
         // 分组删除后同步移除 groupRef scope 的模板策略，避免遗留悬空配置继续参与选择。
-        BiliConfigManager.data.dynamicTemplatePolicyByScope.remove("groupRef:$name")
-        BiliConfigManager.data.liveTemplatePolicyByScope.remove("groupRef:$name")
-        BiliConfigManager.data.liveCloseTemplatePolicyByScope.remove("groupRef:$name")
+        TemplateRuntimeCoordinator.removeScope("dynamic", "groupRef:$name")
+        TemplateRuntimeCoordinator.removeScope("live", "groupRef:$name")
+        TemplateRuntimeCoordinator.removeScope("liveClose", "groupRef:$name")
         filter.remove(name)
         atAll.remove(name)
         group.remove(name)

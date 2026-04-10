@@ -110,6 +110,33 @@ class TemplateSelectionServiceTest {
     }
 
     @Test
+    fun `selection should still resolve group scope policies after cache reset`() {
+        TemplateRuntimeCoordinator.replaceAllPolicies(
+            dynamicPolicies = mutableMapOf(
+                "groupRef:ops" to mutableMapOf(
+                    123456L to TemplatePolicy(
+                        templates = mutableListOf("TwoMsg"),
+                        randomEnabled = false,
+                    ),
+                ),
+            ),
+            livePolicies = mutableMapOf(),
+            liveClosePolicies = mutableMapOf(),
+        )
+
+        val result = TemplateSelectionService.selectTemplate(
+            type = "dynamic",
+            uid = 123456L,
+            directScope = "contact:onebot11:group:10001",
+            groupScopes = listOf("groupRef:ops"),
+            messageIdentity = "dynamic:group-after-reset",
+        )
+
+        assertEquals("TwoMsg", result.templateName)
+        assertEquals("groupRef:ops", result.scope)
+    }
+
+    @Test
     fun `removing a scope should clear last-used runtime state for that scope`() {
         primeLastTemplate("dynamic|contact:onebot11:group:10001|123456", "OneMsg")
 
@@ -133,18 +160,27 @@ class TemplateSelectionServiceTest {
      * 这里仍通过反射写入私有缓存，直到协调器暴露完整的运行态观测入口。
      */
     private fun primeLastTemplate(key: String, templateName: String) {
-        @Suppress("UNCHECKED_CAST")
-        val state = runtimeState("lastTemplateByScopeKey") as MutableMap<String, String>
-        state[key] = templateName
+        val segments = key.split("|")
+        require(segments.size == 3) { "unexpected runtime key: $key" }
+        TemplateRuntimeCoordinator.selectTemplateName(
+            type = segments[0],
+            uid = segments[2].toLong(),
+            directScope = segments[1],
+            groupScopes = emptyList(),
+            messageIdentity = "prime:$templateName",
+            templateExists = { candidate -> candidate == templateName },
+        )
     }
 
     /**
-     * 读取模板选择服务的私有运行态缓存。
-     * 当前测试只把反射限制在断言辅助里，清理动作统一走协调器公开 API。
+     * 读取协调层导出的运行态快照。
+     * 测试通过只读快照断言缓存结果，避免继续依赖模板选择服务的私有字段布局。
      */
-    private fun runtimeState(fieldName: String): MutableMap<*, *> {
-        val field = TemplateSelectionService::class.java.getDeclaredField(fieldName)
-        field.isAccessible = true
-        return field.get(TemplateSelectionService) as MutableMap<*, *>
+    private fun runtimeState(fieldName: String): Map<String, String> {
+        return when (fieldName) {
+            "lastTemplateByScopeKey" -> TemplateRuntimeCoordinator.snapshotLastTemplateState()
+            "batchTemplateByMessageKey" -> TemplateRuntimeCoordinator.snapshotBatchTemplateState()
+            else -> error("unknown runtime state: $fieldName")
+        }
     }
 }

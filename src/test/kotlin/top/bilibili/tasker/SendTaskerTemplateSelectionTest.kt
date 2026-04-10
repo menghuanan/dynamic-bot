@@ -8,7 +8,7 @@ import top.bilibili.TemplatePolicy
 import top.bilibili.connector.OutgoingPart
 import top.bilibili.data.DynamicMessage
 import top.bilibili.data.DynamicType
-import top.bilibili.service.TemplateSelectionService
+import top.bilibili.service.TemplateRuntimeCoordinator
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -20,9 +20,11 @@ class SendTaskerTemplateSelectionTest {
     fun cleanup() {
         BiliData.dynamic.clear()
         BiliData.group.clear()
-        BiliData.dynamicTemplatePolicyByScope.clear()
-        clearRuntimeState("lastTemplateByScopeKey")
-        clearRuntimeState("batchTemplateByMessageKey")
+        TemplateRuntimeCoordinator.replaceAllPolicies(
+            dynamicPolicies = mutableMapOf(),
+            livePolicies = mutableMapOf(),
+            liveClosePolicies = mutableMapOf(),
+        )
     }
 
     @Test
@@ -90,6 +92,39 @@ class SendTaskerTemplateSelectionTest {
         assertTrue(secondText.contains("@123456@"))
     }
 
+    @Test
+    fun `batch cleanup should clear cached group selection through coordinator api`() = runBlocking {
+        val uid = 123456L
+        val firstContact = "onebot11:group:10001"
+        val secondContact = "onebot11:group:10002"
+        BiliData.group["ops"] = Group(
+            name = "ops",
+            creator = 1L,
+            contacts = mutableSetOf(firstContact, secondContact),
+        )
+        BiliData.dynamic[uid] = SubData(
+            name = "测试UP",
+            contacts = mutableSetOf(firstContact, secondContact),
+            sourceRefs = mutableSetOf("groupRef:ops"),
+        )
+        BiliData.dynamicTemplatePolicyByScope["groupRef:ops"] = mutableMapOf(
+            uid to TemplatePolicy(
+                templates = mutableListOf("OneMsg", "TwoMsg"),
+                randomEnabled = true,
+            ),
+        )
+
+        val message = buildDynamicMessage(uid = uid, did = "9003")
+        SendTasker.warmupMessageBuildPath(message, firstContact)
+        assertTrue(runtimeState("batchTemplateByMessageKey").isNotEmpty())
+
+        TemplateRuntimeCoordinator.clearBatchSelections("dynamic:9003")
+
+        assertTrue(runtimeState("batchTemplateByMessageKey").isEmpty())
+        val nextSegments = SendTasker.warmupMessageBuildPath(message, secondContact)
+        assertTrue(extractText(nextSegments).contains("测试UP"))
+    }
+
     private fun buildDynamicMessage(uid: Long, did: String): DynamicMessage {
         return DynamicMessage(
             did = did,
@@ -112,9 +147,11 @@ class SendTaskerTemplateSelectionTest {
             .joinToString("\n") { it.text }
     }
 
-    private fun clearRuntimeState(fieldName: String) {
-        val field = TemplateSelectionService::class.java.getDeclaredField(fieldName)
-        field.isAccessible = true
-        (field.get(TemplateSelectionService) as MutableMap<*, *>).clear()
+    private fun runtimeState(fieldName: String): Map<String, String> {
+        return when (fieldName) {
+            "lastTemplateByScopeKey" -> TemplateRuntimeCoordinator.snapshotLastTemplateState()
+            "batchTemplateByMessageKey" -> TemplateRuntimeCoordinator.snapshotBatchTemplateState()
+            else -> error("unknown runtime state: $fieldName")
+        }
     }
 }

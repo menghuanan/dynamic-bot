@@ -12,6 +12,8 @@ import top.bilibili.TemplatePolicy
  */
 object TemplateRuntimeCoordinator {
     private val mutex = Mutex()
+    private val lastTemplateByScopeKey = mutableMapOf<String, String>()
+    private val batchTemplateByMessageKey = mutableMapOf<String, String>()
 
     /**
      * 为后续需要串行化的模板运行态操作提供共享锁。
@@ -26,6 +28,58 @@ object TemplateRuntimeCoordinator {
     fun readScopePolicies(type: String, scope: String): MutableMap<Long, TemplatePolicy> {
         return runLocked {
             copyPolicyEntries(policyMap(type)?.get(scope) ?: mutableMapOf())
+        }
+    }
+
+    /**
+     * 在共享锁内完成模板策略解析、随机选择与运行态更新。
+     * 发送链路通过这一入口选择模板名，避免策略读取和 last-used 写入落在不同并发边界。
+     */
+    fun selectTemplateName(
+        type: String,
+        uid: Long,
+        directScope: String?,
+        groupScopes: List<String>,
+        messageIdentity: String,
+        templateExists: (String) -> Boolean,
+    ): CoordinatorTemplateSelection? {
+        return runLocked {
+            val resolvedPolicy = resolvePolicy(type, uid, directScope, groupScopes) ?: return@runLocked null
+            val validTemplates = resolvedPolicy.policy.templates.filter(templateExists)
+            if (validTemplates.isEmpty()) {
+                return@runLocked CoordinatorTemplateSelection(
+                    scope = resolvedPolicy.scope,
+                    templateName = null,
+                )
+            }
+
+            if (!resolvedPolicy.policy.randomEnabled || validTemplates.size == 1) {
+                val fixedTemplate = validTemplates.first()
+                rememberSelection(type, resolvedPolicy.scope, uid, messageIdentity, fixedTemplate)
+                return@runLocked CoordinatorTemplateSelection(
+                    scope = resolvedPolicy.scope,
+                    templateName = fixedTemplate,
+                )
+            }
+
+            val batchKey = buildBatchKey(type, resolvedPolicy.scope, uid, messageIdentity)
+            if (resolvedPolicy.scope.startsWith("groupRef:")) {
+                batchTemplateByMessageKey[batchKey]?.let { cachedTemplate ->
+                    return@runLocked CoordinatorTemplateSelection(
+                        scope = resolvedPolicy.scope,
+                        templateName = cachedTemplate,
+                    )
+                }
+            }
+
+            val lastTemplate = lastTemplateByScopeKey[buildLastUsedKey(type, resolvedPolicy.scope, uid)]
+            val candidates = validTemplates.filter { templateName -> templateName != lastTemplate }.ifEmpty { validTemplates }
+            val selectedTemplate = candidates.random(kotlin.random.Random.Default)
+            rememberSelection(type, resolvedPolicy.scope, uid, messageIdentity, selectedTemplate)
+            CoordinatorTemplateSelection(
+                scope = resolvedPolicy.scope,
+                templateName = selectedTemplate,
+            )
         }
     }
 
@@ -60,7 +114,7 @@ object TemplateRuntimeCoordinator {
             }
             if (policy.templates.isEmpty()) {
                 policiesByUid.remove(uid)
-                TemplateSelectionService.clearRuntimeBinding(type, scope, uid)
+                clearRuntimeBinding(type, scope, uid)
                 if (policiesByUid.isEmpty()) {
                     policyMap(type)?.remove(scope)
                 }
@@ -88,7 +142,7 @@ object TemplateRuntimeCoordinator {
      */
     fun removeScope(type: String, scope: String) {
         policyMap(type)?.remove(scope)
-        TemplateSelectionService.clearRuntimeScope(type, scope)
+        clearRuntimeScope(type, scope)
     }
 
     /**
@@ -102,7 +156,7 @@ object TemplateRuntimeCoordinator {
                 policiesByUid.isEmpty()
             }
         }
-        TemplateSelectionService.clearRuntimeUid(uid)
+        clearRuntimeUid(uid)
     }
 
     /**
@@ -117,7 +171,20 @@ object TemplateRuntimeCoordinator {
         BiliData.dynamicTemplatePolicyByScope = copyPolicyMap(dynamicPolicies)
         BiliData.liveTemplatePolicyByScope = copyPolicyMap(livePolicies)
         BiliData.liveCloseTemplatePolicyByScope = copyPolicyMap(liveClosePolicies)
-        TemplateSelectionService.clearAllRuntimeState()
+        clearAllRuntimeState()
+    }
+
+    /**
+     * 清理单条消息批次的 group scope 复用缓存。
+     * 发送批次结束后通过该入口回收临时随机状态，避免后续消息误复用旧批次结果。
+     */
+    fun clearBatchSelections(messageIdentity: String) {
+        val suffix = "|$messageIdentity"
+        runLocked {
+            batchTemplateByMessageKey.keys
+                .filter { key -> key.endsWith(suffix) }
+                .forEach { key -> batchTemplateByMessageKey.remove(key) }
+        }
     }
 
     /**
@@ -133,6 +200,22 @@ object TemplateRuntimeCoordinator {
     }
 
     /**
+     * 导出 last-used 运行态快照，供测试断言缓存清理行为。
+     * 返回值是副本，调用方不能借此修改真实运行态。
+     */
+    internal fun snapshotLastTemplateState(): Map<String, String> {
+        return runLocked { lastTemplateByScopeKey.toMap() }
+    }
+
+    /**
+     * 导出批次模板缓存快照，供测试断言批次清理行为。
+     * 返回值只用于观测，不参与任何业务修改。
+     */
+    internal fun snapshotBatchTemplateState(): Map<String, String> {
+        return runLocked { batchTemplateByMessageKey.toMap() }
+    }
+
+    /**
      * 解析模板类型对应的策略表。
      * 动态、开播、下播三类策略必须独立维护，避免跨类型误删或串写。
      */
@@ -143,6 +226,114 @@ object TemplateRuntimeCoordinator {
             "liveClose" -> BiliData.liveCloseTemplatePolicyByScope
             else -> null
         }
+    }
+
+    /**
+     * 解析命中的模板策略。
+     * direct contact 优先于 groupRef，多组命中时维持传入顺序决定的首个命中结果。
+     */
+    private fun resolvePolicy(
+        type: String,
+        uid: Long,
+        directScope: String?,
+        groupScopes: List<String>,
+    ): CoordinatorResolvedPolicy? {
+        val policies = policyMap(type) ?: return null
+        if (directScope != null) {
+            policies[directScope]?.get(uid)?.let { policy ->
+                return CoordinatorResolvedPolicy(directScope, policy)
+            }
+        }
+
+        val matchedGroupScope = groupScopes.firstOrNull { scope ->
+            policies[scope]?.containsKey(uid) == true
+        } ?: return null
+        return CoordinatorResolvedPolicy(
+            scope = matchedGroupScope,
+            policy = policies[matchedGroupScope]!!.getValue(uid),
+        )
+    }
+
+    /**
+     * 记录一次模板选择结果。
+     * groupRef 作用域会同时写入批次缓存，联系人直绑只更新 last-used 状态。
+     */
+    private fun rememberSelection(
+        type: String,
+        scope: String,
+        uid: Long,
+        messageIdentity: String,
+        templateName: String,
+    ) {
+        lastTemplateByScopeKey[buildLastUsedKey(type, scope, uid)] = templateName
+        if (scope.startsWith("groupRef:")) {
+            batchTemplateByMessageKey[buildBatchKey(type, scope, uid, messageIdentity)] = templateName
+        }
+    }
+
+    /**
+     * 清理指定类型与作用域对应的运行态缓存。
+     * 当整段策略作用域被删除时，需要同时回收 last-used 与批次复用状态。
+     */
+    private fun clearRuntimeScope(type: String, scope: String) {
+        val scopePrefix = "$type|$scope|"
+        lastTemplateByScopeKey.keys
+            .filter { key -> key.startsWith(scopePrefix) }
+            .forEach { key -> lastTemplateByScopeKey.remove(key) }
+        batchTemplateByMessageKey.keys
+            .filter { key -> key.startsWith(scopePrefix) }
+            .forEach { key -> batchTemplateByMessageKey.remove(key) }
+    }
+
+    /**
+     * 清理指定 UID 在全部类型与作用域中的运行态缓存。
+     * 生命周期删除会跨模板类型回收 UID 绑定，这里同步移除所有残留选择状态。
+     */
+    private fun clearRuntimeUid(uid: Long) {
+        val uidSuffix = "|$uid"
+        lastTemplateByScopeKey.keys
+            .filter { key -> key.endsWith(uidSuffix) }
+            .forEach { key -> lastTemplateByScopeKey.remove(key) }
+        batchTemplateByMessageKey.keys
+            .filter { key -> key.contains("$uidSuffix|") }
+            .forEach { key -> batchTemplateByMessageKey.remove(key) }
+    }
+
+    /**
+     * 清理单个类型、作用域与 UID 对应的运行态缓存。
+     * 当只删除某个 UID 的最后一个模板时，需要精确回收该绑定而不是清空整个作用域。
+     */
+    private fun clearRuntimeBinding(type: String, scope: String, uid: Long) {
+        lastTemplateByScopeKey.remove(buildLastUsedKey(type, scope, uid))
+        val batchPrefix = "$type|$scope|$uid|"
+        batchTemplateByMessageKey.keys
+            .filter { cacheKey -> cacheKey.startsWith(batchPrefix) }
+            .forEach { cacheKey -> batchTemplateByMessageKey.remove(cacheKey) }
+    }
+
+    /**
+     * 清空全部模板选择运行态缓存。
+     * 全量重载策略表时必须同步重置运行态，避免旧缓存继续影响新配置。
+     */
+    private fun clearAllRuntimeState() {
+        lastTemplateByScopeKey.clear()
+        batchTemplateByMessageKey.clear()
+    }
+
+    /**
+     * 构造 last-used 缓存 key。
+     * key 中显式包含 type、scope 与 uid，保证不同消息类型与作用域之间互不串扰。
+     */
+    private fun buildLastUsedKey(type: String, scope: String, uid: Long): String {
+        return "$type|$scope|$uid"
+    }
+
+    /**
+     * 构造分组批次缓存 key。
+     * 只有 group scope 会复用同一 messageIdentity 下的随机结果，联系人直绑不会进入该缓存。
+     */
+    private fun buildBatchKey(type: String, scope: String, uid: Long, messageIdentity: String): String {
+        return "$type|$scope|$uid|$messageIdentity"
     }
 
     /**
@@ -189,6 +380,24 @@ data class TemplatePolicySnapshotBundle(
     val dynamic: MutableMap<String, MutableMap<Long, TemplatePolicy>>,
     val live: MutableMap<String, MutableMap<Long, TemplatePolicy>>,
     val liveClose: MutableMap<String, MutableMap<Long, TemplatePolicy>>,
+)
+
+/**
+ * 协调层返回的模板名选择结果。
+ * 若模板策略存在但全部模板失效，则 templateName 为空，由上层执行默认模板回退。
+ */
+data class CoordinatorTemplateSelection(
+    val scope: String,
+    val templateName: String?,
+)
+
+/**
+ * 协调层内部使用的命中策略快照。
+ * 解析完成后保留 scope 和策略内容，供同一把锁内继续完成随机选择。
+ */
+private data class CoordinatorResolvedPolicy(
+    val scope: String,
+    val policy: TemplatePolicy,
 )
 
 /**

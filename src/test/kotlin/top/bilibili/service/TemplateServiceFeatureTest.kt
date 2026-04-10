@@ -191,12 +191,14 @@ class TemplateServiceFeatureTest {
     }
 
     /**
-     * 读取模板选择服务的运行态缓存，用于断言删除策略后的清理效果。
-     * 这里保留只读反射入口，避免在生产代码中加入测试专用状态暴露。
+     * 读取协调层导出的运行态快照，用于断言删除策略后的清理效果。
+     * 测试侧只观察副本，避免直接触碰运行中的真实缓存结构。
      */
-    private fun runtimeState(fieldName: String): MutableMap<*, *> {
-        val field = TemplateSelectionService::class.java.getDeclaredField(fieldName)
-        field.isAccessible = true
-        return field.get(TemplateSelectionService) as MutableMap<*, *>
+    private fun runtimeState(fieldName: String): Map<String, String> {
+        return when (fieldName) {
+            "lastTemplateByScopeKey" -> TemplateRuntimeCoordinator.snapshotLastTemplateState()
+            "batchTemplateByMessageKey" -> TemplateRuntimeCoordinator.snapshotBatchTemplateState()
+            else -> error("unknown runtime state: $fieldName")
+        }
     }
 }

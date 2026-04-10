@@ -100,4 +100,21 @@ class BiliDataWrapperFeatureTest {
 
         assertEquals(listOf("OneMsg"), snapshot["contact:onebot11:group:10001"]?.get(123456L)?.templates?.toList())
     }
+
+    @Test
+    fun `wrapper from should snapshot template policies before live maps change`() {
+        val scope = "contact:onebot11:group:10001"
+        val uid = 123456L
+        BiliData.dynamicTemplatePolicyByScope[scope] = mutableMapOf(
+            uid to TemplatePolicy(
+                templates = mutableListOf("OneMsg"),
+                randomEnabled = true,
+            ),
+        )
+
+        val wrapper = BiliDataWrapper.from(BiliData)
+        BiliData.dynamicTemplatePolicyByScope.getValue(scope).getValue(uid).templates += "TwoMsg"
+
+        assertEquals(listOf("OneMsg"), wrapper.dynamicTemplatePolicyByScope[scope]?.get(uid)?.templates?.toList())
+    }
 }

@@ -4,6 +4,7 @@ import com.charleskorn.kaml.Yaml
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import org.slf4j.LoggerFactory
+import top.bilibili.service.TemplateRuntimeCoordinator
 import top.bilibili.utils.normalizeContactSubject
 import java.io.File
 import java.nio.file.Paths
@@ -529,7 +530,10 @@ object BiliConfigManager {
      */
     fun saveData(dataToSave: BiliData = BiliData): Boolean {
         return try {
-            val wrapper = BiliDataWrapper.from(dataToSave)
+            val wrapper = BiliDataWrapper.from(
+                biliData = dataToSave,
+                templatePolicies = TemplateRuntimeCoordinator.snapshotPolicies(),
+            )
             val yamlContent = yaml.encodeToString(wrapper)
             dataFile.writeText(yamlContent)
 

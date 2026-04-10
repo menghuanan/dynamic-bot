@@ -137,27 +137,7 @@ object DynamicService {
      * 清理时同时回收空 scope，避免策略树在长期运行中残留无效壳层。
      */
     private fun removeUidTemplatePolicies(uid: Long) {
-        removeUidFromPolicyMap(top.bilibili.BiliData.dynamicTemplatePolicyByScope, uid)
-        removeUidFromPolicyMap(top.bilibili.BiliData.liveTemplatePolicyByScope, uid)
-        removeUidFromPolicyMap(top.bilibili.BiliData.liveCloseTemplatePolicyByScope, uid)
-    }
-
-    /**
-     * 从单张 scope -> uid -> policy 映射中移除指定 UID。
-     * 这里集中处理空 scope 的回收逻辑，避免三类模板策略重复手写同样的清理代码。
-     */
-    private fun <T> removeUidFromPolicyMap(
-        policyMap: MutableMap<String, MutableMap<Long, T>>,
-        uid: Long,
-    ) {
-        val emptyScopes = mutableListOf<String>()
-        policyMap.forEach { (scopeKey, policies) ->
-            policies.remove(uid)
-            if (policies.isEmpty()) {
-                emptyScopes += scopeKey
-            }
-        }
-        emptyScopes.forEach { scopeKey -> policyMap.remove(scopeKey) }
+        TemplateRuntimeCoordinator.removeUidAcrossTypes(uid)
     }
 
     private suspend fun createSubData(uid: Long): Pair<SubData?, String?> {

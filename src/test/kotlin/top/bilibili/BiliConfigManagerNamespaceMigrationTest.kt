@@ -2,6 +2,8 @@ package top.bilibili
 
 import com.charleskorn.kaml.Yaml
 import kotlinx.serialization.encodeToString
+import top.bilibili.service.TemplateRuntimeCoordinator
+import top.bilibili.service.TemplateSelectionService
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -138,6 +140,29 @@ class BiliConfigManagerNamespaceMigrationTest {
         assertTrue(BiliData.dynamicPushTemplateByUid.isEmpty())
         assertFalse(serialized.contains("dynamicPushTemplate:"))
         assertFalse(serialized.contains("dynamicPushTemplateByUid:"))
+    }
+
+    @Test
+    fun `load data should clear runtime caches when applying current wrapper schema`() {
+        BiliData.dynamicTemplatePolicyByScope["contact:onebot11:group:10001"] = mutableMapOf(
+            123456L to TemplatePolicy(
+                templates = mutableListOf("OneMsg"),
+                randomEnabled = false,
+            ),
+        )
+        TemplateSelectionService.selectTemplate(
+            type = "dynamic",
+            uid = 123456L,
+            directScope = "contact:onebot11:group:10001",
+            groupScopes = emptyList(),
+            messageIdentity = "dynamic:reload-current-wrapper",
+        )
+
+        val changed = loadFromYamlViaReflection("dataVersion: 4")
+
+        assertFalse(changed)
+        assertTrue(TemplateRuntimeCoordinator.snapshotLastTemplateState().isEmpty())
+        assertTrue(TemplateRuntimeCoordinator.snapshotBatchTemplateState().isEmpty())
     }
 
     private fun migrateViaReflection(): Boolean {
