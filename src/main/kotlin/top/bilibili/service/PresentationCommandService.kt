@@ -98,7 +98,7 @@ object PresentationCommandService {
     }
 
     /**
-     * 统一处理模板命令分支，保证预览、设置和说明都走相同权限边界。
+     * 统一处理模板命令分支，保证模板策略写入、预览和说明都走相同权限边界。
      */
     suspend fun handleTemplate(chatContact: PlatformContact, senderContact: PlatformContact, args: List<String>) {
         val isGroup = chatContact.type == PlatformChatType.GROUP
@@ -108,9 +108,12 @@ object PresentationCommandService {
                 chatContact,
                 """
                 用法:
-                /bili template list <d|l|le>
+                /bili template add <d|l|le> <模板名> <uid> [group <分组名>]
+                /bili template del <d|l|le> <模板名> <uid> [group <分组名>]
+                /bili template list <d|l|le> [uid] [group <分组名>]
+                /bili template on <d|l|le> <uid> [group <分组名>]
+                /bili template off <d|l|le> <uid> [group <分组名>]
                 /bili template preview <d|l|le> <模板名>
-                /bili template set <d|l|le> <模板名> [uid]
                 /bili template explain <d|l|le>
                 """.trimIndent(),
             )
@@ -121,7 +124,20 @@ object PresentationCommandService {
         when (args[1].lowercase()) {
             "list", "ls" -> {
                 val type = args.getOrNull(2) ?: "d"
-                sendText(chatContact, TemplateService.listTemplateText(type))
+                val result = when {
+                    args.getOrNull(3)?.equals("group", ignoreCase = true) == true -> {
+                        TemplateService.listTemplatePolicy(type, subject, null, parseTemplateGroupName(args, 3))
+                    }
+                    args.size <= 3 -> TemplateService.listTemplatePolicy(type, subject, null, null)
+                    else -> {
+                        val uid = parseTemplateUid(args[3]) ?: run {
+                            sendText(chatContact, "UID 格式错误，请输入纯数字")
+                            return
+                        }
+                        TemplateService.listTemplatePolicy(type, subject, uid, parseTemplateGroupName(args, 4))
+                    }
+                }
+                sendText(chatContact, result)
             }
 
             "preview", "pv" -> {
@@ -132,21 +148,60 @@ object PresentationCommandService {
                 sendText(chatContact, TemplateService.previewTemplate(args[2], args[3], subject))
             }
 
-            "set" -> {
-                if (args.size < 4) {
-                    sendText(chatContact, "用法: /bili template set <d|l|le> <模板名> [uid]")
+            "add" -> {
+                if (args.size < 5) {
+                    sendText(chatContact, "用法: /bili template add <d|l|le> <模板名> <uid> [group <分组名>]")
                     return
                 }
-                val uid = args.getOrNull(4)?.trim()?.let {
-                    val parsed = it.toLongOrNull()
-                    if (parsed == null || parsed <= 0L) {
-                        sendText(chatContact, "UID 格式错误，请输入纯数字")
-                        return
-                    }
-                    parsed
+                val uid = parseTemplateUid(args[4]) ?: run {
+                    sendText(chatContact, "UID 格式错误，请输入纯数字")
+                    return
                 }
-                val result = TemplateService.setTemplate(args[2], args[3], subject, uid)
-                BiliConfigManager.saveData()
+                val result = TemplateService.addTemplate(args[2], args[3], subject, uid, parseTemplateGroupName(args, 5))
+                if (result.contains("成功")) BiliConfigManager.saveData()
+                sendText(chatContact, result)
+            }
+
+            "del", "delete", "rm" -> {
+                if (args.size < 5) {
+                    sendText(chatContact, "用法: /bili template del <d|l|le> <模板名> <uid> [group <分组名>]")
+                    return
+                }
+                val uid = parseTemplateUid(args[4]) ?: run {
+                    sendText(chatContact, "UID 格式错误，请输入纯数字")
+                    return
+                }
+                val result = TemplateService.deleteTemplate(args[2], args[3], subject, uid, parseTemplateGroupName(args, 5))
+                if (result.contains("成功")) BiliConfigManager.saveData()
+                sendText(chatContact, result)
+            }
+
+            "on" -> {
+                if (args.size < 4) {
+                    sendText(chatContact, "用法: /bili template on <d|l|le> <uid> [group <分组名>]")
+                    return
+                }
+                val uid = parseTemplateUid(args[3]) ?: run {
+                    sendText(chatContact, "UID 格式错误，请输入纯数字")
+                    return
+                }
+                // 随机开关在命令入口统一解析作用域后再下沉到服务层，避免遗漏 group 参数校验。
+                val result = TemplateService.enableRandom(args[2], subject, uid, parseTemplateGroupName(args, 4))
+                if (result.contains("成功")) BiliConfigManager.saveData()
+                sendText(chatContact, result)
+            }
+
+            "off" -> {
+                if (args.size < 4) {
+                    sendText(chatContact, "用法: /bili template off <d|l|le> <uid> [group <分组名>]")
+                    return
+                }
+                val uid = parseTemplateUid(args[3]) ?: run {
+                    sendText(chatContact, "UID 格式错误，请输入纯数字")
+                    return
+                }
+                val result = TemplateService.disableRandom(args[2], subject, uid, parseTemplateGroupName(args, 4))
+                if (result.contains("成功")) BiliConfigManager.saveData()
                 sendText(chatContact, result)
             }
 
@@ -157,6 +212,25 @@ object PresentationCommandService {
 
             else -> sendText(chatContact, "未知子命令: ${args[1]}")
         }
+    }
+
+    /**
+     * 解析模板命令中的 UID 参数。
+     * 这里统一拒绝非正整数，避免各子命令分支重复书写相同校验。
+     */
+    private fun parseTemplateUid(raw: String): Long? {
+        val parsed = raw.trim().toLongOrNull() ?: return null
+        return parsed.takeIf { it > 0L }
+    }
+
+    /**
+     * 解析可选的 `group <分组名>` 后缀。
+     * 只有显式出现 group 关键字时才按分组作用域解释，避免误吞普通参数。
+     */
+    private fun parseTemplateGroupName(args: List<String>, startIndex: Int): String? {
+        val keyword = args.getOrNull(startIndex) ?: return null
+        if (!keyword.equals("group", ignoreCase = true)) return null
+        return args.getOrNull(startIndex + 1)
     }
 
     private fun getHelpImagePath(imageName: String): String? {
