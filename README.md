@@ -122,11 +122,11 @@ platform:
 > 请务必使用最新稳定版本的源码或可执行文件，以避免遇到已知问题。
 
 #### 方法 一：从 [Releases](https://github.com/menghuanan/dynamic-bot/releases) 下载
-请根据你的系统下载对应的平台发行包；当前发布资产按平台拆分，普通用户不需要直接下载程序本体文件：
+请根据你的系统下载对应的平台发行包：
 1. 在项目主页点击Releases标签。
 2. Windows x64 下载 `dynamic-bot-windows-x64-v<版本>.zip`。
 3. Linux x64 下载 `dynamic-bot-linux-x64-v<版本>.tar.gz`。
-4. 解压后只通过包内启动脚本运行。
+4. 解压后通过包内启动脚本运行。
 
 #### 方法 二：本地自行编译
 > **在本地编译之前需要先安装并配置好 JDK 17 及以上版本。**
@@ -147,9 +147,9 @@ chmod +x gradlew
 
 ### 2. 运行 Bot
 
-#### 方式一：使用发行包启动脚本（裸机）
+#### 方式一：使用发行包启动脚本
 
-发行包启动脚本会补齐 JVM、编码、时区与软件渲染参数。Linux 裸机还会在 JVM 启动前注入 jemalloc，用于减少 glibc malloc 导致的 Anonymous/RSS 漂移。
+发行包启动脚本会补齐 JVM、编码、时区与软件渲染参数。
 
 Windows 解压并启动：
 ```powershell
@@ -1178,7 +1178,7 @@ docker logs -f dynamic-bot
 
 如果您有任何建议或功能请求和问题，欢迎在 Issue 中提出。
 
-如果你希望贡献代码或参与项目的开发，可以加入我的 QQ 群：1072150397
+如果你希望贡献代码或参与项目的开发，可以加入我的 QQ 群：[点击链接加入群聊](https://qm.qq.com/q/VfN3EQggQI)
 
 
 
