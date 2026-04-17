@@ -169,26 +169,64 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
                     *libjemalloc.so.2*)
                         ;;
                     *)
-                        # 优先探测主流发行版安装路径，再回退到动态链接器缓存，避免要求用户手动填写绝对路径。
-                        for candidate in \
-                            /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
-                            /usr/lib/aarch64-linux-gnu/libjemalloc.so.2 \
-                            /usr/lib64/libjemalloc.so.2 \
-                            /usr/lib/libjemalloc.so.2
-                        do
-                            if [ -r "${'$'}candidate" ]; then
-                                JEMALLOC_LIB="${'$'}candidate"
-                                break
-                            fi
-                        done
+                        # 统一封装 jemalloc 探测路径，安装前后都复用同一组系统路径与 ldconfig 缓存。
+                        find_jemalloc_lib() {
+                            for candidate in \
+                                /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
+                                /usr/lib/aarch64-linux-gnu/libjemalloc.so.2 \
+                                /usr/lib64/libjemalloc.so.2 \
+                                /usr/lib/libjemalloc.so.2
+                            do
+                                if [ -r "${'$'}candidate" ]; then
+                                    echo "${'$'}candidate"
+                                    return 0
+                                fi
+                            done
 
-                        if [ -z "${'$'}JEMALLOC_LIB" ] && command -v ldconfig >/dev/null 2>&1; then
-                            JEMALLOC_LIB="${'$'}(ldconfig -p | awk '/libjemalloc\.so\.2/ { print ${'$'}NF; exit }')"
-                        fi
+                            if command -v ldconfig >/dev/null 2>&1; then
+                                ldconfig -p | awk '/libjemalloc\.so\.2/ { print ${'$'}NF; exit }'
+                            fi
+                        }
+
+                        JEMALLOC_LIB="${'$'}(find_jemalloc_lib)"
 
                         if [ -z "${'$'}JEMALLOC_LIB" ] || [ ! -r "${'$'}JEMALLOC_LIB" ]; then
-                            echo "ERROR: libjemalloc.so.2 not found. Install jemalloc before starting dynamic-bot on Linux bare metal." >&2
-                            exit 1
+                            echo "libjemalloc.so.2 was not found."
+                            # 只在交互式终端中询问安装，CI/服务进程等非交互环境必须显式失败并提示人工处理。
+                            if [ -t 0 ] && [ -t 1 ]; then
+                                printf "Install jemalloc via the system package manager now? [y/N] "
+                                read -r install_jemalloc_reply
+
+                                case "${'$'}install_jemalloc_reply" in
+                                    [yY]|[yY][eE][sS])
+                                        # 自动安装仅调用发行版官方包管理器，不内置第三方二进制下载路径。
+                                        if command -v apt-get >/dev/null 2>&1; then
+                                            sudo apt-get update && sudo apt-get install -y libjemalloc2
+                                        elif command -v dnf >/dev/null 2>&1; then
+                                            sudo dnf install -y jemalloc
+                                        elif command -v yum >/dev/null 2>&1; then
+                                            sudo yum install -y jemalloc
+                                        else
+                                            echo "ERROR: No supported package manager found. Install jemalloc manually." >&2
+                                            exit 1
+                                        fi
+                                        ;;
+                                    *)
+                                        echo "ERROR: jemalloc is required for Linux bare-metal startup. Install it manually and retry." >&2
+                                        exit 1
+                                        ;;
+                                esac
+                            else
+                                echo "ERROR: libjemalloc.so.2 not found. Install jemalloc manually with your system package manager before starting dynamic-bot on Linux bare metal." >&2
+                                exit 1
+                            fi
+
+                            # 安装后重新探测并校验可读性，避免包管理器失败或安装到不可见路径后继续启动。
+                            JEMALLOC_LIB="${'$'}(find_jemalloc_lib)"
+                            if [ -z "${'$'}JEMALLOC_LIB" ] || [ ! -r "${'$'}JEMALLOC_LIB" ]; then
+                                echo "ERROR: libjemalloc.so.2 is still unavailable after installation. Install jemalloc manually and retry." >&2
+                                exit 1
+                            fi
                         fi
 
                         export LD_PRELOAD="${'$'}JEMALLOC_LIB"

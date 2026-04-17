@@ -115,88 +115,60 @@ platform:
 
 ## 快速开始
 
-### 1. 获取可执行文件或 JAR 包文件
+### 1. 获取平台发行包
 
 > ⚠️ **部署前请确认：**
 > 
 > 请务必使用最新稳定版本的源码或可执行文件，以避免遇到已知问题。
 
 #### 方法 一：从 [Releases](https://github.com/menghuanan/dynamic-bot/releases) 下载
-如果你不想在本地配置 Java 环境，可以直接从仓库获取最新的可执行JAR：
+请根据你的系统下载对应的平台发行包；当前发布资产按平台拆分，普通用户不需要直接下载程序本体文件：
 1. 在项目主页点击Releases标签。
-2. 在最新发行版的Assets区域下载最新的jar包。
+2. Windows x64 下载 `dynamic-bot-windows-x64-v<版本>.zip`。
+3. Linux x64 下载 `dynamic-bot-linux-x64-v<版本>.tar.gz`。
+4. 解压后只通过包内启动脚本运行。
 
 #### 方法 二：本地自行编译
 > **在本地编译之前需要先安装并配置好 JDK 17 及以上版本。**
 
 > **平台支持说明：** 当前版本仅支持 Windows x64 与 Linux x64，暂未适配 macOS。
-```bash
+```powershell
 # Windows
-.\gradlew.bat shadowJar
+.\gradlew.bat windowsReleaseDistZip
 ```
 ```bash
 # Linux
 chmod +x gradlew
-./gradlew shadowJar
+./gradlew linuxReleaseDistTar
 ```
-编译完成后,可执行文件位于：
-- `build/libs/dynamic-bot-1.8-SNAPSHOT.jar`
-
-如果需要使用裸机启动脚本，请生成发行包：
-```bash
-# Windows
-.\gradlew.bat distZip
-```
-```bash
-# Linux
-chmod +x gradlew
-./gradlew distZip
-```
-发行包位于：
-- `build/distributions/dynamic-bot-1.8-SNAPSHOT.zip`
+发行包位于 `build/distributions/`：
+- Windows：`dynamic-bot-windows-x64-v<版本>.zip`
+- Linux：`dynamic-bot-linux-x64-v<版本>.tar.gz`
 
 ### 2. 运行 Bot
 
-#### 方式一：使用发行包启动脚本（裸机推荐）
+#### 方式一：使用发行包启动脚本（裸机）
 
 发行包启动脚本会补齐 JVM、编码、时区与软件渲染参数。Linux 裸机还会在 JVM 启动前注入 jemalloc，用于减少 glibc malloc 导致的 Anonymous/RSS 漂移。
 
-Linux 裸机运行前必须安装 `libjemalloc.so.2`，否则 `bin/start.sh` 会拒绝启动：
-```bash
-# Debian / Ubuntu
-sudo apt-get update
-sudo apt-get install -y libjemalloc2
-
-# RHEL / CentOS / Rocky / Fedora
-sudo dnf install -y jemalloc
-```
-
-解压并启动：
-```bash
-# Linux
-unzip build/distributions/dynamic-bot-1.8-SNAPSHOT.zip
-cd dynamic-bot-1.8-SNAPSHOT
-chmod +x bin/start.sh
-./bin/start.sh
-```
+Windows 解压并启动：
 ```powershell
-# Windows PowerShell
-Expand-Archive -Force build\distributions\dynamic-bot-1.8-SNAPSHOT.zip .
-cd dynamic-bot-1.8-SNAPSHOT
+Expand-Archive -Force dynamic-bot-windows-x64-v<版本>.zip .
+cd dynamic-bot-windows-x64-v<版本>
 .\bin\start.bat
 ```
 
-Linux 启动脚本会优先复用已经包含 `libjemalloc.so.2` 的 `LD_PRELOAD`；如果没有，则从常见系统路径和 `ldconfig -p` 中查找 jemalloc。默认 `MALLOC_CONF` 与 Docker 镜像保持一致，如需覆盖请在启动前显式设置环境变量。
-
-#### 方式二：直接运行 JAR（兼容/调试）
-
-直接 `java -jar` 不会自动注入 jemalloc；Linux 裸机长期运行建议优先使用发行包 `bin/start.sh`。
-
+Linux 解压并启动：
 ```bash
-java -jar build/libs/dynamic-bot-1.8-SNAPSHOT.jar
+tar -xzf dynamic-bot-linux-x64-v<版本>.tar.gz
+cd dynamic-bot-linux-x64-v<版本>
+chmod +x bin/start.sh
+./bin/start.sh
 ```
 
-#### 方式三：使用 Docker Hub 镜像（推荐）
+Linux 启动脚本会优先复用已经包含 `libjemalloc.so.2` 的 `LD_PRELOAD`；如果没有，则从常见系统路径和 `ldconfig -p` 中查找 jemalloc。若仍未找到且当前是交互式终端，脚本会询问是否通过系统官方包管理器安装；非交互场景会直接提示手动安装并退出。默认 `MALLOC_CONF` 与 Docker 镜像保持一致，如需覆盖请在启动前显式设置环境变量。
+
+#### 方式二：使用 Docker Hub 镜像（推荐）
 
 ```bash
 # 拉取镜像
@@ -1137,15 +1109,7 @@ docker logs -f dynamic-bot
 
 如果遇到问题需要提交 Bug 报告，可以启用 DEBUG 级别日志来获取更详细的信息：
 
-1. **启动时加入--debug**
-
-   在启动时加入--debug ：
-
-   ```powershell
-   java -jar dynamic-bot-1.8.0.jar --debug
-   ```
-
-1. **Docker 部署启用 Debug**
+1. **配置文件启用 Debug**
 
    编辑挂载目录中的 `config/BiliConfig.yml`：
 
@@ -1153,6 +1117,10 @@ docker logs -f dynamic-bot
    enableConfig:
      debugMode: true
    ```
+
+   裸机部署请先停止程序，编辑运行目录中的同名配置文件后，再通过 `bin/start.bat` 或 `bin/start.sh` 重新启动。
+
+1. **Docker 部署启用 Debug**
 
    重启容器：
 
