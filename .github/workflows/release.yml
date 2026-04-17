@@ -94,7 +94,7 @@ jobs:
       - name: Package with Gradle
         run: |
           set -o pipefail
-          ./gradlew assemble -PreleaseVersion=${{ env.RELEASE_VERSION }} --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/release/package.log
+          ./gradlew windowsReleaseDistZip linuxReleaseDistTar -PreleaseVersion=${{ env.RELEASE_VERSION }} --stacktrace --info --warning-mode all 2>&1 | tee diagnostics/release/package.log
 
       # 步骤 11：上传构建诊断文件，失败时也保留证据。
       - name: Upload Release Diagnostics
@@ -164,7 +164,9 @@ jobs:
           prerelease: ${{ steps.release_channel.outputs.is_prerelease }}
           make_latest: ${{ steps.release_channel.outputs.make_latest }}
           body_path: ${{ steps.release_body.outputs.body_path }}
-          files: build/libs/*.jar
+          files: |
+            build/distributions/dynamic-bot-windows-x64-v${{ env.RELEASE_VERSION }}.zip
+            build/distributions/dynamic-bot-linux-x64-v${{ env.RELEASE_VERSION }}.tar.gz
 
       # 步骤 18：缺少自定义说明时回退自动生成说明。
       - name: Create Release with Generated Notes
@@ -175,4 +177,6 @@ jobs:
           prerelease: ${{ steps.release_channel.outputs.is_prerelease }}
           make_latest: ${{ steps.release_channel.outputs.make_latest }}
           generate_release_notes: true
-          files: build/libs/*.jar
+          files: |
+            build/distributions/dynamic-bot-windows-x64-v${{ env.RELEASE_VERSION }}.zip
+            build/distributions/dynamic-bot-linux-x64-v${{ env.RELEASE_VERSION }}.tar.gz

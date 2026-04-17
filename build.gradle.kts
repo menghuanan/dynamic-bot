@@ -221,6 +221,59 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
         outputDir.resolve("start.sh").setExecutable(true)
     }
 }
+
+val sharedReleaseContentsDir = layout.buildDirectory.dir("release-platform/shared")
+
+// 平台发行包共享同一份 fat jar、资源与 README，避免 Windows/Linux 打包逻辑重复维护公共 payload。
+val stageSharedReleaseContents = tasks.register<Sync>("stageSharedReleaseContents") {
+    dependsOn(tasks.shadowJar)
+    into(sharedReleaseContentsDir)
+
+    from(tasks.shadowJar) {
+        into("lib")
+    }
+    from("README.md") {
+        into("")
+    }
+    from("src/main/resources") {
+        into("resources")
+        exclude("logback")
+    }
+}
+
+// Windows 发布资产只暴露 Windows 启动入口，避免用户在发行包中误用 Linux 或 Gradle 默认脚本。
+val windowsReleaseDistZip = tasks.register<Zip>("windowsReleaseDistZip") {
+    group = "distribution"
+    description = "Builds the Windows x64 release archive with the packaged start.bat entrypoint."
+    dependsOn(stageSharedReleaseContents, createDistributionStartScripts)
+
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+    archiveFileName.set("dynamic-bot-windows-x64-v${project.version}.zip")
+
+    from(sharedReleaseContentsDir)
+    from(createDistributionStartScripts) {
+        include("start.bat")
+        into("bin")
+    }
+}
+
+// Linux 发布资产只暴露 Linux 启动入口，并生成 tar.gz 以保留 start.sh 的可执行权限。
+val linuxReleaseDistTar = tasks.register<Tar>("linuxReleaseDistTar") {
+    group = "distribution"
+    description = "Builds the Linux x64 release archive with the packaged start.sh entrypoint."
+    dependsOn(stageSharedReleaseContents, createDistributionStartScripts)
+
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+    archiveFileName.set("dynamic-bot-linux-x64-v${project.version}.tar.gz")
+    compression = Compression.GZIP
+
+    from(sharedReleaseContentsDir)
+    from(createDistributionStartScripts) {
+        include("start.sh")
+        into("bin")
+        fileMode = 0b111101101 // 755
+    }
+}
 // Distribution 配置
 distributions {
     main {
