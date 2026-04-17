@@ -3,6 +3,7 @@ package top.bilibili.service
 import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import top.bilibili.AtAllType
@@ -70,6 +71,35 @@ class AtAllServiceFeatureTest {
         AtAllService.delAtAll("live", 123L, subject)
 
         assertFalse(BiliData.atAll.containsKey(persistedSubject), "删除后应移除空的目标映射")
+    }
+
+    // 当前设计会把“全部动态”和细分类型做规范化折叠，避免在持久化里保留语义重复的组合。
+    @Test
+    fun `addAtAll 应在 d l v 顺序下收敛为直播和视频`() = runBlocking {
+        val uid = 3108865L
+        BiliData.dynamic[uid] = SubData(name = "测试UP", contacts = mutableSetOf(persistedSubject))
+
+        AtAllService.addAtAll("d", uid, subject)
+        AtAllService.addAtAll("l", uid, subject)
+        AtAllService.addAtAll("v", uid, subject)
+
+        val stored = BiliData.atAll[persistedSubject]?.get(uid)
+        assertEquals(linkedSetOf(AtAllType.LIVE, AtAllType.VIDEO), stored, "细分视频类型后应移除全部动态，只保留直播和视频")
+        assertEquals("UID($uid): 直播,视频", AtAllService.listAtAll(subject = subject), "列表展示应反映规范化后的存储结果")
+    }
+
+    // 当前设计会在重新写入“全部动态”时回收已存在的视频/音乐/专栏细分项，保持宽口径优先。
+    @Test
+    fun `addAtAll 应在重新写入 d 时覆盖已存在的视频类型`() = runBlocking {
+        val uid = 3108865L
+        BiliData.dynamic[uid] = SubData(name = "测试UP", contacts = mutableSetOf(persistedSubject))
+
+        AtAllService.addAtAll("v", uid, subject)
+        AtAllService.addAtAll("d", uid, subject)
+
+        val stored = BiliData.atAll[persistedSubject]?.get(uid)
+        assertEquals(linkedSetOf(AtAllType.DYNAMIC), stored, "重新写入全部动态后应移除视频细分项")
+        assertEquals("UID($uid): 全部动态", AtAllService.listAtAll(subject = subject), "列表展示应回到全部动态")
     }
 
     private fun dynamicMessage(type: DynamicType, uid: Long): DynamicMessage {

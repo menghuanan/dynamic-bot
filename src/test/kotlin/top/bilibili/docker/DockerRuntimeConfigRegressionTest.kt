@@ -164,6 +164,29 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
+    fun `bare metal distribution startup scripts should align heap defaults with docker baseline`() {
+        val buildGradle = read("build.gradle.kts")
+
+        // 裸机发行脚本默认堆基线需要与 Docker 保持一致，避免 README、Docker 与发行包三者的默认预算继续分叉。
+        assertTrue(
+            buildGradle.contains("set JAVA_OPTS=-Xms64m -Xmx160m"),
+            "distribution start.bat should align default heap baseline with Docker",
+        )
+        assertTrue(
+            buildGradle.contains("JAVA_OPTS=\"-Xms64m -Xmx160m\""),
+            "distribution start.sh should align default heap baseline with Docker",
+        )
+        assertFalse(
+            buildGradle.contains("set JAVA_OPTS=-Xms512m -Xmx2g"),
+            "distribution start.bat should remove the legacy large heap baseline",
+        )
+        assertFalse(
+            buildGradle.contains("JAVA_OPTS=\"-Xms512m -Xmx2g\""),
+            "distribution start.sh should remove the legacy large heap baseline",
+        )
+    }
+
+    @Test
     fun `bare metal windows startup script should document allocator preload boundary`() {
         val buildGradle = read("build.gradle.kts")
 

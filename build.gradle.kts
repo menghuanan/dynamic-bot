@@ -139,7 +139,7 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
 
             rem Windows 不使用 Linux LD_PRELOAD allocator 注入；当前发行包未携带 Windows jemalloc/tcmalloc runtime。
             rem Windows 裸机继续依赖 JVM 与 Skiko 参数约束 native memory 行为。
-            set JAVA_OPTS=-Xms512m -Xmx2g
+            set JAVA_OPTS=-Xms64m -Xmx160m
             set JAVA_OPTS=%JAVA_OPTS% -Dfile.encoding=UTF-8
             set JAVA_OPTS=%JAVA_OPTS% -Duser.timezone=Asia/Shanghai
             set JAVA_OPTS=%JAVA_OPTS% -Dskiko.renderApi=SOFTWARE
@@ -198,7 +198,7 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
                 export MALLOC_CONF
             fi
 
-            JAVA_OPTS="-Xms512m -Xmx2g"
+            JAVA_OPTS="-Xms64m -Xmx160m"
             JAVA_OPTS="${'$'}JAVA_OPTS -Dfile.encoding=UTF-8"
             JAVA_OPTS="${'$'}JAVA_OPTS -Duser.timezone=Asia/Shanghai"
             JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.renderApi=SOFTWARE"

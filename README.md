@@ -142,15 +142,61 @@ chmod +x gradlew
 编译完成后,可执行文件位于：
 - `build/libs/dynamic-bot-1.8-SNAPSHOT.jar`
 
+如果需要使用裸机启动脚本，请生成发行包：
+```bash
+# Windows
+.\gradlew.bat distZip
+```
+```bash
+# Linux
+chmod +x gradlew
+./gradlew distZip
+```
+发行包位于：
+- `build/distributions/dynamic-bot-1.8-SNAPSHOT.zip`
+
 ### 2. 运行 Bot
 
-#### 方式一：直接运行 JAR
+#### 方式一：使用发行包启动脚本（裸机推荐）
+
+发行包启动脚本会补齐 JVM、编码、时区与软件渲染参数。Linux 裸机还会在 JVM 启动前注入 jemalloc，用于减少 glibc malloc 导致的 Anonymous/RSS 漂移。
+
+Linux 裸机运行前必须安装 `libjemalloc.so.2`，否则 `bin/start.sh` 会拒绝启动：
+```bash
+# Debian / Ubuntu
+sudo apt-get update
+sudo apt-get install -y libjemalloc2
+
+# RHEL / CentOS / Rocky / Fedora
+sudo dnf install -y jemalloc
+```
+
+解压并启动：
+```bash
+# Linux
+unzip build/distributions/dynamic-bot-1.8-SNAPSHOT.zip
+cd dynamic-bot-1.8-SNAPSHOT
+chmod +x bin/start.sh
+./bin/start.sh
+```
+```powershell
+# Windows PowerShell
+Expand-Archive -Force build\distributions\dynamic-bot-1.8-SNAPSHOT.zip .
+cd dynamic-bot-1.8-SNAPSHOT
+.\bin\start.bat
+```
+
+Linux 启动脚本会优先复用已经包含 `libjemalloc.so.2` 的 `LD_PRELOAD`；如果没有，则从常见系统路径和 `ldconfig -p` 中查找 jemalloc。默认 `MALLOC_CONF` 与 Docker 镜像保持一致，如需覆盖请在启动前显式设置环境变量。
+
+#### 方式二：直接运行 JAR（兼容/调试）
+
+直接 `java -jar` 不会自动注入 jemalloc；Linux 裸机长期运行建议优先使用发行包 `bin/start.sh`。
 
 ```bash
 java -jar build/libs/dynamic-bot-1.8-SNAPSHOT.jar
 ```
 
-#### 方式二：使用 Docker Hub 镜像（推荐）
+#### 方式三：使用 Docker Hub 镜像（推荐）
 
 ```bash
 # 拉取镜像
