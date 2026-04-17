@@ -137,6 +137,8 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             chcp 65001 >nul
             cd /d "%~dp0.."
 
+            rem Windows 不使用 Linux LD_PRELOAD allocator 注入；当前发行包未携带 Windows jemalloc/tcmalloc runtime。
+            rem Windows 裸机继续依赖 JVM 与 Skiko 参数约束 native memory 行为。
             set JAVA_OPTS=-Xms512m -Xmx2g
             set JAVA_OPTS=%JAVA_OPTS% -Dfile.encoding=UTF-8
             set JAVA_OPTS=%JAVA_OPTS% -Duser.timezone=Asia/Shanghai
@@ -152,6 +154,49 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             """
             #!/bin/bash
             cd "${'$'}(dirname "${'$'}0")/.."
+
+            # Linux 裸机必须在 JVM 启动前注入 jemalloc，否则 Anonymous/RSS 漂移会回到 glibc malloc 行为。
+            if [ "${'$'}(uname -s)" = "Linux" ]; then
+                EXISTING_LD_PRELOAD="${'$'}{LD_PRELOAD:-}"
+                JEMALLOC_LIB=""
+
+                case "${'$'}EXISTING_LD_PRELOAD" in
+                    *libjemalloc.so.2*)
+                        ;;
+                    *)
+                        # 优先探测主流发行版安装路径，再回退到动态链接器缓存，避免要求用户手动填写绝对路径。
+                        for candidate in \
+                            /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
+                            /usr/lib/aarch64-linux-gnu/libjemalloc.so.2 \
+                            /usr/lib64/libjemalloc.so.2 \
+                            /usr/lib/libjemalloc.so.2
+                        do
+                            if [ -r "${'$'}candidate" ]; then
+                                JEMALLOC_LIB="${'$'}candidate"
+                                break
+                            fi
+                        done
+
+                        if [ -z "${'$'}JEMALLOC_LIB" ] && command -v ldconfig >/dev/null 2>&1; then
+                            JEMALLOC_LIB="${'$'}(ldconfig -p | awk '/libjemalloc\.so\.2/ { print ${'$'}NF; exit }')"
+                        fi
+
+                        if [ -z "${'$'}JEMALLOC_LIB" ] || [ ! -r "${'$'}JEMALLOC_LIB" ]; then
+                            echo "ERROR: libjemalloc.so.2 not found. Install jemalloc before starting dynamic-bot on Linux bare metal." >&2
+                            exit 1
+                        fi
+
+                        export LD_PRELOAD="${'$'}JEMALLOC_LIB"
+                        if [ -n "${'$'}EXISTING_LD_PRELOAD" ]; then
+                            export LD_PRELOAD="${'$'}JEMALLOC_LIB:${'$'}EXISTING_LD_PRELOAD"
+                        fi
+                        ;;
+                esac
+
+                # 与 Dockerfile 保持一致的 jemalloc decay 策略，允许部署侧通过 MALLOC_CONF 显式覆盖。
+                MALLOC_CONF="${'$'}{MALLOC_CONF:-background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000,narenas:1,tcache:false}"
+                export MALLOC_CONF
+            fi
 
             JAVA_OPTS="-Xms512m -Xmx2g"
             JAVA_OPTS="${'$'}JAVA_OPTS -Dfile.encoding=UTF-8"

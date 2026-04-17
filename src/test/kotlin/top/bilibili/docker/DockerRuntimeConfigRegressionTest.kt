@@ -133,6 +133,52 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
+    fun `bare metal linux startup script should require jemalloc before launching java`() {
+        val buildGradle = read("build.gradle.kts")
+
+        // 裸机 Linux 启动脚本必须在 JVM 启动前完成 jemalloc 注入，避免回退到 glibc malloc 后继续放大 Anonymous/RSS 漂移。
+        assertTrue(
+            buildGradle.contains("JEMALLOC_LIB="),
+            "distribution start.sh should track the selected jemalloc library path",
+        )
+        assertTrue(
+            buildGradle.contains("ldconfig -p"),
+            "distribution start.sh should discover jemalloc from the dynamic linker cache",
+        )
+        assertTrue(
+            buildGradle.contains("libjemalloc.so.2"),
+            "distribution start.sh should require libjemalloc.so.2 on Linux bare metal",
+        )
+        assertTrue(
+            buildGradle.contains("exit 1"),
+            "distribution start.sh should fail fast when jemalloc is unavailable",
+        )
+        assertTrue(
+            buildGradle.contains("export LD_PRELOAD=\"\${'\$'}JEMALLOC_LIB\""),
+            "distribution start.sh should preload jemalloc before launching Java",
+        )
+        assertTrue(
+            buildGradle.contains("MALLOC_CONF=\"\${'\$'}{MALLOC_CONF:-background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000,narenas:1,tcache:false}\""),
+            "distribution start.sh should default to the Docker-aligned jemalloc decay profile",
+        )
+    }
+
+    @Test
+    fun `bare metal windows startup script should document allocator preload boundary`() {
+        val buildGradle = read("build.gradle.kts")
+
+        // Windows 当前没有项目内 allocator preload 方案，脚本应明确边界而不是设置 Linux 专属 LD_PRELOAD。
+        assertTrue(
+            buildGradle.contains("Windows 不使用 Linux LD_PRELOAD allocator 注入"),
+            "distribution start.bat should document why allocator preload is Linux-only",
+        )
+        assertFalse(
+            buildGradle.contains("set LD_PRELOAD="),
+            "distribution start.bat should not set Linux-only LD_PRELOAD on Windows",
+        )
+    }
+
+    @Test
     fun `docker runtime should prebuild fontconfig cache to avoid first draw cold scan`() {
         val dockerfile = read("Dockerfile")
 
