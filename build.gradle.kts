@@ -140,6 +140,11 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             rem Windows 不使用 Linux LD_PRELOAD allocator 注入；当前发行包未携带 Windows jemalloc/tcmalloc runtime。
             rem Windows 裸机继续依赖 JVM 与 Skiko 参数约束 native memory 行为。
             set JAVA_OPTS=-Xms64m -Xmx160m
+            rem 长时间静默场景显式启用 G1 周期回收与更积极的 heap 收缩，避免偶发绘图后长期保留高位 committed heap。
+            set JAVA_OPTS=%JAVA_OPTS% -XX:MinHeapFreeRatio=10
+            set JAVA_OPTS=%JAVA_OPTS% -XX:MaxHeapFreeRatio=20
+            set JAVA_OPTS=%JAVA_OPTS% -XX:G1PeriodicGCInterval=60000
+            set JAVA_OPTS=%JAVA_OPTS% -XX:G1PeriodicGCSystemLoadThreshold=0
             set JAVA_OPTS=%JAVA_OPTS% -Dfile.encoding=UTF-8
             set JAVA_OPTS=%JAVA_OPTS% -Duser.timezone=Asia/Shanghai
             set JAVA_OPTS=%JAVA_OPTS% -Dskiko.renderApi=SOFTWARE
@@ -199,6 +204,11 @@ val createDistributionStartScripts = tasks.register("createDistributionStartScri
             fi
 
             JAVA_OPTS="-Xms64m -Xmx160m"
+            # 长时间静默场景显式启用 G1 周期回收与更积极的 heap 收缩，避免偶发绘图后长期保留高位 committed heap。
+            JAVA_OPTS="${'$'}JAVA_OPTS -XX:MinHeapFreeRatio=10"
+            JAVA_OPTS="${'$'}JAVA_OPTS -XX:MaxHeapFreeRatio=20"
+            JAVA_OPTS="${'$'}JAVA_OPTS -XX:G1PeriodicGCInterval=60000"
+            JAVA_OPTS="${'$'}JAVA_OPTS -XX:G1PeriodicGCSystemLoadThreshold=0"
             JAVA_OPTS="${'$'}JAVA_OPTS -Dfile.encoding=UTF-8"
             JAVA_OPTS="${'$'}JAVA_OPTS -Duser.timezone=Asia/Shanghai"
             JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.renderApi=SOFTWARE"

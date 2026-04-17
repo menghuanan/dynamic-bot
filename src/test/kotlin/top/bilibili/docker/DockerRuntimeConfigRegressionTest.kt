@@ -187,6 +187,45 @@ class DockerRuntimeConfigRegressionTest {
     }
 
     @Test
+    fun `bare metal distribution startup scripts should keep idle g1 reclamation flags aligned with docker`() {
+        val buildGradle = read("build.gradle.kts")
+
+        // 长时间静默的裸机场景同样需要显式携带 G1 周期回收与 heap free ratio 收缩参数，避免只在 Docker 中生效。
+        assertTrue(
+            buildGradle.contains("set JAVA_OPTS=%JAVA_OPTS% -XX:MinHeapFreeRatio=10"),
+            "distribution start.bat should keep MinHeapFreeRatio=10",
+        )
+        assertTrue(
+            buildGradle.contains("set JAVA_OPTS=%JAVA_OPTS% -XX:MaxHeapFreeRatio=20"),
+            "distribution start.bat should keep MaxHeapFreeRatio=20",
+        )
+        assertTrue(
+            buildGradle.contains("set JAVA_OPTS=%JAVA_OPTS% -XX:G1PeriodicGCInterval=60000"),
+            "distribution start.bat should keep G1PeriodicGCInterval=60000",
+        )
+        assertTrue(
+            buildGradle.contains("set JAVA_OPTS=%JAVA_OPTS% -XX:G1PeriodicGCSystemLoadThreshold=0"),
+            "distribution start.bat should keep G1PeriodicGCSystemLoadThreshold=0",
+        )
+        assertTrue(
+            Regex("MinHeapFreeRatio=10").findAll(buildGradle).count() >= 2,
+            "distribution start scripts should include MinHeapFreeRatio=10 for both Windows and Linux launchers",
+        )
+        assertTrue(
+            Regex("MaxHeapFreeRatio=20").findAll(buildGradle).count() >= 2,
+            "distribution start scripts should include MaxHeapFreeRatio=20 for both Windows and Linux launchers",
+        )
+        assertTrue(
+            Regex("G1PeriodicGCInterval=60000").findAll(buildGradle).count() >= 2,
+            "distribution start scripts should include G1PeriodicGCInterval=60000 for both Windows and Linux launchers",
+        )
+        assertTrue(
+            Regex("G1PeriodicGCSystemLoadThreshold=0").findAll(buildGradle).count() >= 2,
+            "distribution start scripts should include G1PeriodicGCSystemLoadThreshold=0 for both Windows and Linux launchers",
+        )
+    }
+
+    @Test
     fun `bare metal windows startup script should document allocator preload boundary`() {
         val buildGradle = read("build.gradle.kts")
 
@@ -300,6 +339,29 @@ class DockerRuntimeConfigRegressionTest {
         assertTrue(
             dockerfile.contains("-XX:CompileThreshold=10000"),
             "Dockerfile should raise CompileThreshold to reduce short-lived hot-path compilation noise",
+        )
+    }
+
+    @Test
+    fun `docker runtime should keep idle g1 reclamation flags for long quiet periods`() {
+        val dockerfile = read("Dockerfile")
+
+        // 长时间静默场景依赖 periodic GC 与更积极的 free ratio 回收，让空闲期更快把 Java heap committed 还回系统。
+        assertTrue(
+            dockerfile.contains("-XX:MinHeapFreeRatio=10"),
+            "Dockerfile should keep MinHeapFreeRatio=10 for idle heap reclamation",
+        )
+        assertTrue(
+            dockerfile.contains("-XX:MaxHeapFreeRatio=20"),
+            "Dockerfile should keep MaxHeapFreeRatio=20 for idle heap reclamation",
+        )
+        assertTrue(
+            dockerfile.contains("-XX:G1PeriodicGCInterval=60000"),
+            "Dockerfile should keep G1PeriodicGCInterval=60000 for long quiet periods",
+        )
+        assertTrue(
+            dockerfile.contains("-XX:G1PeriodicGCSystemLoadThreshold=0"),
+            "Dockerfile should keep G1PeriodicGCSystemLoadThreshold=0 so idle reclamation is not gated by host load",
         )
     }
 
