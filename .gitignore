@@ -148,14 +148,16 @@ src/test/resources/output/**
 .worktrees/
 
 # Exclude docs markdown files, keep only images
-docs/*.md
-!docs/release/
-!docs/release/*.md
-docs/plans/
-docs/1/
-docs/skia资源管理计划/
-docs/规则
 AGENTS.md
+docs/**
+!docs/
+!docs/release/
+!docs/release/**
+!docs/dynamic.png
+!docs/live.png
+!docs/Video.png
+!docs/bangumi.png
+!docs/help.png
 
 /diagnostics
 
