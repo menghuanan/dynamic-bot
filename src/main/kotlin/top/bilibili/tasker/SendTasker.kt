@@ -109,7 +109,7 @@ object SendTasker : BiliTasker("SendTasker") {
                     BiliBiliBot.logger.warn("消息发送失败: {}", contact.toSubject())
                 }
 
-                // 鍙戦€侀棿闅?
+                // 发送间隔，避免同一轮推送连续压垮平台发送链路。
                 delay(BiliConfigManager.config.pushConfig.pushInterval)
             } catch (e: CancellationException) {
                 if (BiliBiliBot.isStopping()) {
