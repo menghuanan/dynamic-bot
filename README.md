@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 由 [bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin) 改造而来。  
-代码部分由 [claude](https://github.com/claude) 主刀构建改造后的主体框架， GPT-5系列模型（GPT-5.2-Codex、GPT-5.3-Codex、GPT-5.4） 协助完善功能细则与日常修复bug。  
+代码部分由 [claude](https://github.com/claude) 主刀构建改造后的主体框架， GPT-5系列模型（GPT-5.2-Codex、GPT-5.3-Codex、GPT-5.4、GPT-5.5） 协助完善功能细则与日常修复bug。  
 这是一个支持多平台连接器的 QQ 机器人 ，当前默认推荐使用 NapCat / llbot / OneBot11，QQ 官方适配器也提供了基础收发能力与显式降级处理（尚未测试，不建议使用）。
 
 ## 文档目录
@@ -242,7 +242,7 @@ platform:
 ```yaml
 admin: "管理员QQ号"
 ```
-### 4. NapCat 配置
+### 4. onebot平台 配置
 
 新建 WebSocket 服务器，按以下参数填写：
 
@@ -250,7 +250,7 @@ admin: "管理员QQ号"
   （随便填写，仅用于区分）
 
 - **主机**：`127.0.0.1`  
-  （默认即可。如 NapCat 与 bot 不在同一台机器，请填写对应服务器 IP）
+  （默认即可。如 onebot平台 与 bot 不在同一台机器，请填写对应服务器 IP）
 
 - **端口**：`3001`  
   （默认 3001，建议修改为非常用端口以提升安全性）
@@ -263,6 +263,8 @@ admin: "管理员QQ号"
 
 - **心跳间隔**：`30000`  
   （保持默认）
+
+以上配置如果出现无法连接等异常情况，请优先使用onebot平台的默认配置，如果还是无法接通请提交Issues。
 
 ## 主要功能
 
@@ -635,9 +637,9 @@ docker logs -f dynamic-bot
 
 如果需要自定义修改，可以从源码构建镜像。
 
-1. **配置 NapCat 连接**
-   - 修改 `config/bot.yml` 中的 host 为 `host.docker.internal`（如果 NapCat 在宿主机）
-   - 或保持 `127.0.0.1`（如果 NapCat 也在容器内）
+1. **配置 onebot平台 连接**
+   - 修改 `config/bot.yml` 中的 host 为 `host.docker.internal`（如果 onebot平台 在宿主机）
+   - 或保持 `127.0.0.1`（如果 onebot平台 也在容器内）
 
 2. **先构建可运行 JAR**
    当前 `Dockerfile` 会直接复制 `build/libs/dynamic-bot-*.jar`，因此需要先执行：
